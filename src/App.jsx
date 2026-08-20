@@ -975,7 +975,7 @@ function LoginScreen({ onSuccess }) {
           <p className="text-white/50 text-xs font-semibold tracking-[0.2em]">CONTRACTING MANAGEMENT</p>
         </div>
 
-        <form onSubmit={submit} className="bg-[#F6F3EA] rounded-2xl p-7 w-full max-w-sm mt-8 shadow-2xl">
+        <form onSubmit={submit} dir="ltr" className="bg-[#F6F3EA] rounded-2xl p-7 w-full max-w-sm mt-8 shadow-2xl text-left">
           <label className="block text-[12px] font-bold text-[#1E2530] mb-1.5">Username</label>
           <input
             autoFocus
@@ -983,7 +983,7 @@ function LoginScreen({ onSuccess }) {
             onChange={(e) => setUsername(e.target.value)}
             placeholder="Enter your username"
             dir="ltr"
-            className="w-full border-0 rounded-lg px-3.5 py-2.5 text-sm outline-none focus:ring-2 focus:ring-[#E8672C]/40 transition bg-white mb-4 text-[#1E2530] placeholder:text-[#B5AF9E]"
+            className="w-full border-0 rounded-lg px-3.5 py-2.5 text-sm outline-none focus:ring-2 focus:ring-[#E8672C]/40 transition bg-white mb-4 text-[#1E2530] placeholder:text-[#B5AF9E] text-left"
           />
           <label className="block text-[12px] font-bold text-[#1E2530] mb-1.5">Password</label>
           <input
@@ -992,7 +992,7 @@ function LoginScreen({ onSuccess }) {
             onChange={(e) => setPassword(e.target.value)}
             placeholder="Enter your password"
             dir="ltr"
-            className="w-full border-0 rounded-lg px-3.5 py-2.5 text-sm outline-none focus:ring-2 focus:ring-[#E8672C]/40 transition bg-white mb-2 text-[#1E2530] placeholder:text-[#B5AF9E]"
+            className="w-full border-0 rounded-lg px-3.5 py-2.5 text-sm outline-none focus:ring-2 focus:ring-[#E8672C]/40 transition bg-white mb-2 text-[#1E2530] placeholder:text-[#B5AF9E] text-left"
           />
           {error && <div className="text-[#C1453B] text-xs font-semibold mb-3 mt-1">{error}</div>}
           <button
@@ -1001,14 +1001,14 @@ function LoginScreen({ onSuccess }) {
             className="w-full mt-3 py-2.5 rounded-lg bg-[#1E2530] text-white font-bold text-sm hover:bg-[#2b3543] transition disabled:opacity-60 flex items-center justify-center gap-2"
           >
             {loading ? <Loader2 size={16} className="animate-spin" /> : null}
-            تسجيل الدخول
+            Sign In
           </button>
         </form>
       </div>
 
-      <div className="absolute bottom-0 inset-x-0 flex items-center justify-between px-6 py-4 z-10">
-        <span className="text-white/40 text-[11px]">© {now.getFullYear()} Omar ERP. جميع الحقوق محفوظة.</span>
-        <span dir="ltr" className="mono bg-[#1E2530] border border-white/10 rounded-md px-3 py-1.5 text-[#E8AA6C] text-[12px] font-semibold tracking-wide">
+      <div dir="ltr" className="absolute bottom-0 inset-x-0 flex items-center justify-between px-6 py-4 z-10">
+        <span className="text-white/50 text-[11px]">© {now.getFullYear()} Omar ERP. All rights reserved.</span>
+        <span className="mono bg-[#1E2530] border border-white/10 rounded-md px-3 py-1.5 text-[#E8AA6C] text-[12px] font-semibold tracking-wide">
           {dateStr}, {timeStr}
         </span>
       </div>
