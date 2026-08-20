@@ -976,21 +976,23 @@ function LoginScreen({ onSuccess }) {
         </div>
 
         <form onSubmit={submit} className="bg-[#F6F3EA] rounded-2xl p-7 w-full max-w-sm mt-8 shadow-2xl">
-          <label className="block text-[12px] font-bold text-[#1E2530] mb-1.5">اسم المستخدم</label>
+          <label className="block text-[12px] font-bold text-[#1E2530] mb-1.5">Username</label>
           <input
             autoFocus
             value={username}
             onChange={(e) => setUsername(e.target.value)}
-            placeholder="ادخل اسم المستخدم"
-            className="w-full border border-[#E1DACB] rounded-lg px-3 py-2.5 text-sm outline-none focus:border-[#E8672C] transition bg-white mb-4"
+            placeholder="Enter your username"
+            dir="ltr"
+            className="w-full border-0 rounded-lg px-3.5 py-2.5 text-sm outline-none focus:ring-2 focus:ring-[#E8672C]/40 transition bg-white mb-4 text-[#1E2530] placeholder:text-[#B5AF9E]"
           />
-          <label className="block text-[12px] font-bold text-[#1E2530] mb-1.5">كلمة المرور</label>
+          <label className="block text-[12px] font-bold text-[#1E2530] mb-1.5">Password</label>
           <input
             type="password"
             value={password}
             onChange={(e) => setPassword(e.target.value)}
-            placeholder="ادخل كلمة المرور"
-            className="w-full border border-[#E1DACB] rounded-lg px-3 py-2.5 text-sm outline-none focus:border-[#E8672C] transition bg-white mb-2"
+            placeholder="Enter your password"
+            dir="ltr"
+            className="w-full border-0 rounded-lg px-3.5 py-2.5 text-sm outline-none focus:ring-2 focus:ring-[#E8672C]/40 transition bg-white mb-2 text-[#1E2530] placeholder:text-[#B5AF9E]"
           />
           {error && <div className="text-[#C1453B] text-xs font-semibold mb-3 mt-1">{error}</div>}
           <button
@@ -1004,9 +1006,11 @@ function LoginScreen({ onSuccess }) {
         </form>
       </div>
 
-      <div className="absolute bottom-0 inset-x-0 flex items-center justify-between px-6 py-4 text-white/40 text-[11px] z-10">
-        <span>© {now.getFullYear()} Omar ERP. جميع الحقوق محفوظة.</span>
-        <span className="mono bg-white/5 border border-white/10 rounded px-2.5 py-1 text-[#E8672C]">{dateStr} · {timeStr}</span>
+      <div className="absolute bottom-0 inset-x-0 flex items-center justify-between px-6 py-4 z-10">
+        <span className="text-white/40 text-[11px]">© {now.getFullYear()} Omar ERP. جميع الحقوق محفوظة.</span>
+        <span dir="ltr" className="mono bg-[#1E2530] border border-white/10 rounded-md px-3 py-1.5 text-[#E8AA6C] text-[12px] font-semibold tracking-wide">
+          {dateStr}, {timeStr}
+        </span>
       </div>
     </div>
   );
