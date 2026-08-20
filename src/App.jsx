@@ -1,12 +1,13 @@
-import React, { useState, useMemo } from "react";
+import React, { useState, useMemo, useEffect } from "react";
 import {
   BarChart, Bar, XAxis, YAxis, CartesianGrid, Tooltip, ResponsiveContainer, Cell,
 } from "recharts";
 import {
   Building2, LayoutGrid, Hammer, Receipt, FileStack, Wallet, Plus, X,
   TrendingUp, TrendingDown, ChevronDown, ChevronRight, Package, HardHat,
-  Landmark, CircleDollarSign, CheckCircle2, Clock, Ruler, Users,
+  Landmark, CircleDollarSign, CheckCircle2, Clock, Ruler, Users, Loader2,
 } from "lucide-react";
+import { supabase } from "./supabaseClient";
 
 /* ---------------------------------- data ---------------------------------- */
 
@@ -85,15 +86,86 @@ function useId(prefix) {
 /* ---------------------------------- app ---------------------------------- */
 
 export default function ContractingApp() {
-  const [projects, setProjects] = useState(seedProjects);
-  const [workItems, setWorkItems] = useState(seedWorkItems);
-  const [costs, setCosts] = useState(seedCosts);
-  const [extracts, setExtracts] = useState(seedExtracts);
-  const [collections, setCollections] = useState(seedCollections);
+  const [projects, setProjects] = useState([]);
+  const [workItems, setWorkItems] = useState([]);
+  const [costs, setCosts] = useState([]);
+  const [extracts, setExtracts] = useState([]);
+  const [collections, setCollections] = useState([]);
+  const [loading, setLoading] = useState(true);
+  const [dbError, setDbError] = useState(null);
 
   const [activeProjectId, setActiveProjectId] = useState("p1");
   const [tab, setTab] = useState("dashboard");
   const [showNewProject, setShowNewProject] = useState(false);
+
+  useEffect(() => {
+    async function loadAll() {
+      const [projRes, wiRes, costRes, extRes, colRes] = await Promise.all([
+        supabase.from("projects").select("*").order("created_at"),
+        supabase.from("work_items").select("*").order("created_at"),
+        supabase.from("costs").select("*").order("created_at"),
+        supabase.from("extracts").select("*").order("created_at"),
+        supabase.from("collections").select("*").order("created_at"),
+      ]);
+
+      const firstError = [projRes, wiRes, costRes, extRes, colRes].find((r) => r.error);
+      if (firstError) {
+        setDbError(firstError.error.message);
+        setLoading(false);
+        return;
+      }
+
+      setProjects(projRes.data || []);
+      setWorkItems(
+        (wiRes.data || []).map((w) => ({ id: w.id, projectId: w.project_id, name: w.name, unit: w.unit, qty: Number(w.qty), price: Number(w.price) }))
+      );
+      setCosts(
+        (costRes.data || []).map((c) => ({ id: c.id, projectId: c.project_id, workItemId: c.work_item_id, type: c.type, desc: c.description, qty: Number(c.qty), unit: c.unit, price: Number(c.price), date: c.date }))
+      );
+      setExtracts(
+        (extRes.data || []).map((e) => ({ id: e.id, projectId: e.project_id, number: e.number, date: e.date, percentage: Number(e.percentage), amount: Number(e.amount) }))
+      );
+      setCollections(
+        (colRes.data || []).map((c) => ({ id: c.id, extractId: c.extract_id, amount: Number(c.amount), date: c.date, method: c.method }))
+      );
+
+      if (projRes.data && projRes.data.length > 0) {
+        setActiveProjectId(projRes.data[0].id);
+      }
+      setLoading(false);
+    }
+    loadAll();
+  }, []);
+
+  async function addProject(p) {
+    const { error } = await supabase.from("projects").insert([{ id: p.id, name: p.name, client: p.client, location: p.location, budget: p.budget, status: p.status }]);
+    if (error) { alert("حصل خطأ أثناء حفظ المشروع: " + error.message); return; }
+    setProjects((prev) => [...prev, p]);
+  }
+
+  async function addWorkItem(w) {
+    const { error } = await supabase.from("work_items").insert([{ id: w.id, project_id: w.projectId, name: w.name, unit: w.unit, qty: w.qty, price: w.price }]);
+    if (error) { alert("حصل خطأ أثناء حفظ بند العمل: " + error.message); return; }
+    setWorkItems((prev) => [...prev, w]);
+  }
+
+  async function addCost(c) {
+    const { error } = await supabase.from("costs").insert([{ id: c.id, project_id: c.projectId, work_item_id: c.workItemId, type: c.type, description: c.desc, qty: c.qty, unit: c.unit, price: c.price, date: c.date }]);
+    if (error) { alert("حصل خطأ أثناء حفظ التكلفة: " + error.message); return; }
+    setCosts((prev) => [...prev, c]);
+  }
+
+  async function addExtract(e) {
+    const { error } = await supabase.from("extracts").insert([{ id: e.id, project_id: e.projectId, number: e.number, date: e.date, percentage: e.percentage, amount: e.amount }]);
+    if (error) { alert("حصل خطأ أثناء حفظ المستخلص: " + error.message); return; }
+    setExtracts((prev) => [...prev, e]);
+  }
+
+  async function addCollection(cl) {
+    const { error } = await supabase.from("collections").insert([{ id: cl.id, extract_id: cl.extractId, amount: cl.amount, date: cl.date, method: cl.method }]);
+    if (error) { alert("حصل خطأ أثناء حفظ التحصيل: " + error.message); return; }
+    setCollections((prev) => [...prev, cl]);
+  }
 
   const project = projects.find((p) => p.id === activeProjectId);
   const pWorkItems = workItems.filter((w) => w.projectId === activeProjectId);
@@ -140,6 +212,22 @@ export default function ContractingApp() {
         ::-webkit-scrollbar { width: 8px; height: 8px; }
         ::-webkit-scrollbar-thumb { background: #D8D3C7; border-radius: 4px; }
       `}</style>
+
+      {loading && (
+        <div className="fixed inset-0 bg-[#F6F3EA] flex items-center justify-center z-50 gap-2 text-[#1E2530]">
+          <Loader2 size={20} className="animate-spin" />
+          <span className="font-semibold text-sm">جاري تحميل بيانات المشروعات...</span>
+        </div>
+      )}
+
+      {!loading && dbError && (
+        <div className="fixed inset-0 bg-[#F6F3EA] flex items-center justify-center z-50 p-8" dir="rtl">
+          <div className="bg-white border border-[#E1DACB] rounded-xl p-6 max-w-md text-center">
+            <div className="font-bold text-[#C1453B] mb-2">تعذّر الاتصال بقاعدة البيانات</div>
+            <div className="text-sm text-[#6B7280]">{dbError}</div>
+          </div>
+        </div>
+      )}
 
       {/* SIDEBAR */}
       <aside className="blueprint-bg w-64 shrink-0 flex flex-col text-[#E7ECEF]" style={{ minHeight: "100vh" }}>
@@ -247,7 +335,7 @@ export default function ContractingApp() {
               pWorkItems={pWorkItems}
               pCosts={pCosts}
               activeProjectId={activeProjectId}
-              setWorkItems={setWorkItems}
+              onAddWorkItem={addWorkItem}
             />
           )}
           {tab === "costs" && (
@@ -255,15 +343,15 @@ export default function ContractingApp() {
               pCosts={pCosts}
               pWorkItems={pWorkItems}
               activeProjectId={activeProjectId}
-              setCosts={setCosts}
+              onAddCost={addCost}
             />
           )}
           {tab === "extracts" && (
             <ExtractsTab
               pExtracts={pExtracts}
               collections={collections}
-              setExtracts={setExtracts}
-              setCollections={setCollections}
+              onAddExtract={addExtract}
+              onAddCollection={addCollection}
               activeProjectId={activeProjectId}
               projectBudget={project?.budget}
             />
@@ -277,14 +365,15 @@ export default function ContractingApp() {
       {showNewProject && (
         <NewProjectModal
           onClose={() => setShowNewProject(false)}
-          onCreate={(p) => {
-            setProjects((prev) => [...prev, p]);
+          onCreate={async (p) => {
+            await addProject(p);
             setActiveProjectId(p.id);
             setShowNewProject(false);
           }}
         />
       )}
     </div>
+
   );
 }
 
@@ -373,16 +462,13 @@ function Dashboard({ totals, pWorkItems, pCosts, pExtracts, collections }) {
 
 /* ------------------------------- work items -------------------------------- */
 
-function WorkItemsTab({ pWorkItems, pCosts, activeProjectId, setWorkItems }) {
+function WorkItemsTab({ pWorkItems, pCosts, activeProjectId, onAddWorkItem }) {
   const [form, setForm] = useState({ name: "", unit: "", qty: "", price: "" });
   const [open, setOpen] = useState(false);
 
   const submit = () => {
     if (!form.name || !form.qty || !form.price) return;
-    setWorkItems((prev) => [
-      ...prev,
-      { id: "w_" + Math.random().toString(36).slice(2, 8), projectId: activeProjectId, name: form.name, unit: form.unit || "-", qty: Number(form.qty), price: Number(form.price) },
-    ]);
+    onAddWorkItem({ id: "w_" + Math.random().toString(36).slice(2, 8), projectId: activeProjectId, name: form.name, unit: form.unit || "-", qty: Number(form.qty), price: Number(form.price) });
     setForm({ name: "", unit: "", qty: "", price: "" });
     setOpen(false);
   };
@@ -447,7 +533,7 @@ function WorkItemsTab({ pWorkItems, pCosts, activeProjectId, setWorkItems }) {
 
 /* --------------------------------- costs --------------------------------- */
 
-function CostsTab({ pCosts, pWorkItems, activeProjectId, setCosts }) {
+function CostsTab({ pCosts, pWorkItems, activeProjectId, onAddCost }) {
   const [filter, setFilter] = useState("الكل");
   const [open, setOpen] = useState(false);
   const [form, setForm] = useState({ type: "مشتريات", workItemId: "", desc: "", customDesc: "", qty: "1", unit: "", price: "", date: "" });
@@ -457,20 +543,17 @@ function CostsTab({ pCosts, pWorkItems, activeProjectId, setCosts }) {
 
   const submit = () => {
     if (!finalDesc || !form.price) return;
-    setCosts((prev) => [
-      ...prev,
-      {
-        id: "c_" + Math.random().toString(36).slice(2, 8),
-        projectId: activeProjectId,
-        workItemId: form.workItemId || null,
-        type: form.type,
-        desc: finalDesc,
-        qty: Number(form.qty) || 1,
-        unit: form.unit || "-",
-        price: Number(form.price),
-        date: form.date || new Date().toISOString().slice(0, 10),
-      },
-    ]);
+    onAddCost({
+      id: "c_" + Math.random().toString(36).slice(2, 8),
+      projectId: activeProjectId,
+      workItemId: form.workItemId || null,
+      type: form.type,
+      desc: finalDesc,
+      qty: Number(form.qty) || 1,
+      unit: form.unit || "-",
+      price: Number(form.price),
+      date: form.date || new Date().toISOString().slice(0, 10),
+    });
     setForm({ type: "مشتريات", workItemId: "", desc: "", customDesc: "", qty: "1", unit: "", price: "", date: "" });
     setOpen(false);
   };
@@ -585,7 +668,7 @@ function CostsTab({ pCosts, pWorkItems, activeProjectId, setCosts }) {
 
 /* -------------------------------- extracts -------------------------------- */
 
-function ExtractsTab({ pExtracts, collections, setExtracts, setCollections, activeProjectId, projectBudget }) {
+function ExtractsTab({ pExtracts, collections, onAddExtract, onAddCollection, activeProjectId, projectBudget }) {
   const [open, setOpen] = useState(false);
   const [form, setForm] = useState({ number: "", date: "", percentage: "", amount: "" });
   const [expanded, setExpanded] = useState(null);
@@ -593,20 +676,14 @@ function ExtractsTab({ pExtracts, collections, setExtracts, setCollections, acti
 
   const submit = () => {
     if (!form.number || !form.amount) return;
-    setExtracts((prev) => [
-      ...prev,
-      { id: "e_" + Math.random().toString(36).slice(2, 8), projectId: activeProjectId, number: Number(form.number), date: form.date || new Date().toISOString().slice(0, 10), percentage: Number(form.percentage) || 0, amount: Number(form.amount) },
-    ]);
+    onAddExtract({ id: "e_" + Math.random().toString(36).slice(2, 8), projectId: activeProjectId, number: Number(form.number), date: form.date || new Date().toISOString().slice(0, 10), percentage: Number(form.percentage) || 0, amount: Number(form.amount) });
     setForm({ number: "", date: "", percentage: "", amount: "" });
     setOpen(false);
   };
 
-  const addCollection = (extractId) => {
+  const addCollectionForExtract = (extractId) => {
     if (!collForm.amount) return;
-    setCollections((prev) => [
-      ...prev,
-      { id: "cl_" + Math.random().toString(36).slice(2, 8), extractId, amount: Number(collForm.amount), date: collForm.date || new Date().toISOString().slice(0, 10), method: collForm.method },
-    ]);
+    onAddCollection({ id: "cl_" + Math.random().toString(36).slice(2, 8), extractId, amount: Number(collForm.amount), date: collForm.date || new Date().toISOString().slice(0, 10), method: collForm.method });
     setCollForm({ amount: "", date: "", method: "تحويل بنكي" });
   };
 
@@ -688,7 +765,7 @@ function ExtractsTab({ pExtracts, collections, setExtracts, setCollections, acti
                     <Field label="المبلغ" value={collForm.amount} onChange={(v) => setCollForm((f) => ({ ...f, amount: v }))} type="number" small />
                     <Field label="التاريخ" value={collForm.date} onChange={(v) => setCollForm((f) => ({ ...f, date: v }))} type="date" small />
                     <SelectField label="طريقة التحصيل" value={collForm.method} onChange={(v) => setCollForm((f) => ({ ...f, method: v }))} options={[{ value: "تحويل بنكي", label: "تحويل بنكي" }, { value: "شيك", label: "شيك" }, { value: "نقدي", label: "نقدي" }]} small />
-                    <button onClick={() => addCollection(e.id)} className="px-3 py-2 rounded-lg bg-[#3F7D63] text-white text-xs font-semibold hover:bg-[#356A54] transition h-[38px]">تسجيل تحصيل</button>
+                    <button onClick={() => addCollectionForExtract(e.id)} className="px-3 py-2 rounded-lg bg-[#3F7D63] text-white text-xs font-semibold hover:bg-[#356A54] transition h-[38px]">تسجيل تحصيل</button>
                   </div>
                 </div>
               )}
