@@ -85,7 +85,7 @@ function useId(prefix) {
 
 /* ---------------------------------- app ---------------------------------- */
 
-export default function ContractingApp() {
+function ContractingApp() {
   const [projects, setProjects] = useState([]);
   const [workItems, setWorkItems] = useState([]);
   const [costs, setCosts] = useState([]);
@@ -916,3 +916,107 @@ function SelectField({ label, value, onChange, options, small }) {
     </div>
   );
 }
+
+/* -------------------------------- login screen ------------------------------- */
+
+function useLiveClock() {
+  const [now, setNow] = useState(new Date());
+  useEffect(() => {
+    const t = setInterval(() => setNow(new Date()), 1000);
+    return () => clearInterval(t);
+  }, []);
+  return now;
+}
+
+function LoginScreen({ onSuccess }) {
+  const now = useLiveClock();
+  const [username, setUsername] = useState("");
+  const [password, setPassword] = useState("");
+  const [error, setError] = useState("");
+  const [loading, setLoading] = useState(false);
+
+  const dateStr = now.toLocaleDateString("en-US", { weekday: "short", day: "2-digit", month: "short", year: "numeric" });
+  const timeStr = now.toLocaleTimeString("en-US", { hour: "2-digit", minute: "2-digit", second: "2-digit", hour12: true });
+
+  const submit = async (e) => {
+    e.preventDefault();
+    if (!username || !password) return;
+    setLoading(true);
+    setError("");
+    const { data, error: rpcError } = await supabase.rpc("verify_login", { p_username: username, p_password: password });
+    setLoading(false);
+    if (rpcError) { setError("حصل خطأ في الاتصال بالسيرفر"); return; }
+    if (data === true) { onSuccess(); } else { setError("اسم المستخدم أو كلمة المرور غير صحيحة"); }
+  };
+
+  return (
+    <div dir="rtl" style={{ fontFamily: "'Cairo', sans-serif" }} className="w-full min-h-screen flex items-center justify-center relative overflow-hidden" >
+      <style>{`
+        @import url('https://fonts.googleapis.com/css2?family=Cairo:wght@400;500;600;700;800&family=IBM+Plex+Mono:wght@400;500;600&display=swap');
+        .mono { font-family: 'IBM Plex Mono', monospace; }
+        .login-bg {
+          background-color: #14212C;
+          background-image:
+            radial-gradient(circle at 20% 20%, rgba(232,103,44,0.08), transparent 40%),
+            linear-gradient(rgba(255,255,255,0.035) 1px, transparent 1px),
+            linear-gradient(90deg, rgba(255,255,255,0.035) 1px, transparent 1px);
+          background-size: 100% 100%, 28px 28px, 28px 28px;
+        }
+      `}</style>
+      <div className="login-bg absolute inset-0" />
+
+      <div className="relative z-10 flex flex-col items-center px-6 w-full">
+        <div className="flex flex-col items-center mb-2">
+          <div className="w-16 h-16 rounded-2xl bg-[#E8672C] flex items-center justify-center mb-4 shadow-lg shadow-[#E8672C]/20">
+            <Building2 size={30} className="text-white" strokeWidth={2.2} />
+          </div>
+          <h1 className="text-white text-3xl font-extrabold tracking-wide">Omar ERP</h1>
+          <div className="w-10 h-[2px] bg-[#E8672C] my-3" />
+          <p className="text-white/50 text-xs font-semibold tracking-[0.2em]">CONTRACTING MANAGEMENT</p>
+        </div>
+
+        <form onSubmit={submit} className="bg-[#F6F3EA] rounded-2xl p-7 w-full max-w-sm mt-8 shadow-2xl">
+          <label className="block text-[12px] font-bold text-[#1E2530] mb-1.5">اسم المستخدم</label>
+          <input
+            autoFocus
+            value={username}
+            onChange={(e) => setUsername(e.target.value)}
+            placeholder="ادخل اسم المستخدم"
+            className="w-full border border-[#E1DACB] rounded-lg px-3 py-2.5 text-sm outline-none focus:border-[#E8672C] transition bg-white mb-4"
+          />
+          <label className="block text-[12px] font-bold text-[#1E2530] mb-1.5">كلمة المرور</label>
+          <input
+            type="password"
+            value={password}
+            onChange={(e) => setPassword(e.target.value)}
+            placeholder="ادخل كلمة المرور"
+            className="w-full border border-[#E1DACB] rounded-lg px-3 py-2.5 text-sm outline-none focus:border-[#E8672C] transition bg-white mb-2"
+          />
+          {error && <div className="text-[#C1453B] text-xs font-semibold mb-3 mt-1">{error}</div>}
+          <button
+            type="submit"
+            disabled={loading}
+            className="w-full mt-3 py-2.5 rounded-lg bg-[#1E2530] text-white font-bold text-sm hover:bg-[#2b3543] transition disabled:opacity-60 flex items-center justify-center gap-2"
+          >
+            {loading ? <Loader2 size={16} className="animate-spin" /> : null}
+            تسجيل الدخول
+          </button>
+        </form>
+      </div>
+
+      <div className="absolute bottom-0 inset-x-0 flex items-center justify-between px-6 py-4 text-white/40 text-[11px] z-10">
+        <span>© {now.getFullYear()} Omar ERP. جميع الحقوق محفوظة.</span>
+        <span className="mono bg-white/5 border border-white/10 rounded px-2.5 py-1 text-[#E8672C]">{dateStr} · {timeStr}</span>
+      </div>
+    </div>
+  );
+}
+
+export default function App() {
+  const [authenticated, setAuthenticated] = useState(false);
+  if (!authenticated) {
+    return <LoginScreen onSuccess={() => setAuthenticated(true)} />;
+  }
+  return <ContractingApp />;
+}
+
