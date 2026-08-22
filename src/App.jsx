@@ -6,6 +6,7 @@ import {
   Building2, LayoutGrid, Hammer, Receipt, FileStack, Wallet, Plus, X,
   TrendingUp, TrendingDown, ChevronDown, ChevronRight, Package, HardHat,
   Landmark, CircleDollarSign, CheckCircle2, Clock, Ruler, Users, Loader2,
+  Trash2, Pencil,
 } from "lucide-react";
 import { supabase } from "./supabaseClient";
 
@@ -167,6 +168,70 @@ function ContractingApp() {
     setCollections((prev) => [...prev, cl]);
   }
 
+  async function updateWorkItem(id, patch) {
+    const { error } = await supabase.from("work_items").update({ name: patch.name, unit: patch.unit, qty: patch.qty, price: patch.price }).eq("id", id);
+    if (error) { alert("حصل خطأ أثناء تعديل بند العمل: " + error.message); return; }
+    setWorkItems((prev) => prev.map((w) => (w.id === id ? { ...w, ...patch } : w)));
+  }
+
+  async function deleteWorkItem(id) {
+    if (!window.confirm("متأكد إنك عايز تمسح بند العمل ده؟ هيتمسح معاه أي تكاليف مرتبطة بيه.")) return;
+    const { error: costsError } = await supabase.from("costs").delete().eq("work_item_id", id);
+    if (costsError) { alert("حصل خطأ أثناء حذف التكاليف المرتبطة: " + costsError.message); return; }
+    const { error } = await supabase.from("work_items").delete().eq("id", id);
+    if (error) { alert("حصل خطأ أثناء حذف بند العمل: " + error.message); return; }
+    setWorkItems((prev) => prev.filter((w) => w.id !== id));
+    setCosts((prev) => prev.filter((c) => c.workItemId !== id));
+  }
+
+  async function updateCost(id, patch) {
+    const { error } = await supabase.from("costs").update({ type: patch.type, work_item_id: patch.workItemId, description: patch.desc, qty: patch.qty, unit: patch.unit, price: patch.price, date: patch.date }).eq("id", id);
+    if (error) { alert("حصل خطأ أثناء تعديل التكلفة: " + error.message); return; }
+    setCosts((prev) => prev.map((c) => (c.id === id ? { ...c, ...patch } : c)));
+  }
+
+  async function deleteCost(id) {
+    if (!window.confirm("متأكد إنك عايز تمسح التكلفة دي؟")) return;
+    const { error } = await supabase.from("costs").delete().eq("id", id);
+    if (error) { alert("حصل خطأ أثناء حذف التكلفة: " + error.message); return; }
+    setCosts((prev) => prev.filter((c) => c.id !== id));
+  }
+
+  async function updateExtract(id, patch) {
+    const { error } = await supabase.from("extracts").update({ number: patch.number, date: patch.date, percentage: patch.percentage, amount: patch.amount }).eq("id", id);
+    if (error) { alert("حصل خطأ أثناء تعديل المستخلص: " + error.message); return; }
+    setExtracts((prev) => prev.map((e) => (e.id === id ? { ...e, ...patch } : e)));
+  }
+
+  async function deleteExtract(id) {
+    if (!window.confirm("متأكد إنك عايز تمسح المستخلص ده؟ هيتمسح معاه أي تحصيلات مرتبطة بيه.")) return;
+    const { error } = await supabase.from("extracts").delete().eq("id", id);
+    if (error) { alert("حصل خطأ أثناء حذف المستخلص: " + error.message); return; }
+    setExtracts((prev) => prev.filter((e) => e.id !== id));
+    setCollections((prev) => prev.filter((c) => c.extractId !== id));
+  }
+
+  async function deleteCollection(id) {
+    if (!window.confirm("متأكد إنك عايز تمسح التحصيل ده؟")) return;
+    const { error } = await supabase.from("collections").delete().eq("id", id);
+    if (error) { alert("حصل خطأ أثناء حذف التحصيل: " + error.message); return; }
+    setCollections((prev) => prev.filter((c) => c.id !== id));
+  }
+
+  async function deleteProject(id) {
+    if (!window.confirm("متأكد إنك عايز تمسح المشروع ده بالكامل؟ هيتمسح معاه كل بنود الأعمال والتكاليف والمستخلصات المرتبطة بيه. الإجراء ده لا يمكن التراجع عنه.")) return;
+    const { error } = await supabase.from("projects").delete().eq("id", id);
+    if (error) { alert("حصل خطأ أثناء حذف المشروع: " + error.message); return; }
+    const remaining = projects.filter((p) => p.id !== id);
+    setProjects(remaining);
+    setWorkItems((prev) => prev.filter((w) => w.projectId !== id));
+    setCosts((prev) => prev.filter((c) => c.projectId !== id));
+    const remainingExtractIds = extracts.filter((e) => e.projectId === id).map((e) => e.id);
+    setExtracts((prev) => prev.filter((e) => e.projectId !== id));
+    setCollections((prev) => prev.filter((c) => !remainingExtractIds.includes(c.extractId)));
+    if (activeProjectId === id && remaining.length > 0) setActiveProjectId(remaining[0].id);
+  }
+
   const project = projects.find((p) => p.id === activeProjectId);
   const pWorkItems = workItems.filter((w) => w.projectId === activeProjectId);
   const pCosts = costs.filter((c) => c.projectId === activeProjectId);
@@ -294,6 +359,14 @@ function ContractingApp() {
             <div className="font-semibold text-white/60 mb-1">{project?.name}</div>
             {project?.client} · {project?.location}
           </div>
+          {project && (
+            <button
+              onClick={() => deleteProject(project.id)}
+              className="w-full mt-2 px-3 py-1.5 rounded-lg text-[11px] font-semibold text-[#F0918A] hover:bg-[#C1453B]/10 flex items-center justify-center gap-1.5 transition"
+            >
+              <Trash2 size={12} /> حذف هذا المشروع
+            </button>
+          )}
         </div>
       </aside>
 
@@ -336,6 +409,8 @@ function ContractingApp() {
               pCosts={pCosts}
               activeProjectId={activeProjectId}
               onAddWorkItem={addWorkItem}
+              onUpdateWorkItem={updateWorkItem}
+              onDeleteWorkItem={deleteWorkItem}
             />
           )}
           {tab === "costs" && (
@@ -344,6 +419,8 @@ function ContractingApp() {
               pWorkItems={pWorkItems}
               activeProjectId={activeProjectId}
               onAddCost={addCost}
+              onUpdateCost={updateCost}
+              onDeleteCost={deleteCost}
             />
           )}
           {tab === "extracts" && (
@@ -352,6 +429,9 @@ function ContractingApp() {
               collections={collections}
               onAddExtract={addExtract}
               onAddCollection={addCollection}
+              onUpdateExtract={updateExtract}
+              onDeleteExtract={deleteExtract}
+              onDeleteCollection={deleteCollection}
               activeProjectId={activeProjectId}
               projectBudget={project?.budget}
             />
@@ -462,15 +542,28 @@ function Dashboard({ totals, pWorkItems, pCosts, pExtracts, collections }) {
 
 /* ------------------------------- work items -------------------------------- */
 
-function WorkItemsTab({ pWorkItems, pCosts, activeProjectId, onAddWorkItem }) {
+function WorkItemsTab({ pWorkItems, pCosts, activeProjectId, onAddWorkItem, onUpdateWorkItem, onDeleteWorkItem }) {
   const [form, setForm] = useState({ name: "", unit: "", qty: "", price: "" });
   const [open, setOpen] = useState(false);
+  const [editId, setEditId] = useState(null);
+  const [editForm, setEditForm] = useState({ name: "", unit: "", qty: "", price: "" });
 
   const submit = () => {
     if (!form.name || !form.qty || !form.price) return;
     onAddWorkItem({ id: "w_" + Math.random().toString(36).slice(2, 8), projectId: activeProjectId, name: form.name, unit: form.unit || "-", qty: Number(form.qty), price: Number(form.price) });
     setForm({ name: "", unit: "", qty: "", price: "" });
     setOpen(false);
+  };
+
+  const startEdit = (w) => {
+    setEditId(w.id);
+    setEditForm({ name: w.name, unit: w.unit, qty: String(w.qty), price: String(w.price) });
+  };
+
+  const saveEdit = () => {
+    if (!editForm.name || !editForm.qty || !editForm.price) return;
+    onUpdateWorkItem(editId, { name: editForm.name, unit: editForm.unit || "-", qty: Number(editForm.qty), price: Number(editForm.price) });
+    setEditId(null);
   };
 
   return (
@@ -504,25 +597,50 @@ function WorkItemsTab({ pWorkItems, pCosts, activeProjectId, onAddWorkItem }) {
               <th className="text-right py-3 px-4 font-semibold">سعر الوحدة</th>
               <th className="text-right py-3 px-4 font-semibold">إجمالي الميزانية</th>
               <th className="text-right py-3 px-4 font-semibold">التكلفة الفعلية</th>
+              <th className="text-right py-3 px-4 font-semibold w-20"></th>
             </tr>
           </thead>
           <tbody className="divide-y divide-[#EFEBDF]">
             {pWorkItems.map((w) => {
               const actual = pCosts.filter((c) => c.workItemId === w.id).reduce((s, c) => s + c.qty * c.price, 0);
               const budget = w.qty * w.price;
+              const isEditing = editId === w.id;
+              if (isEditing) {
+                return (
+                  <tr key={w.id} className="bg-[#FAF8F2]">
+                    <td className="py-2 px-2"><input value={editForm.name} onChange={(e) => setEditForm((f) => ({ ...f, name: e.target.value }))} className="w-full border border-[#E1DACB] rounded-md px-2 py-1.5 text-sm outline-none focus:border-[#E8672C]" /></td>
+                    <td className="py-2 px-2"><input value={editForm.unit} onChange={(e) => setEditForm((f) => ({ ...f, unit: e.target.value }))} className="w-full border border-[#E1DACB] rounded-md px-2 py-1.5 text-sm outline-none focus:border-[#E8672C]" /></td>
+                    <td className="py-2 px-2"><input type="number" value={editForm.qty} onChange={(e) => setEditForm((f) => ({ ...f, qty: e.target.value }))} className="w-full border border-[#E1DACB] rounded-md px-2 py-1.5 text-sm outline-none focus:border-[#E8672C]" /></td>
+                    <td className="py-2 px-2"><input type="number" value={editForm.price} onChange={(e) => setEditForm((f) => ({ ...f, price: e.target.value }))} className="w-full border border-[#E1DACB] rounded-md px-2 py-1.5 text-sm outline-none focus:border-[#E8672C]" /></td>
+                    <td className="py-3 px-4 mono text-[#9A9483]" colSpan={2}>—</td>
+                    <td className="py-2 px-2">
+                      <div className="flex gap-1.5 justify-end">
+                        <button onClick={saveEdit} className="px-2.5 py-1.5 rounded-md bg-[#3F7D63] text-white text-xs font-semibold hover:bg-[#356A54] transition">حفظ</button>
+                        <button onClick={() => setEditId(null)} className="px-2.5 py-1.5 rounded-md bg-[#E1DACB] text-[#1E2530] text-xs font-semibold hover:bg-[#D8D3C7] transition">إلغاء</button>
+                      </div>
+                    </td>
+                  </tr>
+                );
+              }
               return (
-                <tr key={w.id} className="hover:bg-[#FAF8F2] transition">
+                <tr key={w.id} className="hover:bg-[#FAF8F2] transition group">
                   <td className="py-3 px-4 font-semibold text-[#1E2530]">{w.name}</td>
                   <td className="py-3 px-4 text-[#6B7280]">{w.unit}</td>
                   <td className="py-3 px-4 mono">{fmt(w.qty)}</td>
                   <td className="py-3 px-4 mono">{fmt(w.price)}</td>
                   <td className="py-3 px-4 mono font-bold">{money(budget)}</td>
                   <td className={`py-3 px-4 mono font-bold ${actual > budget ? "text-[#C1453B]" : "text-[#3F7D63]"}`}>{money(actual)}</td>
+                  <td className="py-3 px-4">
+                    <div className="flex gap-1 justify-end opacity-0 group-hover:opacity-100 transition">
+                      <button onClick={() => startEdit(w)} title="تعديل" className="p-1.5 rounded-md text-[#6B7280] hover:bg-[#E1DACB] hover:text-[#1E2530] transition"><Pencil size={14} /></button>
+                      <button onClick={() => onDeleteWorkItem(w.id)} title="حذف" className="p-1.5 rounded-md text-[#C1453B] hover:bg-[#C1453B]/10 transition"><Trash2 size={14} /></button>
+                    </div>
+                  </td>
                 </tr>
               );
             })}
             {pWorkItems.length === 0 && (
-              <tr><td colSpan={6} className="text-center py-8 text-[#9A9483]">لا توجد بنود أعمال بعد.</td></tr>
+              <tr><td colSpan={7} className="text-center py-8 text-[#9A9483]">لا توجد بنود أعمال بعد.</td></tr>
             )}
           </tbody>
         </table>
@@ -533,28 +651,56 @@ function WorkItemsTab({ pWorkItems, pCosts, activeProjectId, onAddWorkItem }) {
 
 /* --------------------------------- costs --------------------------------- */
 
-function CostsTab({ pCosts, pWorkItems, activeProjectId, onAddCost }) {
+function CostsTab({ pCosts, pWorkItems, activeProjectId, onAddCost, onUpdateCost, onDeleteCost }) {
   const [filter, setFilter] = useState("الكل");
   const [open, setOpen] = useState(false);
+  const [editId, setEditId] = useState(null);
   const [form, setForm] = useState({ type: "مشتريات", workItemId: "", desc: "", customDesc: "", qty: "1", unit: "", price: "", date: "" });
 
   const isGeneral = form.type === "مصروفات عمومية";
   const finalDesc = isGeneral ? (form.desc === "أخرى" ? form.customDesc : form.desc) : form.desc;
 
+  const resetForm = () => setForm({ type: "مشتريات", workItemId: "", desc: "", customDesc: "", qty: "1", unit: "", price: "", date: "" });
+
   const submit = () => {
     if (!finalDesc || !form.price) return;
-    onAddCost({
-      id: "c_" + Math.random().toString(36).slice(2, 8),
-      projectId: activeProjectId,
-      workItemId: form.workItemId || null,
-      type: form.type,
-      desc: finalDesc,
-      qty: Number(form.qty) || 1,
-      unit: form.unit || "-",
-      price: Number(form.price),
-      date: form.date || new Date().toISOString().slice(0, 10),
-    });
-    setForm({ type: "مشتريات", workItemId: "", desc: "", customDesc: "", qty: "1", unit: "", price: "", date: "" });
+    if (editId) {
+      onUpdateCost(editId, {
+        type: form.type,
+        workItemId: form.workItemId || null,
+        desc: finalDesc,
+        qty: Number(form.qty) || 1,
+        unit: form.unit || "-",
+        price: Number(form.price),
+        date: form.date || new Date().toISOString().slice(0, 10),
+      });
+      setEditId(null);
+    } else {
+      onAddCost({
+        id: "c_" + Math.random().toString(36).slice(2, 8),
+        projectId: activeProjectId,
+        workItemId: form.workItemId || null,
+        type: form.type,
+        desc: finalDesc,
+        qty: Number(form.qty) || 1,
+        unit: form.unit || "-",
+        price: Number(form.price),
+        date: form.date || new Date().toISOString().slice(0, 10),
+      });
+    }
+    resetForm();
+    setOpen(false);
+  };
+
+  const startEdit = (c) => {
+    setEditId(c.id);
+    setForm({ type: c.type, workItemId: c.workItemId || "", desc: c.desc, customDesc: "", qty: String(c.qty), unit: c.unit, price: String(c.price), date: c.date });
+    setOpen(true);
+  };
+
+  const cancelForm = () => {
+    setEditId(null);
+    resetForm();
     setOpen(false);
   };
 
@@ -564,7 +710,7 @@ function CostsTab({ pCosts, pWorkItems, activeProjectId, onAddCost }) {
     <div className="space-y-5">
       <div className="flex items-center justify-between">
         <h2 className="font-bold text-[#1E2530] text-lg">التكاليف</h2>
-        <button onClick={() => setOpen((o) => !o)} className="px-3 py-2 rounded-lg bg-[#1E2530] text-white text-sm font-semibold flex items-center gap-1.5 hover:bg-[#2b3543] transition">
+        <button onClick={() => (open ? cancelForm() : setOpen(true))} className="px-3 py-2 rounded-lg bg-[#1E2530] text-white text-sm font-semibold flex items-center gap-1.5 hover:bg-[#2b3543] transition">
           <Plus size={15} /> تسجيل تكلفة
         </button>
       </div>
@@ -585,6 +731,9 @@ function CostsTab({ pCosts, pWorkItems, activeProjectId, onAddCost }) {
 
       {open && (
         <div className="bg-white rounded-xl border border-[#E1DACB] p-4 grid grid-cols-3 gap-3">
+          {editId && (
+            <div className="col-span-3 text-xs font-semibold text-[#E8672C] bg-[#E8672C]/10 rounded-md px-3 py-1.5">جاري تعديل تكلفة موجودة</div>
+          )}
           <SelectField label="نوع التكلفة" value={form.type} onChange={(v) => setForm((f) => ({ ...f, type: v }))} options={COST_TYPES.map((t) => ({ value: t.key, label: t.label }))} />
           <SelectField
             label="بند العمل (اختياري)"
@@ -619,8 +768,9 @@ function CostsTab({ pCosts, pWorkItems, activeProjectId, onAddCost }) {
           <Field label="الكمية" value={form.qty} onChange={(v) => setForm((f) => ({ ...f, qty: v }))} type="number" />
           <Field label="الوحدة" value={form.unit} onChange={(v) => setForm((f) => ({ ...f, unit: v }))} placeholder="طن / دفعة / يوم" />
           <Field label="سعر الوحدة / القيمة" value={form.price} onChange={(v) => setForm((f) => ({ ...f, price: v }))} type="number" />
-          <div className="col-span-3 flex justify-end">
-            <button onClick={submit} className="px-4 py-2 rounded-lg bg-[#E8672C] text-white text-sm font-semibold hover:bg-[#C8511E] transition">حفظ التكلفة</button>
+          <div className="col-span-3 flex justify-end gap-2">
+            {editId && <button onClick={cancelForm} className="px-4 py-2 rounded-lg bg-[#E1DACB] text-[#1E2530] text-sm font-semibold hover:bg-[#D8D3C7] transition">إلغاء</button>}
+            <button onClick={submit} className="px-4 py-2 rounded-lg bg-[#E8672C] text-white text-sm font-semibold hover:bg-[#C8511E] transition">{editId ? "حفظ التعديل" : "حفظ التكلفة"}</button>
           </div>
         </div>
       )}
@@ -636,6 +786,7 @@ function CostsTab({ pCosts, pWorkItems, activeProjectId, onAddCost }) {
               <th className="text-right py-3 px-4 font-semibold">سعر الوحدة</th>
               <th className="text-right py-3 px-4 font-semibold">القيمة</th>
               <th className="text-right py-3 px-4 font-semibold">التاريخ</th>
+              <th className="text-right py-3 px-4 font-semibold w-20"></th>
             </tr>
           </thead>
           <tbody className="divide-y divide-[#EFEBDF]">
@@ -643,7 +794,7 @@ function CostsTab({ pCosts, pWorkItems, activeProjectId, onAddCost }) {
               const meta = COST_TYPES.find((t) => t.key === c.type);
               const w = pWorkItems.find((w) => w.id === c.workItemId);
               return (
-                <tr key={c.id} className="hover:bg-[#FAF8F2] transition">
+                <tr key={c.id} className="hover:bg-[#FAF8F2] transition group">
                   <td className="py-3 px-4">
                     <span className="text-[11px] font-semibold px-2 py-1 rounded-md" style={{ backgroundColor: meta?.color + "18", color: meta?.color }}>{meta?.label}</span>
                   </td>
@@ -653,11 +804,17 @@ function CostsTab({ pCosts, pWorkItems, activeProjectId, onAddCost }) {
                   <td className="py-3 px-4 mono">{fmt(c.price)}</td>
                   <td className="py-3 px-4 mono font-bold">{money(c.qty * c.price)}</td>
                   <td className="py-3 px-4 text-[#9A9483] mono text-xs">{c.date}</td>
+                  <td className="py-3 px-4">
+                    <div className="flex gap-1 justify-end opacity-0 group-hover:opacity-100 transition">
+                      <button onClick={() => startEdit(c)} title="تعديل" className="p-1.5 rounded-md text-[#6B7280] hover:bg-[#E1DACB] hover:text-[#1E2530] transition"><Pencil size={14} /></button>
+                      <button onClick={() => onDeleteCost(c.id)} title="حذف" className="p-1.5 rounded-md text-[#C1453B] hover:bg-[#C1453B]/10 transition"><Trash2 size={14} /></button>
+                    </div>
+                  </td>
                 </tr>
               );
             })}
             {filtered.length === 0 && (
-              <tr><td colSpan={7} className="text-center py-8 text-[#9A9483]">لا توجد تكاليف في هذا التصنيف.</td></tr>
+              <tr><td colSpan={8} className="text-center py-8 text-[#9A9483]">لا توجد تكاليف في هذا التصنيف.</td></tr>
             )}
           </tbody>
         </table>
@@ -668,16 +825,36 @@ function CostsTab({ pCosts, pWorkItems, activeProjectId, onAddCost }) {
 
 /* -------------------------------- extracts -------------------------------- */
 
-function ExtractsTab({ pExtracts, collections, onAddExtract, onAddCollection, activeProjectId, projectBudget }) {
+function ExtractsTab({ pExtracts, collections, onAddExtract, onAddCollection, onUpdateExtract, onDeleteExtract, onDeleteCollection, activeProjectId, projectBudget }) {
   const [open, setOpen] = useState(false);
+  const [editId, setEditId] = useState(null);
   const [form, setForm] = useState({ number: "", date: "", percentage: "", amount: "" });
   const [expanded, setExpanded] = useState(null);
   const [collForm, setCollForm] = useState({ amount: "", date: "", method: "تحويل بنكي" });
 
+  const resetForm = () => setForm({ number: "", date: "", percentage: "", amount: "" });
+
   const submit = () => {
     if (!form.number || !form.amount) return;
-    onAddExtract({ id: "e_" + Math.random().toString(36).slice(2, 8), projectId: activeProjectId, number: Number(form.number), date: form.date || new Date().toISOString().slice(0, 10), percentage: Number(form.percentage) || 0, amount: Number(form.amount) });
-    setForm({ number: "", date: "", percentage: "", amount: "" });
+    if (editId) {
+      onUpdateExtract(editId, { number: Number(form.number), date: form.date || new Date().toISOString().slice(0, 10), percentage: Number(form.percentage) || 0, amount: Number(form.amount) });
+      setEditId(null);
+    } else {
+      onAddExtract({ id: "e_" + Math.random().toString(36).slice(2, 8), projectId: activeProjectId, number: Number(form.number), date: form.date || new Date().toISOString().slice(0, 10), percentage: Number(form.percentage) || 0, amount: Number(form.amount) });
+    }
+    resetForm();
+    setOpen(false);
+  };
+
+  const startEdit = (e) => {
+    setEditId(e.id);
+    setForm({ number: String(e.number), date: e.date, percentage: String(e.percentage), amount: String(e.amount) });
+    setOpen(true);
+  };
+
+  const cancelForm = () => {
+    setEditId(null);
+    resetForm();
     setOpen(false);
   };
 
@@ -691,19 +868,23 @@ function ExtractsTab({ pExtracts, collections, onAddExtract, onAddCollection, ac
     <div className="space-y-5">
       <div className="flex items-center justify-between">
         <h2 className="font-bold text-[#1E2530] text-lg">المستخلصات والتحصيلات</h2>
-        <button onClick={() => setOpen((o) => !o)} className="px-3 py-2 rounded-lg bg-[#1E2530] text-white text-sm font-semibold flex items-center gap-1.5 hover:bg-[#2b3543] transition">
+        <button onClick={() => (open ? cancelForm() : setOpen(true))} className="px-3 py-2 rounded-lg bg-[#1E2530] text-white text-sm font-semibold flex items-center gap-1.5 hover:bg-[#2b3543] transition">
           <Plus size={15} /> مستخلص جديد
         </button>
       </div>
 
       {open && (
         <div className="bg-white rounded-xl border border-[#E1DACB] p-4 grid grid-cols-4 gap-3">
+          {editId && (
+            <div className="col-span-4 text-xs font-semibold text-[#E8672C] bg-[#E8672C]/10 rounded-md px-3 py-1.5">جاري تعديل مستخلص موجود</div>
+          )}
           <Field label="رقم المستخلص" value={form.number} onChange={(v) => setForm((f) => ({ ...f, number: v }))} type="number" />
           <Field label="التاريخ" value={form.date} onChange={(v) => setForm((f) => ({ ...f, date: v }))} type="date" />
           <Field label="نسبة الإنجاز %" value={form.percentage} onChange={(v) => setForm((f) => ({ ...f, percentage: v }))} type="number" />
           <Field label="قيمة المستخلص" value={form.amount} onChange={(v) => setForm((f) => ({ ...f, amount: v }))} type="number" />
-          <div className="col-span-4 flex justify-end">
-            <button onClick={submit} className="px-4 py-2 rounded-lg bg-[#E8672C] text-white text-sm font-semibold hover:bg-[#C8511E] transition">حفظ المستخلص</button>
+          <div className="col-span-4 flex justify-end gap-2">
+            {editId && <button onClick={cancelForm} className="px-4 py-2 rounded-lg bg-[#E1DACB] text-[#1E2530] text-sm font-semibold hover:bg-[#D8D3C7] transition">إلغاء</button>}
+            <button onClick={submit} className="px-4 py-2 rounded-lg bg-[#E8672C] text-white text-sm font-semibold hover:bg-[#C8511E] transition">{editId ? "حفظ التعديل" : "حفظ المستخلص"}</button>
           </div>
         </div>
       )}
@@ -718,15 +899,15 @@ function ExtractsTab({ pExtracts, collections, onAddExtract, onAddCollection, ac
           const outstanding = e.amount - collected;
           const isOpen = expanded === e.id;
           return (
-            <div key={e.id} className="bg-white rounded-xl border border-[#E1DACB] overflow-hidden">
-              <button onClick={() => setExpanded(isOpen ? null : e.id)} className="w-full flex items-center justify-between px-5 py-4 hover:bg-[#FAF8F2] transition">
-                <div className="flex items-center gap-4">
+            <div key={e.id} className="bg-white rounded-xl border border-[#E1DACB] overflow-hidden group">
+              <div className="w-full flex items-center justify-between px-5 py-4 hover:bg-[#FAF8F2] transition">
+                <button onClick={() => setExpanded(isOpen ? null : e.id)} className="flex items-center gap-4 flex-1 text-right">
                   <div className="w-10 h-10 rounded-lg bg-[#E8672C]/10 flex items-center justify-center text-[#E8672C] font-extrabold mono text-sm">#{e.number}</div>
                   <div className="text-right">
                     <div className="font-bold text-[#1E2530]">مستخلص رقم {e.number}</div>
                     <div className="text-[11px] text-[#9A9483] mono">{e.date} · نسبة إنجاز {e.percentage}%</div>
                   </div>
-                </div>
+                </button>
                 <div className="flex items-center gap-6">
                   <div className="text-right">
                     <div className="text-[11px] text-[#9A9483]">قيمة المستخلص</div>
@@ -745,18 +926,27 @@ function ExtractsTab({ pExtracts, collections, onAddExtract, onAddCollection, ac
                   ) : (
                     <Clock size={18} className="text-[#D6A23C]" />
                   )}
-                  <ChevronDown size={16} className={`text-[#9A9483] transition-transform ${isOpen ? "rotate-180" : ""}`} />
+                  <div className="flex gap-1 opacity-0 group-hover:opacity-100 transition">
+                    <button onClick={() => startEdit(e)} title="تعديل" className="p-1.5 rounded-md text-[#6B7280] hover:bg-[#E1DACB] hover:text-[#1E2530] transition"><Pencil size={14} /></button>
+                    <button onClick={() => onDeleteExtract(e.id)} title="حذف" className="p-1.5 rounded-md text-[#C1453B] hover:bg-[#C1453B]/10 transition"><Trash2 size={14} /></button>
+                  </div>
+                  <button onClick={() => setExpanded(isOpen ? null : e.id)}>
+                    <ChevronDown size={16} className={`text-[#9A9483] transition-transform ${isOpen ? "rotate-180" : ""}`} />
+                  </button>
                 </div>
-              </button>
+              </div>
 
               {isOpen && (
                 <div className="border-t border-[#EFEBDF] px-5 py-4 bg-[#FAF8F2]">
                   <div className="text-xs font-semibold text-[#6B7280] mb-2">التحصيلات</div>
                   <div className="space-y-1.5 mb-4">
                     {eColls.map((c) => (
-                      <div key={c.id} className="flex items-center justify-between bg-white rounded-lg px-3 py-2 border border-[#E1DACB] text-sm">
+                      <div key={c.id} className="flex items-center justify-between bg-white rounded-lg px-3 py-2 border border-[#E1DACB] text-sm group/coll">
                         <span className="text-[#6B7280]">{c.method} · {c.date}</span>
-                        <span className="font-bold mono text-[#3F7D63]">{money(c.amount)}</span>
+                        <div className="flex items-center gap-2">
+                          <span className="font-bold mono text-[#3F7D63]">{money(c.amount)}</span>
+                          <button onClick={() => onDeleteCollection(c.id)} title="حذف التحصيل" className="p-1 rounded-md text-[#C1453B] opacity-0 group-hover/coll:opacity-100 hover:bg-[#C1453B]/10 transition"><Trash2 size={13} /></button>
+                        </div>
                       </div>
                     ))}
                     {eColls.length === 0 && <div className="text-xs text-[#9A9483] py-1">لم يتم تحصيل أي مبلغ بعد.</div>}
