@@ -6,7 +6,7 @@ import {
   Building2, LayoutGrid, Hammer, Receipt, FileStack, Wallet, Plus, X,
   TrendingUp, TrendingDown, ChevronDown, ChevronRight, Package, HardHat,
   Landmark, CircleDollarSign, CheckCircle2, Clock, Ruler, Users, Loader2,
-  Trash2, Pencil,
+  Trash2, Pencil, Printer,
 } from "lucide-react";
 import { supabase } from "./supabaseClient";
 
@@ -434,6 +434,8 @@ function ContractingApp() {
               onDeleteCollection={deleteCollection}
               activeProjectId={activeProjectId}
               projectBudget={project?.budget}
+              projectName={project?.name}
+              projectClient={project?.client}
             />
           )}
           {tab === "budget" && (
@@ -825,7 +827,7 @@ function CostsTab({ pCosts, pWorkItems, activeProjectId, onAddCost, onUpdateCost
 
 /* -------------------------------- extracts -------------------------------- */
 
-function ExtractsTab({ pExtracts, collections, onAddExtract, onAddCollection, onUpdateExtract, onDeleteExtract, onDeleteCollection, activeProjectId, projectBudget }) {
+function ExtractsTab({ pExtracts, collections, onAddExtract, onAddCollection, onUpdateExtract, onDeleteExtract, onDeleteCollection, activeProjectId, projectBudget, projectName, projectClient }) {
   const [open, setOpen] = useState(false);
   const [editId, setEditId] = useState(null);
   const [form, setForm] = useState({ number: "", date: "", percentage: "", amount: "" });
@@ -862,6 +864,101 @@ function ExtractsTab({ pExtracts, collections, onAddExtract, onAddCollection, on
     if (!collForm.amount) return;
     onAddCollection({ id: "cl_" + Math.random().toString(36).slice(2, 8), extractId, amount: Number(collForm.amount), date: collForm.date || new Date().toISOString().slice(0, 10), method: collForm.method });
     setCollForm({ amount: "", date: "", method: "تحويل بنكي" });
+  };
+
+  const printExtract = (extract) => {
+    const eColls = collections.filter((c) => c.extractId === extract.id);
+    const collected = eColls.reduce((s, c) => s + c.amount, 0);
+    const outstanding = extract.amount - collected;
+
+    const rowsHtml = eColls.length
+      ? eColls.map((c) => `
+          <tr>
+            <td>${c.date || "-"}</td>
+            <td>${c.method || "-"}</td>
+            <td class="num">${money(c.amount)}</td>
+          </tr>`).join("")
+      : `<tr><td colspan="3" class="empty">لم يتم تحصيل أي مبلغ بعد</td></tr>`;
+
+    const html = `<!doctype html>
+<html lang="ar" dir="rtl">
+<head>
+<meta charset="UTF-8" />
+<title>مستخلص رقم ${extract.number}</title>
+<style>
+  @import url('https://fonts.googleapis.com/css2?family=Cairo:wght@400;600;700;800&family=IBM+Plex+Mono:wght@500;600&display=swap');
+  * { box-sizing: border-box; }
+  body { font-family: 'Cairo', sans-serif; color: #1E2530; margin: 0; padding: 32px; direction: rtl; }
+  .mono { font-family: 'IBM Plex Mono', monospace; }
+  .header { display: flex; align-items: center; justify-content: space-between; border-bottom: 3px solid #E8672C; padding-bottom: 16px; margin-bottom: 24px; }
+  .brand { display: flex; align-items: center; gap: 10px; }
+  .brand-badge { width: 40px; height: 40px; border-radius: 10px; background: #E8672C; color: #fff; display: flex; align-items: center; justify-content: center; font-weight: 800; font-size: 18px; }
+  .brand-name { font-weight: 800; font-size: 20px; }
+  .doc-title { text-align: left; }
+  .doc-title h1 { margin: 0; font-size: 20px; }
+  .doc-title .num { color: #E8672C; font-weight: 800; }
+  .meta { display: grid; grid-template-columns: 1fr 1fr; gap: 10px 24px; background: #F6F3EA; border-radius: 10px; padding: 16px 20px; margin-bottom: 22px; font-size: 13px; }
+  .meta div span.label { color: #6B7280; display: block; font-size: 11px; margin-bottom: 2px; }
+  .meta div span.value { font-weight: 700; }
+  .stats { display: flex; gap: 12px; margin-bottom: 24px; }
+  .stat { flex: 1; border: 1px solid #E1DACB; border-radius: 10px; padding: 12px 14px; }
+  .stat .label { font-size: 11px; color: #6B7280; margin-bottom: 4px; }
+  .stat .value { font-weight: 800; font-size: 16px; }
+  .green { color: #3F7D63; } .amber { color: #D6A23C; }
+  table { width: 100%; border-collapse: collapse; font-size: 13px; margin-bottom: 24px; }
+  th { background: #1E2530; color: #fff; text-align: right; padding: 10px 12px; font-size: 12px; }
+  td { padding: 10px 12px; border-bottom: 1px solid #EFEBDF; }
+  td.num { font-weight: 700; }
+  td.empty { text-align: center; color: #9A9483; padding: 20px; }
+  .footer { display: flex; justify-content: space-between; font-size: 11px; color: #9A9483; border-top: 1px solid #E1DACB; padding-top: 12px; margin-top: 40px; }
+  @media print { body { padding: 14mm; } @page { size: A4; margin: 0; } }
+</style>
+</head>
+<body>
+  <div class="header">
+    <div class="brand">
+      <div class="brand-badge">O</div>
+      <div class="brand-name">Omar ERP</div>
+    </div>
+    <div class="doc-title">
+      <h1>مستخلص رقم <span class="num">${extract.number}</span></h1>
+    </div>
+  </div>
+
+  <div class="meta">
+    <div><span class="label">المشروع</span><span class="value">${projectName || "-"}</span></div>
+    <div><span class="label">العميل</span><span class="value">${projectClient || "-"}</span></div>
+    <div><span class="label">تاريخ المستخلص</span><span class="value">${extract.date || "-"}</span></div>
+    <div><span class="label">نسبة الإنجاز</span><span class="value">${extract.percentage}%</span></div>
+  </div>
+
+  <div class="stats">
+    <div class="stat"><div class="label">قيمة المستخلص</div><div class="value mono">${money(extract.amount)}</div></div>
+    <div class="stat"><div class="label">المُحصَّل</div><div class="value mono green">${money(collected)}</div></div>
+    <div class="stat"><div class="label">المتبقي</div><div class="value mono ${outstanding > 0 ? "amber" : "green"}">${money(outstanding)}</div></div>
+  </div>
+
+  <table>
+    <thead><tr><th>التاريخ</th><th>طريقة التحصيل</th><th>المبلغ</th></tr></thead>
+    <tbody>${rowsHtml}</tbody>
+  </table>
+
+  <div class="footer">
+    <span>Omar ERP — نظام إدارة المقاولات</span>
+    <span>تم إصدار هذا المستند بتاريخ ${new Date().toLocaleDateString("en-GB")}</span>
+  </div>
+</body>
+</html>`;
+
+    const printWin = window.open("", "_blank", "width=900,height=1000");
+    if (!printWin) { alert("المتصفح منع فتح نافذة الطباعة. اسمح بالنوافذ المنبثقة لهذا الموقع وحاول تاني."); return; }
+    printWin.document.open();
+    printWin.document.write(html);
+    printWin.document.close();
+    printWin.onload = () => {
+      printWin.focus();
+      printWin.print();
+    };
   };
 
   return (
@@ -927,6 +1024,7 @@ function ExtractsTab({ pExtracts, collections, onAddExtract, onAddCollection, on
                     <Clock size={18} className="text-[#D6A23C]" />
                   )}
                   <div className="flex gap-1 opacity-0 group-hover:opacity-100 transition">
+                    <button onClick={() => printExtract(e)} title="طباعة" className="p-1.5 rounded-md text-[#6B7280] hover:bg-[#E1DACB] hover:text-[#1E2530] transition"><Printer size={14} /></button>
                     <button onClick={() => startEdit(e)} title="تعديل" className="p-1.5 rounded-md text-[#6B7280] hover:bg-[#E1DACB] hover:text-[#1E2530] transition"><Pencil size={14} /></button>
                     <button onClick={() => onDeleteExtract(e.id)} title="حذف" className="p-1.5 rounded-md text-[#C1453B] hover:bg-[#C1453B]/10 transition"><Trash2 size={14} /></button>
                   </div>
