@@ -6,7 +6,7 @@ import {
   Building2, LayoutGrid, Hammer, Receipt, FileStack, Wallet, Plus, X,
   TrendingUp, TrendingDown, ChevronDown, ChevronRight, Package, HardHat,
   Landmark, CircleDollarSign, CheckCircle2, Clock, Ruler, Users, Loader2,
-  Trash2, Pencil, Printer,
+  Trash2, Pencil, Printer, Banknote,
 } from "lucide-react";
 import { supabase } from "./supabaseClient";
 
@@ -92,6 +92,7 @@ function ContractingApp() {
   const [costs, setCosts] = useState([]);
   const [extracts, setExtracts] = useState([]);
   const [collections, setCollections] = useState([]);
+  const [treasuryEntries, setTreasuryEntries] = useState([]);
   const [loading, setLoading] = useState(true);
   const [dbError, setDbError] = useState(null);
 
@@ -101,15 +102,16 @@ function ContractingApp() {
 
   useEffect(() => {
     async function loadAll() {
-      const [projRes, wiRes, costRes, extRes, colRes] = await Promise.all([
+      const [projRes, wiRes, costRes, extRes, colRes, treRes] = await Promise.all([
         supabase.from("projects").select("*").order("created_at"),
         supabase.from("work_items").select("*").order("created_at"),
         supabase.from("costs").select("*").order("created_at"),
         supabase.from("extracts").select("*").order("created_at"),
         supabase.from("collections").select("*").order("created_at"),
+        supabase.from("treasury_entries").select("*").order("date"),
       ]);
 
-      const firstError = [projRes, wiRes, costRes, extRes, colRes].find((r) => r.error);
+      const firstError = [projRes, wiRes, costRes, extRes, colRes, treRes].find((r) => r.error);
       if (firstError) {
         setDbError(firstError.error.message);
         setLoading(false);
@@ -128,6 +130,9 @@ function ContractingApp() {
       );
       setCollections(
         (colRes.data || []).map((c) => ({ id: c.id, extractId: c.extract_id, amount: Number(c.amount), date: c.date, method: c.method }))
+      );
+      setTreasuryEntries(
+        (treRes.data || []).map((t) => ({ id: t.id, projectId: t.project_id, date: t.date, type: t.type, amount: Number(t.amount), note: t.note }))
       );
 
       if (projRes.data && projRes.data.length > 0) {
@@ -219,7 +224,7 @@ function ContractingApp() {
   }
 
   async function deleteProject(id) {
-    if (!window.confirm("متأكد إنك عايز تمسح المشروع ده بالكامل؟ هيتمسح معاه كل بنود الأعمال والتكاليف والمستخلصات المرتبطة بيه. الإجراء ده لا يمكن التراجع عنه.")) return;
+    if (!window.confirm("متأكد إنك عايز تمسح المشروع ده بالكامل؟ هيتمسح معاه كل بنود الأعمال والتكاليف والمستخلصات والخزينة المرتبطة بيه. الإجراء ده لا يمكن التراجع عنه.")) return;
     const { error } = await supabase.from("projects").delete().eq("id", id);
     if (error) { alert("حصل خطأ أثناء حذف المشروع: " + error.message); return; }
     const remaining = projects.filter((p) => p.id !== id);
@@ -229,13 +234,40 @@ function ContractingApp() {
     const remainingExtractIds = extracts.filter((e) => e.projectId === id).map((e) => e.id);
     setExtracts((prev) => prev.filter((e) => e.projectId !== id));
     setCollections((prev) => prev.filter((c) => !remainingExtractIds.includes(c.extractId)));
+    setTreasuryEntries((prev) => prev.filter((t) => t.projectId !== id));
     if (activeProjectId === id && remaining.length > 0) setActiveProjectId(remaining[0].id);
+  }
+
+  async function addTreasuryEntry(t) {
+    const { error } = await supabase.from("treasury_entries").insert([{ id: t.id, project_id: t.projectId, date: t.date, type: t.type, amount: t.amount, note: t.note }]);
+    if (error) { alert("حصل خطأ أثناء حفظ حركة الخزينة: " + error.message); return; }
+    setTreasuryEntries((prev) => [...prev, t]);
+  }
+
+  async function updateTreasuryEntry(id, patch) {
+    const { error } = await supabase.from("treasury_entries").update({ date: patch.date, type: patch.type, amount: patch.amount, note: patch.note }).eq("id", id);
+    if (error) { alert("حصل خطأ أثناء تعديل حركة الخزينة: " + error.message); return; }
+    setTreasuryEntries((prev) => prev.map((t) => (t.id === id ? { ...t, ...patch } : t)));
+  }
+
+  async function deleteTreasuryEntry(id) {
+    if (!window.confirm("متأكد إنك عايز تمسح حركة الخزينة دي؟")) return;
+    const { error } = await supabase.from("treasury_entries").delete().eq("id", id);
+    if (error) { alert("حصل خطأ أثناء حذف حركة الخزينة: " + error.message); return; }
+    setTreasuryEntries((prev) => prev.filter((t) => t.id !== id));
+  }
+
+  async function updateOpeningBalance(projectId, value) {
+    const { error } = await supabase.from("projects").update({ treasury_opening_balance: value }).eq("id", projectId);
+    if (error) { alert("حصل خطأ أثناء تعديل رصيد البداية: " + error.message); return; }
+    setProjects((prev) => prev.map((p) => (p.id === projectId ? { ...p, treasury_opening_balance: value } : p)));
   }
 
   const project = projects.find((p) => p.id === activeProjectId);
   const pWorkItems = workItems.filter((w) => w.projectId === activeProjectId);
   const pCosts = costs.filter((c) => c.projectId === activeProjectId);
   const pExtracts = extracts.filter((e) => e.projectId === activeProjectId);
+  const pTreasuryEntries = treasuryEntries.filter((t) => t.projectId === activeProjectId);
 
   const totals = useMemo(() => {
     const budgetTotal = pWorkItems.reduce((s, w) => s + w.qty * w.price, 0);
@@ -253,6 +285,7 @@ function ContractingApp() {
     { key: "items", label: "بنود الأعمال", icon: Ruler },
     { key: "costs", label: "التكاليف", icon: Hammer },
     { key: "extracts", label: "المستخلصات", icon: FileStack },
+    { key: "treasury", label: "الخزينة", icon: Banknote },
     { key: "budget", label: "المقايسة / Budget", icon: Wallet },
   ];
 
@@ -436,6 +469,17 @@ function ContractingApp() {
               projectBudget={project?.budget}
               projectName={project?.name}
               projectClient={project?.client}
+            />
+          )}
+          {tab === "treasury" && (
+            <TreasuryTab
+              pTreasuryEntries={pTreasuryEntries}
+              openingBalance={Number(project?.treasury_opening_balance) || 0}
+              activeProjectId={activeProjectId}
+              onAddEntry={addTreasuryEntry}
+              onUpdateEntry={updateTreasuryEntry}
+              onDeleteEntry={deleteTreasuryEntry}
+              onUpdateOpeningBalance={(v) => updateOpeningBalance(activeProjectId, v)}
             />
           )}
           {tab === "budget" && (
@@ -1138,6 +1182,186 @@ function BudgetTab({ pWorkItems, pCosts }) {
               <td className="py-3 px-4 mono font-bold">{totalBudget > 0 ? fmt((totalActual / totalBudget) * 100, 0) : 0}%</td>
             </tr>
           </tfoot>
+        </table>
+      </div>
+    </div>
+  );
+}
+
+/* -------------------------------- treasury tab ------------------------------- */
+
+function TreasuryTab({ pTreasuryEntries, openingBalance, activeProjectId, onAddEntry, onUpdateEntry, onDeleteEntry, onUpdateOpeningBalance }) {
+  const [open, setOpen] = useState(false);
+  const [editId, setEditId] = useState(null);
+  const [form, setForm] = useState({ date: "", type: "ايداع", amount: "", note: "" });
+  const [editingOpening, setEditingOpening] = useState(false);
+  const [openingInput, setOpeningInput] = useState(String(openingBalance || 0));
+  const [expandedDate, setExpandedDate] = useState(null);
+
+  const resetForm = () => setForm({ date: "", type: "ايداع", amount: "", note: "" });
+
+  const submit = () => {
+    if (!form.date || !form.amount) return;
+    if (editId) {
+      onUpdateEntry(editId, { date: form.date, type: form.type, amount: Number(form.amount), note: form.note });
+      setEditId(null);
+    } else {
+      onAddEntry({ id: "t_" + Math.random().toString(36).slice(2, 8), projectId: activeProjectId, date: form.date, type: form.type, amount: Number(form.amount), note: form.note });
+    }
+    resetForm();
+    setOpen(false);
+  };
+
+  const startEdit = (t) => {
+    setEditId(t.id);
+    setForm({ date: t.date, type: t.type, amount: String(t.amount), note: t.note || "" });
+    setOpen(true);
+  };
+
+  const cancelForm = () => {
+    setEditId(null);
+    resetForm();
+    setOpen(false);
+  };
+
+  const saveOpening = () => {
+    onUpdateOpeningBalance(Number(openingInput) || 0);
+    setEditingOpening(false);
+  };
+
+  // تجميع الحركات حسب التاريخ وحساب رصيد أول وآخر اليوم تراكميًا
+  const sorted = [...pTreasuryEntries].sort((a, b) => (a.date < b.date ? -1 : a.date > b.date ? 1 : 0));
+  const dateGroups = [];
+  const byDate = {};
+  sorted.forEach((t) => {
+    if (!byDate[t.date]) {
+      byDate[t.date] = { date: t.date, entries: [], deposits: 0, withdrawals: 0 };
+      dateGroups.push(byDate[t.date]);
+    }
+    byDate[t.date].entries.push(t);
+    if (t.type === "ايداع") byDate[t.date].deposits += t.amount;
+    else byDate[t.date].withdrawals += t.amount;
+  });
+
+  let running = openingBalance || 0;
+  const rows = dateGroups.map((g) => {
+    const dayOpening = running;
+    const dayClose = dayOpening + g.deposits - g.withdrawals;
+    running = dayClose;
+    return { ...g, dayOpening, dayClose };
+  });
+
+  const currentBalance = running;
+
+  return (
+    <div className="space-y-5">
+      <div className="flex items-center justify-between">
+        <h2 className="font-bold text-[#1E2530] text-lg">خزينة المشروع</h2>
+        <button onClick={() => (open ? cancelForm() : setOpen(true))} className="px-3 py-2 rounded-lg bg-[#1E2530] text-white text-sm font-semibold flex items-center gap-1.5 hover:bg-[#2b3543] transition">
+          <Plus size={15} /> حركة جديدة
+        </button>
+      </div>
+
+      <div className="grid grid-cols-2 gap-3">
+        <div className="bg-white rounded-xl border border-[#E1DACB] p-4">
+          <div className="text-[11px] text-[#9A9483] mb-1">رصيد بداية الخزينة (يدوي)</div>
+          {editingOpening ? (
+            <div className="flex items-center gap-2">
+              <input
+                type="number"
+                value={openingInput}
+                onChange={(e) => setOpeningInput(e.target.value)}
+                className="border border-[#E1DACB] rounded-md px-2 py-1.5 text-sm outline-none focus:border-[#E8672C] w-40 mono"
+              />
+              <button onClick={saveOpening} className="px-3 py-1.5 rounded-md bg-[#3F7D63] text-white text-xs font-semibold hover:bg-[#356A54] transition">حفظ</button>
+              <button onClick={() => { setEditingOpening(false); setOpeningInput(String(openingBalance || 0)); }} className="px-3 py-1.5 rounded-md bg-[#E1DACB] text-[#1E2530] text-xs font-semibold hover:bg-[#D8D3C7] transition">إلغاء</button>
+            </div>
+          ) : (
+            <div className="flex items-center gap-2">
+              <div className="font-bold mono text-lg text-[#1E2530]">{money(openingBalance)}</div>
+              <button onClick={() => setEditingOpening(true)} className="p-1 rounded-md text-[#6B7280] hover:bg-[#E1DACB] hover:text-[#1E2530] transition"><Pencil size={13} /></button>
+            </div>
+          )}
+        </div>
+        <div className="bg-[#1E2530] rounded-xl p-4 text-white">
+          <div className="text-[11px] text-white/50 mb-1">رصيد الخزينة الحالي</div>
+          <div className={`font-bold mono text-lg ${currentBalance < 0 ? "text-[#F0918A]" : "text-white"}`}>{money(currentBalance)}</div>
+        </div>
+      </div>
+
+      {open && (
+        <div className="bg-white rounded-xl border border-[#E1DACB] p-4 grid grid-cols-4 gap-3">
+          {editId && (
+            <div className="col-span-4 text-xs font-semibold text-[#E8672C] bg-[#E8672C]/10 rounded-md px-3 py-1.5">جاري تعديل حركة موجودة</div>
+          )}
+          <Field label="التاريخ" value={form.date} onChange={(v) => setForm((f) => ({ ...f, date: v }))} type="date" />
+          <SelectField label="نوع الحركة" value={form.type} onChange={(v) => setForm((f) => ({ ...f, type: v }))} options={[{ value: "ايداع", label: "إيداع" }, { value: "صرف", label: "صرف" }]} />
+          <Field label="المبلغ" value={form.amount} onChange={(v) => setForm((f) => ({ ...f, amount: v }))} type="number" />
+          <Field label="ملاحظة (اختياري)" value={form.note} onChange={(v) => setForm((f) => ({ ...f, note: v }))} placeholder="مثال: تحويل من الحساب الرئيسي" />
+          <div className="col-span-4 flex justify-end gap-2">
+            {editId && <button onClick={cancelForm} className="px-4 py-2 rounded-lg bg-[#E1DACB] text-[#1E2530] text-sm font-semibold hover:bg-[#D8D3C7] transition">إلغاء</button>}
+            <button onClick={submit} className="px-4 py-2 rounded-lg bg-[#E8672C] text-white text-sm font-semibold hover:bg-[#C8511E] transition">{editId ? "حفظ التعديل" : "حفظ الحركة"}</button>
+          </div>
+        </div>
+      )}
+
+      <div className="bg-white rounded-xl border border-[#E1DACB] overflow-hidden">
+        <table className="w-full text-sm">
+          <thead>
+            <tr className="bg-[#F6F3EA] text-[#6B7280] text-[12px]">
+              <th className="text-right py-3 px-4 font-semibold">التاريخ</th>
+              <th className="text-right py-3 px-4 font-semibold">رصيد أول اليوم</th>
+              <th className="text-right py-3 px-4 font-semibold">إجمالي الإيداع</th>
+              <th className="text-right py-3 px-4 font-semibold">إجمالي الصرف</th>
+              <th className="text-right py-3 px-4 font-semibold">رصيد آخر اليوم</th>
+              <th className="text-right py-3 px-4 font-semibold w-10"></th>
+            </tr>
+          </thead>
+          <tbody className="divide-y divide-[#EFEBDF]">
+            {[...rows].reverse().map((r) => {
+              const isOpen = expandedDate === r.date;
+              return (
+                <React.Fragment key={r.date}>
+                  <tr className="hover:bg-[#FAF8F2] transition cursor-pointer" onClick={() => setExpandedDate(isOpen ? null : r.date)}>
+                    <td className="py-3 px-4 font-semibold text-[#1E2530] mono">{r.date}</td>
+                    <td className="py-3 px-4 mono">{money(r.dayOpening)}</td>
+                    <td className="py-3 px-4 mono text-[#3F7D63] font-bold">{r.deposits > 0 ? "+" + money(r.deposits) : "—"}</td>
+                    <td className="py-3 px-4 mono text-[#C1453B] font-bold">{r.withdrawals > 0 ? "-" + money(r.withdrawals) : "—"}</td>
+                    <td className="py-3 px-4 mono font-bold">{money(r.dayClose)}</td>
+                    <td className="py-3 px-4">
+                      <ChevronDown size={15} className={`text-[#9A9483] transition-transform ${isOpen ? "rotate-180" : ""}`} />
+                    </td>
+                  </tr>
+                  {isOpen && (
+                    <tr>
+                      <td colSpan={6} className="bg-[#FAF8F2] px-4 py-3">
+                        <div className="space-y-1.5">
+                          {r.entries.map((t) => (
+                            <div key={t.id} className="flex items-center justify-between bg-white rounded-lg px-3 py-2 border border-[#E1DACB] text-sm group">
+                              <div className="flex items-center gap-2">
+                                <span className={`text-[11px] font-semibold px-2 py-0.5 rounded-md ${t.type === "ايداع" ? "bg-[#3F7D63]/10 text-[#3F7D63]" : "bg-[#C1453B]/10 text-[#C1453B]"}`}>{t.type === "ايداع" ? "إيداع" : "صرف"}</span>
+                                <span className="text-[#6B7280]">{t.note || "—"}</span>
+                              </div>
+                              <div className="flex items-center gap-2">
+                                <span className={`font-bold mono ${t.type === "ايداع" ? "text-[#3F7D63]" : "text-[#C1453B]"}`}>{money(t.amount)}</span>
+                                <div className="flex gap-1 opacity-0 group-hover:opacity-100 transition">
+                                  <button onClick={(e) => { e.stopPropagation(); startEdit(t); }} title="تعديل" className="p-1 rounded-md text-[#6B7280] hover:bg-[#E1DACB] hover:text-[#1E2530] transition"><Pencil size={13} /></button>
+                                  <button onClick={(e) => { e.stopPropagation(); onDeleteEntry(t.id); }} title="حذف" className="p-1 rounded-md text-[#C1453B] hover:bg-[#C1453B]/10 transition"><Trash2 size={13} /></button>
+                                </div>
+                              </div>
+                            </div>
+                          ))}
+                        </div>
+                      </td>
+                    </tr>
+                  )}
+                </React.Fragment>
+              );
+            })}
+            {rows.length === 0 && (
+              <tr><td colSpan={6} className="text-center py-8 text-[#9A9483]">لا توجد حركات خزينة مسجّلة بعد.</td></tr>
+            )}
+          </tbody>
         </table>
       </div>
     </div>
