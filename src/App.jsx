@@ -6,7 +6,7 @@ import {
   Building2, LayoutGrid, Hammer, Receipt, FileStack, Wallet, Plus, X,
   TrendingUp, TrendingDown, ChevronDown, ChevronRight, Package, HardHat,
   Landmark, CircleDollarSign, CheckCircle2, Clock, Ruler, Users, Loader2,
-  Trash2, Pencil, Printer, Banknote, HandCoins,
+  Trash2, Pencil, Printer, Banknote,
 } from "lucide-react";
 import { supabase } from "./supabaseClient";
 
@@ -93,9 +93,6 @@ function ContractingApp() {
   const [extracts, setExtracts] = useState([]);
   const [collections, setCollections] = useState([]);
   const [treasuryEntries, setTreasuryEntries] = useState([]);
-  const [funders, setFunders] = useState([]);
-  const [financings, setFinancings] = useState([]);
-  const [repayments, setRepayments] = useState([]);
   const [financePersons, setFinancePersons] = useState([]);
   const [financeTransactions, setFinanceTransactions] = useState([]);
   const [view, setView] = useState("project"); // 'project' | 'finance'
@@ -108,21 +105,18 @@ function ContractingApp() {
 
   useEffect(() => {
     async function loadAll() {
-      const [projRes, wiRes, costRes, extRes, colRes, treRes, fndRes, finRes, repRes, fpRes, ftRes] = await Promise.all([
+      const [projRes, wiRes, costRes, extRes, colRes, treRes, fpRes, ftRes] = await Promise.all([
         supabase.from("projects").select("*").order("created_at"),
         supabase.from("work_items").select("*").order("created_at"),
         supabase.from("costs").select("*").order("created_at"),
         supabase.from("extracts").select("*").order("created_at"),
         supabase.from("collections").select("*").order("created_at"),
         supabase.from("treasury_entries").select("*").order("date"),
-        supabase.from("funders").select("*").order("created_at"),
-        supabase.from("financings").select("*").order("date"),
-        supabase.from("financing_repayments").select("*").order("date"),
         supabase.from("finance_persons").select("*").order("created_at"),
         supabase.from("finance_transactions").select("*").order("date"),
       ]);
 
-      const firstError = [projRes, wiRes, costRes, extRes, colRes, treRes, fndRes, finRes, repRes, fpRes, ftRes].find((r) => r.error);
+      const firstError = [projRes, wiRes, costRes, extRes, colRes, treRes, fpRes, ftRes].find((r) => r.error);
       if (firstError) {
         setDbError(firstError.error.message);
         setLoading(false);
@@ -134,7 +128,7 @@ function ContractingApp() {
         (wiRes.data || []).map((w) => ({ id: w.id, projectId: w.project_id, name: w.name, unit: w.unit, qty: Number(w.qty), price: Number(w.price) }))
       );
       setCosts(
-        (costRes.data || []).map((c) => ({ id: c.id, projectId: c.project_id, workItemId: c.work_item_id, type: c.type, desc: c.description, qty: Number(c.qty), unit: c.unit, price: Number(c.price), date: c.date }))
+        (costRes.data || []).map((c) => ({ id: c.id, projectId: c.project_id, workItemId: c.work_item_id, type: c.type, desc: c.description, costLevel1: c.cost_level_1 || "", costLevel2: c.cost_level_2 || "", qty: Number(c.qty), unit: c.unit, price: Number(c.price), date: c.date }))
       );
       setExtracts(
         (extRes.data || []).map((e) => ({ id: e.id, projectId: e.project_id, number: e.number, date: e.date, percentage: Number(e.percentage), amount: Number(e.amount) }))
@@ -144,13 +138,6 @@ function ContractingApp() {
       );
       setTreasuryEntries(
         (treRes.data || []).map((t) => ({ id: t.id, projectId: t.project_id, date: t.date, type: t.type, amount: Number(t.amount), note: t.note }))
-      );
-      setFunders((fndRes.data || []).map((f) => ({ id: f.id, name: f.name, note: f.note })));
-      setFinancings(
-        (finRes.data || []).map((f) => ({ id: f.id, projectId: f.project_id, funderId: f.funder_id, amount: Number(f.amount), date: f.date, note: f.note }))
-      );
-      setRepayments(
-        (repRes.data || []).map((r) => ({ id: r.id, financingId: r.financing_id, amount: Number(r.amount), date: r.date, note: r.note }))
       );
       setFinancePersons((fpRes.data || []).map((p) => ({ id: p.id, name: p.name, note: p.note })));
       setFinanceTransactions(
@@ -178,7 +165,7 @@ function ContractingApp() {
   }
 
   async function addCost(c) {
-    const { error } = await supabase.from("costs").insert([{ id: c.id, project_id: c.projectId, work_item_id: c.workItemId, type: c.type, description: c.desc, qty: c.qty, unit: c.unit, price: c.price, date: c.date }]);
+    const { error } = await supabase.from("costs").insert([{ id: c.id, project_id: c.projectId, work_item_id: c.workItemId, type: c.type, description: c.desc, cost_level_1: c.costLevel1 || null, cost_level_2: c.costLevel2 || null, qty: c.qty, unit: c.unit, price: c.price, date: c.date }]);
     if (error) { alert("حصل خطأ أثناء حفظ التكلفة: " + error.message); return; }
     setCosts((prev) => [...prev, c]);
   }
@@ -216,7 +203,7 @@ function ContractingApp() {
   }
 
   async function updateCost(id, patch) {
-    const { error } = await supabase.from("costs").update({ type: patch.type, work_item_id: patch.workItemId, description: patch.desc, qty: patch.qty, unit: patch.unit, price: patch.price, date: patch.date }).eq("id", id);
+    const { error } = await supabase.from("costs").update({ type: patch.type, work_item_id: patch.workItemId, description: patch.desc, cost_level_1: patch.costLevel1 || null, cost_level_2: patch.costLevel2 || null, qty: patch.qty, unit: patch.unit, price: patch.price, date: patch.date }).eq("id", id);
     if (error) { alert("حصل خطأ أثناء تعديل التكلفة: " + error.message); return; }
     setCosts((prev) => prev.map((c) => (c.id === id ? { ...c, ...patch } : c)));
   }
@@ -289,46 +276,6 @@ function ContractingApp() {
     setProjects((prev) => prev.map((p) => (p.id === projectId ? { ...p, treasury_opening_balance: value } : p)));
   }
 
-  async function addFunder(f) {
-    const { error } = await supabase.from("funders").insert([{ id: f.id, name: f.name, note: f.note || null }]);
-    if (error) { alert("حصل خطأ أثناء إضافة الممول: " + error.message); return null; }
-    setFunders((prev) => [...prev, f]);
-    return f;
-  }
-
-  async function addFinancing(f) {
-    const { error } = await supabase.from("financings").insert([{ id: f.id, project_id: f.projectId, funder_id: f.funderId, amount: f.amount, date: f.date, note: f.note || null }]);
-    if (error) { alert("حصل خطأ أثناء حفظ التمويل: " + error.message); return; }
-    setFinancings((prev) => [...prev, f]);
-  }
-
-  async function updateFinancing(id, patch) {
-    const { error } = await supabase.from("financings").update({ funder_id: patch.funderId, amount: patch.amount, date: patch.date, note: patch.note || null }).eq("id", id);
-    if (error) { alert("حصل خطأ أثناء تعديل التمويل: " + error.message); return; }
-    setFinancings((prev) => prev.map((f) => (f.id === id ? { ...f, ...patch } : f)));
-  }
-
-  async function deleteFinancing(id) {
-    if (!window.confirm("متأكد إنك عايز تمسح التمويل ده؟ هيتمسح معاه كل السدادات المرتبطة بيه.")) return;
-    const { error } = await supabase.from("financings").delete().eq("id", id);
-    if (error) { alert("حصل خطأ أثناء حذف التمويل: " + error.message); return; }
-    setFinancings((prev) => prev.filter((f) => f.id !== id));
-    setRepayments((prev) => prev.filter((r) => r.financingId !== id));
-  }
-
-  async function addRepayment(r) {
-    const { error } = await supabase.from("financing_repayments").insert([{ id: r.id, financing_id: r.financingId, amount: r.amount, date: r.date, note: r.note || null }]);
-    if (error) { alert("حصل خطأ أثناء حفظ السداد: " + error.message); return; }
-    setRepayments((prev) => [...prev, r]);
-  }
-
-  async function deleteRepayment(id) {
-    if (!window.confirm("متأكد إنك عايز تمسح السداد ده؟")) return;
-    const { error } = await supabase.from("financing_repayments").delete().eq("id", id);
-    if (error) { alert("حصل خطأ أثناء حذف السداد: " + error.message); return; }
-    setRepayments((prev) => prev.filter((r) => r.id !== id));
-  }
-
   async function addFinancePerson(p) {
     const { error } = await supabase.from("finance_persons").insert([{ id: p.id, name: p.name, note: p.note || null }]);
     if (error) { alert("حصل خطأ أثناء إضافة الشخص: " + error.message); return null; }
@@ -368,7 +315,6 @@ function ContractingApp() {
   const pCosts = costs.filter((c) => c.projectId === activeProjectId);
   const pExtracts = extracts.filter((e) => e.projectId === activeProjectId);
   const pTreasuryEntries = treasuryEntries.filter((t) => t.projectId === activeProjectId);
-  const pFinancings = financings.filter((f) => f.projectId === activeProjectId);
 
   const totals = useMemo(() => {
     const budgetTotal = pWorkItems.reduce((s, w) => s + w.qty * w.price, 0);
@@ -387,7 +333,6 @@ function ContractingApp() {
     { key: "costs", label: "التكاليف", icon: Hammer },
     { key: "extracts", label: "المستخلصات", icon: FileStack },
     { key: "treasury", label: "الخزينة", icon: Banknote },
-    { key: "financing", label: "السلف والتمويلات", icon: HandCoins },
     { key: "budget", label: "المقايسة / Budget", icon: Wallet },
   ];
 
@@ -611,20 +556,6 @@ function ContractingApp() {
               onUpdateOpeningBalance={(v) => updateOpeningBalance(activeProjectId, v)}
             />
           )}
-          {tab === "financing" && (
-            <FinancingTab
-              pFinancings={pFinancings}
-              repayments={repayments}
-              funders={funders}
-              activeProjectId={activeProjectId}
-              onAddFunder={addFunder}
-              onAddFinancing={addFinancing}
-              onUpdateFinancing={updateFinancing}
-              onDeleteFinancing={deleteFinancing}
-              onAddRepayment={addRepayment}
-              onDeleteRepayment={deleteRepayment}
-            />
-          )}
           {tab === "budget" && (
             <BudgetTab pWorkItems={pWorkItems} pCosts={pCosts} />
           )}
@@ -718,7 +649,7 @@ function Dashboard({ totals, pWorkItems, pCosts, pExtracts, collections }) {
                   </div>
                   <div className="min-w-0">
                     <div className="text-sm font-semibold text-[#1E2530] truncate">{c.desc}</div>
-                    <div className="text-[11px] text-[#9A9483]">{meta?.label} · {c.date}</div>
+                    <div className="text-[11px] text-[#9A9483]">{c.costLevel1 || "بدون مستوى أول"}{c.costLevel2 ? ` · ${c.costLevel2}` : ""} · {meta?.label} · {c.date}</div>
                   </div>
                 </div>
                 <div className="text-sm font-bold mono shrink-0">{money(c.qty * c.price)}</div>
@@ -847,12 +778,12 @@ function CostsTab({ pCosts, pWorkItems, activeProjectId, onAddCost, onUpdateCost
   const [filter, setFilter] = useState("الكل");
   const [open, setOpen] = useState(false);
   const [editId, setEditId] = useState(null);
-  const [form, setForm] = useState({ type: "مشتريات", workItemId: "", desc: "", customDesc: "", qty: "1", unit: "", price: "", date: "" });
+  const [form, setForm] = useState({ type: "مشتريات", workItemId: "", costLevel1: "", costLevel2: "", desc: "", customDesc: "", qty: "1", unit: "", price: "", date: "" });
 
   const isGeneral = form.type === "مصروفات عمومية";
   const finalDesc = isGeneral ? (form.desc === "أخرى" ? form.customDesc : form.desc) : form.desc;
 
-  const resetForm = () => setForm({ type: "مشتريات", workItemId: "", desc: "", customDesc: "", qty: "1", unit: "", price: "", date: "" });
+  const resetForm = () => setForm({ type: "مشتريات", workItemId: "", costLevel1: "", costLevel2: "", desc: "", customDesc: "", qty: "1", unit: "", price: "", date: "" });
 
   const submit = () => {
     if (!finalDesc || !form.price) return;
@@ -860,6 +791,8 @@ function CostsTab({ pCosts, pWorkItems, activeProjectId, onAddCost, onUpdateCost
       onUpdateCost(editId, {
         type: form.type,
         workItemId: form.workItemId || null,
+        costLevel1: form.costLevel1.trim(),
+        costLevel2: form.costLevel2.trim(),
         desc: finalDesc,
         qty: Number(form.qty) || 1,
         unit: form.unit || "-",
@@ -872,6 +805,8 @@ function CostsTab({ pCosts, pWorkItems, activeProjectId, onAddCost, onUpdateCost
         id: "c_" + Math.random().toString(36).slice(2, 8),
         projectId: activeProjectId,
         workItemId: form.workItemId || null,
+        costLevel1: form.costLevel1.trim(),
+        costLevel2: form.costLevel2.trim(),
         type: form.type,
         desc: finalDesc,
         qty: Number(form.qty) || 1,
@@ -886,7 +821,7 @@ function CostsTab({ pCosts, pWorkItems, activeProjectId, onAddCost, onUpdateCost
 
   const startEdit = (c) => {
     setEditId(c.id);
-    setForm({ type: c.type, workItemId: c.workItemId || "", desc: c.desc, customDesc: "", qty: String(c.qty), unit: c.unit, price: String(c.price), date: c.date });
+    setForm({ type: c.type, workItemId: c.workItemId || "", costLevel1: c.costLevel1 || "", costLevel2: c.costLevel2 || "", desc: c.desc, customDesc: "", qty: String(c.qty), unit: c.unit, price: String(c.price), date: c.date });
     setOpen(true);
   };
 
@@ -933,6 +868,8 @@ function CostsTab({ pCosts, pWorkItems, activeProjectId, onAddCost, onUpdateCost
             onChange={(v) => setForm((f) => ({ ...f, workItemId: v }))}
             options={[{ value: "", label: "— غير مرتبط ببند —" }, ...pWorkItems.map((w) => ({ value: w.id, label: w.name }))]}
           />
+          <Field label="المستوى الأول للتكلفة" value={form.costLevel1} onChange={(v) => setForm((f) => ({ ...f, costLevel1: v }))} placeholder="مثال: كهرباء" />
+          <Field label="المستوى الثاني للتكلفة" value={form.costLevel2} onChange={(v) => setForm((f) => ({ ...f, costLevel2: v }))} placeholder="مثال: كابلات" />
           <Field label="التاريخ" value={form.date} onChange={(v) => setForm((f) => ({ ...f, date: v }))} type="date" />
 
           {isGeneral ? (
@@ -972,6 +909,8 @@ function CostsTab({ pCosts, pWorkItems, activeProjectId, onAddCost, onUpdateCost
           <thead>
             <tr className="bg-[#F6F3EA] text-[#6B7280] text-[12px]">
               <th className="text-right py-3 px-4 font-semibold">النوع</th>
+              <th className="text-right py-3 px-4 font-semibold">المستوى الأول</th>
+              <th className="text-right py-3 px-4 font-semibold">المستوى الثاني</th>
               <th className="text-right py-3 px-4 font-semibold">التفاصيل</th>
               <th className="text-right py-3 px-4 font-semibold">بند العمل</th>
               <th className="text-right py-3 px-4 font-semibold">الكمية</th>
@@ -990,7 +929,9 @@ function CostsTab({ pCosts, pWorkItems, activeProjectId, onAddCost, onUpdateCost
                   <td className="py-3 px-4">
                     <span className="text-[11px] font-semibold px-2 py-1 rounded-md" style={{ backgroundColor: meta?.color + "18", color: meta?.color }}>{meta?.label}</span>
                   </td>
-                  <td className="py-3 px-4 font-medium text-[#1E2530]">{c.desc}</td>
+                  <td className="py-3 px-4 font-medium text-[#1E2530]">{c.costLevel1 || "—"}</td>
+                  <td className="py-3 px-4 font-medium text-[#1E2530]">{c.costLevel2 || "—"}</td>
+                  <td className="py-3 px-4 text-[#1E2530]">{c.desc}</td>
                   <td className="py-3 px-4 text-[#6B7280]">{w ? w.name : "—"}</td>
                   <td className="py-3 px-4 mono">{fmt(c.qty)} {c.unit}</td>
                   <td className="py-3 px-4 mono">{fmt(c.price)}</td>
@@ -1006,7 +947,7 @@ function CostsTab({ pCosts, pWorkItems, activeProjectId, onAddCost, onUpdateCost
               );
             })}
             {filtered.length === 0 && (
-              <tr><td colSpan={8} className="text-center py-8 text-[#9A9483]">لا توجد تكاليف في هذا التصنيف.</td></tr>
+              <tr><td colSpan={10} className="text-center py-8 text-[#9A9483]">لا توجد تكاليف في هذا التصنيف.</td></tr>
             )}
           </tbody>
         </table>
@@ -1509,192 +1450,6 @@ function TreasuryTab({ pTreasuryEntries, openingBalance, activeProjectId, onAddE
             )}
           </tbody>
         </table>
-      </div>
-    </div>
-  );
-}
-
-/* -------------------------------- financing tab ------------------------------- */
-
-function FinancingTab({ pFinancings, repayments, funders, activeProjectId, onAddFunder, onAddFinancing, onUpdateFinancing, onDeleteFinancing, onAddRepayment, onDeleteRepayment }) {
-  const [open, setOpen] = useState(false);
-  const [editId, setEditId] = useState(null);
-  const [form, setForm] = useState({ funderId: "", newFunderName: "", amount: "", date: "", note: "" });
-  const [expanded, setExpanded] = useState(null);
-  const [repayForm, setRepayForm] = useState({ amount: "", date: "", note: "" });
-
-  const resetForm = () => setForm({ funderId: "", newFunderName: "", amount: "", date: "", note: "" });
-
-  const submit = async () => {
-    if (!form.amount || !form.date) return;
-    if (!form.funderId && !form.newFunderName) return;
-
-    let funderId = form.funderId;
-    if (funderId === "__new__") {
-      if (!form.newFunderName.trim()) return;
-      const newFunder = { id: "fnd_" + Math.random().toString(36).slice(2, 8), name: form.newFunderName.trim(), note: "" };
-      const saved = await onAddFunder(newFunder);
-      if (!saved) return;
-      funderId = newFunder.id;
-    }
-
-    if (editId) {
-      onUpdateFinancing(editId, { funderId, amount: Number(form.amount), date: form.date, note: form.note });
-      setEditId(null);
-    } else {
-      onAddFinancing({ id: "fin_" + Math.random().toString(36).slice(2, 8), projectId: activeProjectId, funderId, amount: Number(form.amount), date: form.date, note: form.note });
-    }
-    resetForm();
-    setOpen(false);
-  };
-
-  const startEdit = (f) => {
-    setEditId(f.id);
-    setForm({ funderId: f.funderId || "", newFunderName: "", amount: String(f.amount), date: f.date, note: f.note || "" });
-    setOpen(true);
-  };
-
-  const cancelForm = () => {
-    setEditId(null);
-    resetForm();
-    setOpen(false);
-  };
-
-  const addRepaymentFor = (financingId) => {
-    if (!repayForm.amount) return;
-    onAddRepayment({ id: "rep_" + Math.random().toString(36).slice(2, 8), financingId, amount: Number(repayForm.amount), date: repayForm.date || new Date().toISOString().slice(0, 10), note: repayForm.note });
-    setRepayForm({ amount: "", date: "", note: "" });
-  };
-
-  const totalFinanced = pFinancings.reduce((s, f) => s + f.amount, 0);
-  const totalRepaid = pFinancings.reduce((s, f) => {
-    const rep = repayments.filter((r) => r.financingId === f.id).reduce((ss, r) => ss + r.amount, 0);
-    return s + rep;
-  }, 0);
-  const totalRemaining = totalFinanced - totalRepaid;
-
-  return (
-    <div className="space-y-5">
-      <div className="flex items-center justify-between">
-        <h2 className="font-bold text-[#1E2530] text-lg">السلف والتمويلات</h2>
-        <button onClick={() => (open ? cancelForm() : setOpen(true))} className="px-3 py-2 rounded-lg bg-[#1E2530] text-white text-sm font-semibold flex items-center gap-1.5 hover:bg-[#2b3543] transition">
-          <Plus size={15} /> تمويل جديد
-        </button>
-      </div>
-
-      <div className="grid grid-cols-3 gap-3">
-        <div className="bg-white rounded-xl border border-[#E1DACB] p-4">
-          <div className="text-[11px] text-[#9A9483] mb-1">إجمالي التمويلات</div>
-          <div className="font-bold mono text-lg text-[#1E2530]">{money(totalFinanced)}</div>
-        </div>
-        <div className="bg-white rounded-xl border border-[#E1DACB] p-4">
-          <div className="text-[11px] text-[#9A9483] mb-1">إجمالي المسدد</div>
-          <div className="font-bold mono text-lg text-[#3F7D63]">{money(totalRepaid)}</div>
-        </div>
-        <div className="bg-[#1E2530] rounded-xl p-4 text-white">
-          <div className="text-[11px] text-white/50 mb-1">إجمالي المتبقي</div>
-          <div className={`font-bold mono text-lg ${totalRemaining > 0 ? "text-[#E8AA6C]" : "text-white"}`}>{money(totalRemaining)}</div>
-        </div>
-      </div>
-
-      {open && (
-        <div className="bg-white rounded-xl border border-[#E1DACB] p-4 grid grid-cols-4 gap-3">
-          {editId && (
-            <div className="col-span-4 text-xs font-semibold text-[#E8672C] bg-[#E8672C]/10 rounded-md px-3 py-1.5">جاري تعديل تمويل موجود</div>
-          )}
-          <SelectField
-            label="الممول"
-            value={form.funderId}
-            onChange={(v) => setForm((f) => ({ ...f, funderId: v }))}
-            options={[{ value: "", label: "— اختر الممول —" }, ...funders.map((f) => ({ value: f.id, label: f.name })), { value: "__new__", label: "+ إضافة ممول جديد" }]}
-          />
-          {form.funderId === "__new__" && (
-            <Field label="اسم الممول الجديد" value={form.newFunderName} onChange={(v) => setForm((f) => ({ ...f, newFunderName: v }))} placeholder="مثال: أحمد فوزي" />
-          )}
-          <Field label="التاريخ" value={form.date} onChange={(v) => setForm((f) => ({ ...f, date: v }))} type="date" />
-          <Field label="المبلغ" value={form.amount} onChange={(v) => setForm((f) => ({ ...f, amount: v }))} type="number" />
-          <Field label="ملاحظة (اختياري)" value={form.note} onChange={(v) => setForm((f) => ({ ...f, note: v }))} placeholder="سبب التمويل" />
-          <div className="col-span-4 flex justify-end gap-2">
-            {editId && <button onClick={cancelForm} className="px-4 py-2 rounded-lg bg-[#E1DACB] text-[#1E2530] text-sm font-semibold hover:bg-[#D8D3C7] transition">إلغاء</button>}
-            <button onClick={submit} className="px-4 py-2 rounded-lg bg-[#E8672C] text-white text-sm font-semibold hover:bg-[#C8511E] transition">{editId ? "حفظ التعديل" : "حفظ التمويل"}</button>
-          </div>
-        </div>
-      )}
-
-      <div className="space-y-3">
-        {pFinancings.length === 0 && (
-          <div className="bg-white rounded-xl border border-[#E1DACB] p-8 text-center text-[#9A9483] text-sm">لا توجد تمويلات مسجّلة بعد.</div>
-        )}
-        {[...pFinancings].sort((a, b) => (a.date < b.date ? 1 : -1)).map((f) => {
-          const funder = funders.find((fn) => fn.id === f.funderId);
-          const fRepayments = repayments.filter((r) => r.financingId === f.id);
-          const repaid = fRepayments.reduce((s, r) => s + r.amount, 0);
-          const remaining = f.amount - repaid;
-          const isOpen = expanded === f.id;
-          return (
-            <div key={f.id} className="bg-white rounded-xl border border-[#E1DACB] overflow-hidden group">
-              <div className="w-full flex items-center justify-between px-5 py-4 hover:bg-[#FAF8F2] transition">
-                <button onClick={() => setExpanded(isOpen ? null : f.id)} className="flex items-center gap-4 flex-1 text-right">
-                  <div className="w-10 h-10 rounded-lg bg-[#6B5CA5]/10 flex items-center justify-center text-[#6B5CA5] shrink-0"><HandCoins size={18} /></div>
-                  <div className="text-right">
-                    <div className="font-bold text-[#1E2530]">{funder ? funder.name : "ممول محذوف"}</div>
-                    <div className="text-[11px] text-[#9A9483] mono">{f.date} {f.note ? "· " + f.note : ""}</div>
-                  </div>
-                </button>
-                <div className="flex items-center gap-6">
-                  <div className="text-right">
-                    <div className="text-[11px] text-[#9A9483]">مبلغ التمويل</div>
-                    <div className="font-bold mono">{money(f.amount)}</div>
-                  </div>
-                  <div className="text-right">
-                    <div className="text-[11px] text-[#9A9483]">المسدد</div>
-                    <div className="font-bold mono text-[#3F7D63]">{money(repaid)}</div>
-                  </div>
-                  <div className="text-right">
-                    <div className="text-[11px] text-[#9A9483]">المتبقي</div>
-                    <div className={`font-bold mono ${remaining > 0 ? "text-[#D6A23C]" : "text-[#3F7D63]"}`}>{money(remaining)}</div>
-                  </div>
-                  {remaining <= 0 ? (
-                    <CheckCircle2 size={18} className="text-[#3F7D63]" />
-                  ) : (
-                    <Clock size={18} className="text-[#D6A23C]" />
-                  )}
-                  <div className="flex gap-1 opacity-0 group-hover:opacity-100 transition">
-                    <button onClick={() => startEdit(f)} title="تعديل" className="p-1.5 rounded-md text-[#6B7280] hover:bg-[#E1DACB] hover:text-[#1E2530] transition"><Pencil size={14} /></button>
-                    <button onClick={() => onDeleteFinancing(f.id)} title="حذف" className="p-1.5 rounded-md text-[#C1453B] hover:bg-[#C1453B]/10 transition"><Trash2 size={14} /></button>
-                  </div>
-                  <button onClick={() => setExpanded(isOpen ? null : f.id)}>
-                    <ChevronDown size={16} className={`text-[#9A9483] transition-transform ${isOpen ? "rotate-180" : ""}`} />
-                  </button>
-                </div>
-              </div>
-
-              {isOpen && (
-                <div className="border-t border-[#EFEBDF] px-5 py-4 bg-[#FAF8F2]">
-                  <div className="text-xs font-semibold text-[#6B7280] mb-2">السدادات</div>
-                  <div className="space-y-1.5 mb-4">
-                    {fRepayments.map((r) => (
-                      <div key={r.id} className="flex items-center justify-between bg-white rounded-lg px-3 py-2 border border-[#E1DACB] text-sm group/rep">
-                        <span className="text-[#6B7280]">{r.date} {r.note ? "· " + r.note : ""}</span>
-                        <div className="flex items-center gap-2">
-                          <span className="font-bold mono text-[#3F7D63]">{money(r.amount)}</span>
-                          <button onClick={() => onDeleteRepayment(r.id)} title="حذف السداد" className="p-1 rounded-md text-[#C1453B] opacity-0 group-hover/rep:opacity-100 hover:bg-[#C1453B]/10 transition"><Trash2 size={13} /></button>
-                        </div>
-                      </div>
-                    ))}
-                    {fRepayments.length === 0 && <div className="text-xs text-[#9A9483] py-1">لم يتم سداد أي مبلغ بعد.</div>}
-                  </div>
-                  <div className="grid grid-cols-4 gap-2 items-end">
-                    <Field label="المبلغ" value={repayForm.amount} onChange={(v) => setRepayForm((f2) => ({ ...f2, amount: v }))} type="number" small />
-                    <Field label="التاريخ" value={repayForm.date} onChange={(v) => setRepayForm((f2) => ({ ...f2, date: v }))} type="date" small />
-                    <Field label="ملاحظة" value={repayForm.note} onChange={(v) => setRepayForm((f2) => ({ ...f2, note: v }))} placeholder="اختياري" small />
-                    <button onClick={() => addRepaymentFor(f.id)} className="px-3 py-2 rounded-lg bg-[#3F7D63] text-white text-xs font-semibold hover:bg-[#356A54] transition h-[38px]">تسجيل سداد</button>
-                  </div>
-                </div>
-              )}
-            </div>
-          );
-        })}
       </div>
     </div>
   );
