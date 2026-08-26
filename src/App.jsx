@@ -96,6 +96,9 @@ function ContractingApp() {
   const [funders, setFunders] = useState([]);
   const [financings, setFinancings] = useState([]);
   const [repayments, setRepayments] = useState([]);
+  const [financePersons, setFinancePersons] = useState([]);
+  const [financeTransactions, setFinanceTransactions] = useState([]);
+  const [view, setView] = useState("project"); // 'project' | 'finance'
   const [loading, setLoading] = useState(true);
   const [dbError, setDbError] = useState(null);
 
@@ -105,7 +108,7 @@ function ContractingApp() {
 
   useEffect(() => {
     async function loadAll() {
-      const [projRes, wiRes, costRes, extRes, colRes, treRes, fndRes, finRes, repRes] = await Promise.all([
+      const [projRes, wiRes, costRes, extRes, colRes, treRes, fndRes, finRes, repRes, fpRes, ftRes] = await Promise.all([
         supabase.from("projects").select("*").order("created_at"),
         supabase.from("work_items").select("*").order("created_at"),
         supabase.from("costs").select("*").order("created_at"),
@@ -115,9 +118,11 @@ function ContractingApp() {
         supabase.from("funders").select("*").order("created_at"),
         supabase.from("financings").select("*").order("date"),
         supabase.from("financing_repayments").select("*").order("date"),
+        supabase.from("finance_persons").select("*").order("created_at"),
+        supabase.from("finance_transactions").select("*").order("date"),
       ]);
 
-      const firstError = [projRes, wiRes, costRes, extRes, colRes, treRes, fndRes, finRes, repRes].find((r) => r.error);
+      const firstError = [projRes, wiRes, costRes, extRes, colRes, treRes, fndRes, finRes, repRes, fpRes, ftRes].find((r) => r.error);
       if (firstError) {
         setDbError(firstError.error.message);
         setLoading(false);
@@ -146,6 +151,10 @@ function ContractingApp() {
       );
       setRepayments(
         (repRes.data || []).map((r) => ({ id: r.id, financingId: r.financing_id, amount: Number(r.amount), date: r.date, note: r.note }))
+      );
+      setFinancePersons((fpRes.data || []).map((p) => ({ id: p.id, name: p.name, note: p.note })));
+      setFinanceTransactions(
+        (ftRes.data || []).map((t) => ({ id: t.id, personId: t.person_id, date: t.date, type: t.type, amount: Number(t.amount), note: t.note }))
       );
 
       if (projRes.data && projRes.data.length > 0) {
@@ -316,6 +325,40 @@ function ContractingApp() {
     setRepayments((prev) => prev.filter((r) => r.id !== id));
   }
 
+  async function addFinancePerson(p) {
+    const { error } = await supabase.from("finance_persons").insert([{ id: p.id, name: p.name, note: p.note || null }]);
+    if (error) { alert("حصل خطأ أثناء إضافة الشخص: " + error.message); return null; }
+    setFinancePersons((prev) => [...prev, p]);
+    return p;
+  }
+
+  async function deleteFinancePerson(id) {
+    if (!window.confirm("متأكد إنك عايز تمسح الحساب ده بالكامل؟ هيتمسح معاه كل حركاته.")) return;
+    const { error } = await supabase.from("finance_persons").delete().eq("id", id);
+    if (error) { alert("حصل خطأ أثناء حذف الحساب: " + error.message); return; }
+    setFinancePersons((prev) => prev.filter((p) => p.id !== id));
+    setFinanceTransactions((prev) => prev.filter((t) => t.personId !== id));
+  }
+
+  async function addFinanceTransaction(t) {
+    const { error } = await supabase.from("finance_transactions").insert([{ id: t.id, person_id: t.personId, date: t.date, type: t.type, amount: t.amount, note: t.note || null }]);
+    if (error) { alert("حصل خطأ أثناء حفظ الحركة: " + error.message); return; }
+    setFinanceTransactions((prev) => [...prev, t]);
+  }
+
+  async function updateFinanceTransaction(id, patch) {
+    const { error } = await supabase.from("finance_transactions").update({ date: patch.date, type: patch.type, amount: patch.amount, note: patch.note || null }).eq("id", id);
+    if (error) { alert("حصل خطأ أثناء تعديل الحركة: " + error.message); return; }
+    setFinanceTransactions((prev) => prev.map((t) => (t.id === id ? { ...t, ...patch } : t)));
+  }
+
+  async function deleteFinanceTransaction(id) {
+    if (!window.confirm("متأكد إنك عايز تمسح الحركة دي؟")) return;
+    const { error } = await supabase.from("finance_transactions").delete().eq("id", id);
+    if (error) { alert("حصل خطأ أثناء حذف الحركة: " + error.message); return; }
+    setFinanceTransactions((prev) => prev.filter((t) => t.id !== id));
+  }
+
   const project = projects.find((p) => p.id === activeProjectId);
   const pWorkItems = workItems.filter((w) => w.projectId === activeProjectId);
   const pCosts = costs.filter((c) => c.projectId === activeProjectId);
@@ -400,15 +443,15 @@ function ContractingApp() {
             {projects.map((p) => (
               <button
                 key={p.id}
-                onClick={() => setActiveProjectId(p.id)}
+                onClick={() => { setActiveProjectId(p.id); setView("project"); }}
                 className={`w-full text-right px-3 py-2 rounded-lg text-sm transition flex items-center justify-between ${
-                  p.id === activeProjectId
+                  p.id === activeProjectId && view === "project"
                     ? "bg-[#E8672C] text-white font-bold"
                     : "text-white/70 hover:bg-white/5"
                 }`}
               >
                 <span className="truncate">{p.name}</span>
-                {p.id === activeProjectId && <ChevronRight size={14} />}
+                {p.id === activeProjectId && view === "project" && <ChevronRight size={14} />}
               </button>
             ))}
           </div>
@@ -421,15 +464,28 @@ function ContractingApp() {
         </div>
 
         <div className="mt-6 px-4">
+          <div className="text-[11px] text-white/40 font-semibold mb-2 px-1">عام</div>
+          <button
+            onClick={() => setView("finance")}
+            className={`w-full text-right px-3 py-2.5 rounded-lg text-sm flex items-center gap-2.5 transition ${
+              view === "finance" ? "bg-white/10 text-white font-bold" : "text-white/60 hover:bg-white/5 hover:text-white/90"
+            }`}
+          >
+            <Users size={16} className={view === "finance" ? "text-[#E8672C]" : ""} />
+            حسابات السلف والتمويلات
+          </button>
+        </div>
+
+        <div className="mt-6 px-4">
           <div className="text-[11px] text-white/40 font-semibold mb-2 px-1">الأقسام</div>
           <nav className="space-y-1">
             {tabs.map((t) => {
               const Icon = t.icon;
-              const active = tab === t.key;
+              const active = tab === t.key && view === "project";
               return (
                 <button
                   key={t.key}
-                  onClick={() => setTab(t.key)}
+                  onClick={() => { setTab(t.key); setView("project"); }}
                   className={`w-full text-right px-3 py-2.5 rounded-lg text-sm flex items-center gap-2.5 transition ${
                     active ? "bg-white/10 text-white font-bold" : "text-white/60 hover:bg-white/5 hover:text-white/90"
                   }`}
@@ -447,7 +503,7 @@ function ContractingApp() {
             <div className="font-semibold text-white/60 mb-1">{project?.name}</div>
             {project?.client} · {project?.location}
           </div>
-          {project && (
+          {project && view === "project" && (
             <button
               onClick={() => deleteProject(project.id)}
               className="w-full mt-2 px-3 py-1.5 rounded-lg text-[11px] font-semibold text-[#F0918A] hover:bg-[#C1453B]/10 flex items-center justify-center gap-1.5 transition"
@@ -460,6 +516,20 @@ function ContractingApp() {
 
       {/* MAIN */}
       <main className="flex-1 paper-bg min-h-screen">
+        {view === "finance" ? (
+          <div className="p-8">
+            <FinanceAccountsModule
+              financePersons={financePersons}
+              financeTransactions={financeTransactions}
+              onAddPerson={addFinancePerson}
+              onDeletePerson={deleteFinancePerson}
+              onAddTransaction={addFinanceTransaction}
+              onUpdateTransaction={updateFinanceTransaction}
+              onDeleteTransaction={deleteFinanceTransaction}
+            />
+          </div>
+        ) : (
+          <>
         <header className="px-8 pt-7 pb-5 border-b border-[#E1DACB] bg-[#F6F3EA]/80 sticky top-0 backdrop-blur z-10">
           <div className="flex items-start justify-between">
             <div>
@@ -555,6 +625,8 @@ function ContractingApp() {
             <BudgetTab pWorkItems={pWorkItems} pCosts={pCosts} />
           )}
         </div>
+        </>
+        )}
       </main>
 
       {showNewProject && (
@@ -1618,6 +1690,257 @@ function FinancingTab({ pFinancings, repayments, funders, activeProjectId, onAdd
             </div>
           );
         })}
+      </div>
+    </div>
+  );
+}
+
+/* ---------------------------- finance accounts module (مستقل) ---------------------------- */
+
+const FINANCE_TX_TYPES = [
+  { key: "تمويل", color: "#6B5CA5" },
+  { key: "سلفة", color: "#D6A23C" },
+  { key: "سداد", color: "#3F7D63" },
+];
+
+function financeBalance(personId, financeTransactions) {
+  return financeTransactions
+    .filter((t) => t.personId === personId)
+    .reduce((s, t) => s + (t.type === "سداد" ? -t.amount : t.amount), 0);
+}
+
+function FinanceAccountsModule({ financePersons, financeTransactions, onAddPerson, onDeletePerson, onAddTransaction, onUpdateTransaction, onDeleteTransaction }) {
+  const [selectedId, setSelectedId] = useState(null);
+  const [showAddPerson, setShowAddPerson] = useState(false);
+  const [newPersonName, setNewPersonName] = useState("");
+  const [newPersonNote, setNewPersonNote] = useState("");
+
+  const selectedPerson = financePersons.find((p) => p.id === selectedId);
+
+  const addPerson = async () => {
+    if (!newPersonName.trim()) return;
+    await onAddPerson({ id: "fp_" + Math.random().toString(36).slice(2, 8), name: newPersonName.trim(), note: newPersonNote.trim() });
+    setNewPersonName("");
+    setNewPersonNote("");
+    setShowAddPerson(false);
+  };
+
+  if (selectedPerson) {
+    return (
+      <PersonLedger
+        person={selectedPerson}
+        transactions={financeTransactions.filter((t) => t.personId === selectedPerson.id)}
+        onBack={() => setSelectedId(null)}
+        onAddTransaction={onAddTransaction}
+        onUpdateTransaction={onUpdateTransaction}
+        onDeleteTransaction={onDeleteTransaction}
+      />
+    );
+  }
+
+  const summaries = financePersons.map((p) => {
+    const txs = financeTransactions.filter((t) => t.personId === p.id);
+    const financingTotal = txs.filter((t) => t.type === "تمويل" || t.type === "سلفة").reduce((s, t) => s + t.amount, 0);
+    const repaidTotal = txs.filter((t) => t.type === "سداد").reduce((s, t) => s + t.amount, 0);
+    return { ...p, financingTotal, repaidTotal, balance: financingTotal - repaidTotal };
+  });
+
+  const grandFinancing = summaries.reduce((s, p) => s + p.financingTotal, 0);
+  const grandRepaid = summaries.reduce((s, p) => s + p.repaidTotal, 0);
+  const grandBalance = grandFinancing - grandRepaid;
+
+  return (
+    <div className="space-y-5">
+      <div className="flex items-center justify-between">
+        <div>
+          <h2 className="font-bold text-[#1E2530] text-xl">حسابات السلف والتمويلات</h2>
+          <p className="text-[12px] text-[#9A9483] mt-1">حساب مستقل لكل شخص/جهة — غير مرتبط بمشروع معين</p>
+        </div>
+        <button onClick={() => setShowAddPerson((o) => !o)} className="px-3 py-2 rounded-lg bg-[#1E2530] text-white text-sm font-semibold flex items-center gap-1.5 hover:bg-[#2b3543] transition">
+          <Plus size={15} /> إضافة شخص/جهة
+        </button>
+      </div>
+
+      <div className="grid grid-cols-3 gap-3">
+        <div className="bg-white rounded-xl border border-[#E1DACB] p-4">
+          <div className="text-[11px] text-[#9A9483] mb-1">إجمالي التمويلات والسلف</div>
+          <div className="font-bold mono text-lg text-[#1E2530]">{money(grandFinancing)}</div>
+        </div>
+        <div className="bg-white rounded-xl border border-[#E1DACB] p-4">
+          <div className="text-[11px] text-[#9A9483] mb-1">إجمالي السداد</div>
+          <div className="font-bold mono text-lg text-[#3F7D63]">{money(grandRepaid)}</div>
+        </div>
+        <div className="bg-[#1E2530] rounded-xl p-4 text-white">
+          <div className="text-[11px] text-white/50 mb-1">إجمالي المستحق</div>
+          <div className={`font-bold mono text-lg ${grandBalance > 0 ? "text-[#E8AA6C]" : "text-white"}`}>{money(grandBalance)}</div>
+        </div>
+      </div>
+
+      {showAddPerson && (
+        <div className="bg-white rounded-xl border border-[#E1DACB] p-4 grid grid-cols-3 gap-3">
+          <Field label="الاسم" value={newPersonName} onChange={setNewPersonName} placeholder="اسم الشخص أو الجهة" />
+          <Field label="ملاحظة (اختياري)" value={newPersonNote} onChange={setNewPersonNote} placeholder="مثال: صديق، مصدر تمويل خارجي" />
+          <div className="flex items-end">
+            <button onClick={addPerson} className="px-4 py-2 rounded-lg bg-[#E8672C] text-white text-sm font-semibold hover:bg-[#C8511E] transition">حفظ</button>
+          </div>
+        </div>
+      )}
+
+      <div className="bg-white rounded-xl border border-[#E1DACB] overflow-hidden">
+        <table className="w-full text-sm">
+          <thead>
+            <tr className="bg-[#F6F3EA] text-[#6B7280] text-[12px]">
+              <th className="text-right py-3 px-4 font-semibold">الاسم</th>
+              <th className="text-right py-3 px-4 font-semibold">إجمالي التمويلات والسلف</th>
+              <th className="text-right py-3 px-4 font-semibold">إجمالي السداد</th>
+              <th className="text-right py-3 px-4 font-semibold">الرصيد المستحق</th>
+              <th className="text-right py-3 px-4 font-semibold w-10"></th>
+            </tr>
+          </thead>
+          <tbody className="divide-y divide-[#EFEBDF]">
+            {summaries.map((p) => (
+              <tr key={p.id} className="hover:bg-[#FAF8F2] transition cursor-pointer group" onClick={() => setSelectedId(p.id)}>
+                <td className="py-3 px-4 font-semibold text-[#1E2530]">{p.name}{p.note ? <span className="text-[#9A9483] font-normal text-xs"> — {p.note}</span> : null}</td>
+                <td className="py-3 px-4 mono">{money(p.financingTotal)}</td>
+                <td className="py-3 px-4 mono text-[#3F7D63]">{money(p.repaidTotal)}</td>
+                <td className={`py-3 px-4 mono font-bold ${p.balance > 0 ? "text-[#D6A23C]" : "text-[#3F7D63]"}`}>{money(p.balance)}</td>
+                <td className="py-3 px-4">
+                  <button
+                    onClick={(e) => { e.stopPropagation(); onDeletePerson(p.id); }}
+                    title="حذف الحساب"
+                    className="p-1.5 rounded-md text-[#C1453B] opacity-0 group-hover:opacity-100 hover:bg-[#C1453B]/10 transition"
+                  >
+                    <Trash2 size={14} />
+                  </button>
+                </td>
+              </tr>
+            ))}
+            {summaries.length === 0 && (
+              <tr><td colSpan={5} className="text-center py-8 text-[#9A9483]">لا يوجد أشخاص/جهات مسجّلة بعد.</td></tr>
+            )}
+          </tbody>
+        </table>
+      </div>
+    </div>
+  );
+}
+
+function PersonLedger({ person, transactions, onBack, onAddTransaction, onUpdateTransaction, onDeleteTransaction }) {
+  const [open, setOpen] = useState(false);
+  const [editId, setEditId] = useState(null);
+  const [form, setForm] = useState({ date: "", type: "تمويل", amount: "", note: "" });
+
+  const resetForm = () => setForm({ date: "", type: "تمويل", amount: "", note: "" });
+
+  const submit = () => {
+    if (!form.date || !form.amount) return;
+    if (editId) {
+      onUpdateTransaction(editId, { date: form.date, type: form.type, amount: Number(form.amount), note: form.note });
+      setEditId(null);
+    } else {
+      onAddTransaction({ id: "ft_" + Math.random().toString(36).slice(2, 8), personId: person.id, date: form.date, type: form.type, amount: Number(form.amount), note: form.note });
+    }
+    resetForm();
+    setOpen(false);
+  };
+
+  const startEdit = (t) => {
+    setEditId(t.id);
+    setForm({ date: t.date, type: t.type, amount: String(t.amount), note: t.note || "" });
+    setOpen(true);
+  };
+
+  const cancelForm = () => {
+    setEditId(null);
+    resetForm();
+    setOpen(false);
+  };
+
+  // كشف حساب تراكمي: ترتيب زمني تصاعدي لحساب الرصيد بعد كل حركة، ثم عرض الأحدث أولاً
+  const chronological = [...transactions].sort((a, b) => (a.date < b.date ? -1 : a.date > b.date ? 1 : 0));
+  let running = 0;
+  const withBalance = chronological.map((t) => {
+    running += t.type === "سداد" ? -t.amount : t.amount;
+    return { ...t, balanceAfter: running };
+  });
+  const currentBalance = running;
+  const displayRows = [...withBalance].reverse();
+
+  return (
+    <div className="space-y-5">
+      <button onClick={onBack} className="text-sm font-semibold text-[#6B7280] hover:text-[#1E2530] flex items-center gap-1 transition">
+        <ChevronRight size={16} /> رجوع لكل الحسابات
+      </button>
+
+      <div className="flex items-center justify-between">
+        <div>
+          <h2 className="font-bold text-[#1E2530] text-xl">{person.name}</h2>
+          {person.note && <p className="text-[12px] text-[#9A9483] mt-1">{person.note}</p>}
+        </div>
+        <button onClick={() => (open ? cancelForm() : setOpen(true))} className="px-3 py-2 rounded-lg bg-[#1E2530] text-white text-sm font-semibold flex items-center gap-1.5 hover:bg-[#2b3543] transition">
+          <Plus size={15} /> حركة جديدة
+        </button>
+      </div>
+
+      <div className="bg-[#1E2530] rounded-xl p-4 text-white inline-block">
+        <div className="text-[11px] text-white/50 mb-1">الرصيد المستحق حاليًا</div>
+        <div className={`font-bold mono text-lg ${currentBalance > 0 ? "text-[#E8AA6C]" : "text-white"}`}>{money(currentBalance)}</div>
+      </div>
+
+      {open && (
+        <div className="bg-white rounded-xl border border-[#E1DACB] p-4 grid grid-cols-4 gap-3">
+          {editId && (
+            <div className="col-span-4 text-xs font-semibold text-[#E8672C] bg-[#E8672C]/10 rounded-md px-3 py-1.5">جاري تعديل حركة موجودة</div>
+          )}
+          <Field label="التاريخ" value={form.date} onChange={(v) => setForm((f) => ({ ...f, date: v }))} type="date" />
+          <SelectField label="نوع الحركة" value={form.type} onChange={(v) => setForm((f) => ({ ...f, type: v }))} options={FINANCE_TX_TYPES.map((t) => ({ value: t.key, label: t.key }))} />
+          <Field label="المبلغ" value={form.amount} onChange={(v) => setForm((f) => ({ ...f, amount: v }))} type="number" />
+          <Field label="البيان (اختياري)" value={form.note} onChange={(v) => setForm((f) => ({ ...f, note: v }))} placeholder="وصف الحركة" />
+          <div className="col-span-4 flex justify-end gap-2">
+            {editId && <button onClick={cancelForm} className="px-4 py-2 rounded-lg bg-[#E1DACB] text-[#1E2530] text-sm font-semibold hover:bg-[#D8D3C7] transition">إلغاء</button>}
+            <button onClick={submit} className="px-4 py-2 rounded-lg bg-[#E8672C] text-white text-sm font-semibold hover:bg-[#C8511E] transition">{editId ? "حفظ التعديل" : "حفظ الحركة"}</button>
+          </div>
+        </div>
+      )}
+
+      <div className="bg-white rounded-xl border border-[#E1DACB] overflow-hidden">
+        <table className="w-full text-sm">
+          <thead>
+            <tr className="bg-[#F6F3EA] text-[#6B7280] text-[12px]">
+              <th className="text-right py-3 px-4 font-semibold">التاريخ</th>
+              <th className="text-right py-3 px-4 font-semibold">البيان</th>
+              <th className="text-right py-3 px-4 font-semibold">نوع الحركة</th>
+              <th className="text-right py-3 px-4 font-semibold">المبلغ</th>
+              <th className="text-right py-3 px-4 font-semibold">الرصيد بعد الحركة</th>
+              <th className="text-right py-3 px-4 font-semibold w-20"></th>
+            </tr>
+          </thead>
+          <tbody className="divide-y divide-[#EFEBDF]">
+            {displayRows.map((t) => {
+              const meta = FINANCE_TX_TYPES.find((m) => m.key === t.type);
+              return (
+                <tr key={t.id} className="hover:bg-[#FAF8F2] transition group">
+                  <td className="py-3 px-4 mono text-[#1E2530]">{t.date}</td>
+                  <td className="py-3 px-4 text-[#6B7280]">{t.note || "—"}</td>
+                  <td className="py-3 px-4">
+                    <span className="text-[11px] font-semibold px-2 py-1 rounded-md" style={{ backgroundColor: meta?.color + "18", color: meta?.color }}>{t.type}</span>
+                  </td>
+                  <td className={`py-3 px-4 mono font-bold ${t.type === "سداد" ? "text-[#3F7D63]" : "text-[#1E2530]"}`}>{t.type === "سداد" ? "-" : "+"}{money(t.amount)}</td>
+                  <td className="py-3 px-4 mono font-bold">{money(t.balanceAfter)}</td>
+                  <td className="py-3 px-4">
+                    <div className="flex gap-1 justify-end opacity-0 group-hover:opacity-100 transition">
+                      <button onClick={() => startEdit(t)} title="تعديل" className="p-1.5 rounded-md text-[#6B7280] hover:bg-[#E1DACB] hover:text-[#1E2530] transition"><Pencil size={14} /></button>
+                      <button onClick={() => onDeleteTransaction(t.id)} title="حذف" className="p-1.5 rounded-md text-[#C1453B] hover:bg-[#C1453B]/10 transition"><Trash2 size={14} /></button>
+                    </div>
+                  </td>
+                </tr>
+              );
+            })}
+            {displayRows.length === 0 && (
+              <tr><td colSpan={6} className="text-center py-8 text-[#9A9483]">لا توجد حركات مسجّلة بعد.</td></tr>
+            )}
+          </tbody>
+        </table>
       </div>
     </div>
   );
