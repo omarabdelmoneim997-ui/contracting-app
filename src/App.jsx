@@ -30,48 +30,6 @@ const GENERAL_EXPENSE_ITEMS = [
   "أخرى",
 ];
 
-const seedProjects = [
-  { id: "p1", name: "برج النخيل السكني", client: "شركة الدلتا للتعمير", location: "الإسكندرية", budget: 8500000, status: "جارٍ" },
-  { id: "p2", name: "فيلا التل الأخضر", client: "المهندس / كريم فوزي", location: "القاهرة الجديدة", budget: 2100000, status: "جارٍ" },
-];
-
-const seedWorkItems = [
-  { id: "w1", projectId: "p1", name: "أعمال الحفر والردم", unit: "م3", qty: 1200, price: 180 },
-  { id: "w2", projectId: "p1", name: "أعمال الخرسانة المسلحة", unit: "م3", qty: 950, price: 2400 },
-  { id: "w3", projectId: "p1", name: "أعمال المباني (بلوك)", unit: "م2", qty: 3200, price: 210 },
-  { id: "w4", projectId: "p1", name: "التشطيبات الداخلية", unit: "م2", qty: 2600, price: 950 },
-  { id: "w5", projectId: "p2", name: "أعمال الخرسانة", unit: "م3", qty: 220, price: 2500 },
-  { id: "w6", projectId: "p2", name: "التشطيبات والدهانات", unit: "م2", qty: 480, price: 880 },
-];
-
-const seedCosts = [
-  { id: "c1", projectId: "p1", workItemId: "w1", type: "مشتريات", desc: "سولار وتشغيل معدات", qty: 4, unit: "شهر", price: 22000, date: "2026-05-10" },
-  { id: "c2", projectId: "p1", workItemId: "w2", type: "مشتريات", desc: "حديد تسليح 16مم", qty: 85, unit: "طن", price: 34500, date: "2026-06-02" },
-  { id: "c3", projectId: "p1", workItemId: "w2", type: "مصنعيات", desc: "مقاول باطن صب أعمدة", qty: 1, unit: "دفعة", price: 310000, date: "2026-06-15" },
-  { id: "c4", projectId: "p1", workItemId: "w3", type: "مشتريات", desc: "طوب بلوك أسمنتي", qty: 60000, unit: "طوبة", price: 6.5, date: "2026-07-01" },
-  { id: "c5", projectId: "p1", workItemId: "w3", type: "مصنعيات", desc: "أجرة عمالة بناء", qty: 1, unit: "دفعة", price: 145000, date: "2026-07-20" },
-  { id: "c6", projectId: "p1", workItemId: "w4", type: "عهد", desc: "عهدة مهندس الموقع - تشطيبات", qty: 1, unit: "عهدة", price: 40000, date: "2026-08-01" },
-  { id: "c7", projectId: "p1", workItemId: null, type: "مصروفات", desc: "رسوم تراخيص ومتابعة", qty: 1, unit: "دفعة", price: 28000, date: "2026-05-05" },
-  { id: "c8", projectId: "p2", workItemId: "w5", type: "مشتريات", desc: "خرسانة جاهزة 30 نيوتن", qty: 210, unit: "م3", price: 2350, date: "2026-06-20" },
-  { id: "c9", projectId: "p2", workItemId: "w6", type: "مصنعيات", desc: "مقاول دهانات", qty: 1, unit: "دفعة", price: 95000, date: "2026-07-25" },
-  { id: "c10", projectId: "p1", workItemId: null, type: "مصروفات عمومية", desc: "أجور العمال", qty: 1, unit: "دفعة", price: 62000, date: "2026-07-10" },
-  { id: "c11", projectId: "p1", workItemId: null, type: "مصروفات عمومية", desc: "مرتبات العاملين بالمشروع", qty: 1, unit: "دفعة", price: 54000, date: "2026-07-30" },
-  { id: "c12", projectId: "p1", workItemId: null, type: "مصروفات عمومية", desc: "مصروفات الانتقالات", qty: 1, unit: "دفعة", price: 9500, date: "2026-08-01" },
-  { id: "c13", projectId: "p1", workItemId: null, type: "مصروفات عمومية", desc: "إكراميات", qty: 1, unit: "دفعة", price: 3200, date: "2026-08-05" },
-];
-
-const seedExtracts = [
-  { id: "e1", projectId: "p1", number: 1, date: "2026-05-31", percentage: 15, amount: 1275000 },
-  { id: "e2", projectId: "p1", number: 2, date: "2026-06-30", percentage: 28, amount: 1105000 },
-  { id: "e3", projectId: "p2", number: 1, date: "2026-06-30", percentage: 20, amount: 420000 },
-];
-
-const seedCollections = [
-  { id: "cl1", extractId: "e1", amount: 1275000, date: "2026-06-05", method: "تحويل بنكي" },
-  { id: "cl2", extractId: "e2", amount: 700000, date: "2026-07-04", method: "شيك" },
-  { id: "cl3", extractId: "e3", amount: 420000, date: "2026-07-02", method: "تحويل بنكي" },
-];
-
 /* --------------------------------- helpers --------------------------------- */
 
 const money = (n) =>
@@ -79,10 +37,6 @@ const money = (n) =>
 
 const fmt = (n, d = 0) =>
   (n || 0).toLocaleString("en-US", { maximumFractionDigits: d });
-
-function useId(prefix) {
-  return () => `${prefix}_${Math.random().toString(36).slice(2, 9)}`;
-}
 
 /* ---------------------------------- app ---------------------------------- */
 
@@ -833,6 +787,68 @@ function CostsTab({ pCosts, pWorkItems, activeProjectId, onAddCost, onUpdateCost
 
   const filtered = filter === "الكل" ? pCosts : pCosts.filter((c) => c.type === filter);
 
+  // تجميع التكاليف على مستويين: بند العمل ← تفاصيل بند التكلفة (الوصف)
+  const pivot = useMemo(() => {
+    const wiOrder = pWorkItems.map((w) => w.id);
+    const byWorkItem = new Map();
+
+    filtered.forEach((c) => {
+      const wiKey = c.workItemId || "__unassigned__";
+      if (!byWorkItem.has(wiKey)) byWorkItem.set(wiKey, new Map());
+      const descKey = (c.desc || "بدون وصف").trim();
+      const subMap = byWorkItem.get(wiKey);
+      if (!subMap.has(descKey)) subMap.set(descKey, []);
+      subMap.get(descKey).push(c);
+    });
+
+    const wiKeys = [...byWorkItem.keys()].sort((a, b) => {
+      if (a === "__unassigned__") return 1;
+      if (b === "__unassigned__") return -1;
+      return wiOrder.indexOf(a) - wiOrder.indexOf(b);
+    });
+
+    return wiKeys.map((wiKey) => {
+      const wi = pWorkItems.find((w) => w.id === wiKey);
+      const subMap = byWorkItem.get(wiKey);
+
+      const subItems = [...subMap.entries()]
+        .map(([desc, entries]) => {
+          const sortedEntries = [...entries].sort((a, b) => (a.date < b.date ? 1 : a.date > b.date ? -1 : 0));
+          const totalValue = entries.reduce((s, e) => s + e.qty * e.price, 0);
+          const totalQty = entries.reduce((s, e) => s + e.qty, 0);
+          const units = new Set(entries.map((e) => e.unit));
+          const types = [...new Set(entries.map((e) => e.type))];
+          return {
+            desc,
+            entries: sortedEntries,
+            totalValue,
+            totalQty,
+            unit: units.size === 1 ? entries[0].unit : null,
+            types,
+          };
+        })
+        .sort((a, b) => b.totalValue - a.totalValue);
+
+      const groupTotal = subItems.reduce((s, it) => s + it.totalValue, 0);
+
+      return {
+        key: wiKey,
+        name: wi ? wi.name : "تكاليف غير مرتبطة ببند",
+        unassigned: wiKey === "__unassigned__",
+        subItems,
+        groupTotal,
+      };
+    });
+  }, [filtered, pWorkItems]);
+
+  const grandTotal = pivot.reduce((s, g) => s + g.groupTotal, 0);
+
+  const [collapsedGroups, setCollapsedGroups] = useState({});
+  const [expandedItems, setExpandedItems] = useState({});
+
+  const toggleGroup = (key) => setCollapsedGroups((p) => ({ ...p, [key]: !p[key] }));
+  const toggleItem = (key) => setExpandedItems((p) => ({ ...p, [key]: !p[key] }));
+
   return (
     <div className="space-y-5">
       <div className="flex items-center justify-between">
@@ -905,52 +921,97 @@ function CostsTab({ pCosts, pWorkItems, activeProjectId, onAddCost, onUpdateCost
       )}
 
       <div className="bg-white rounded-xl border border-[#E1DACB] overflow-hidden">
-        <table className="w-full text-sm">
-          <thead>
-            <tr className="bg-[#F6F3EA] text-[#6B7280] text-[12px]">
-              <th className="text-right py-3 px-4 font-semibold">النوع</th>
-              <th className="text-right py-3 px-4 font-semibold">المستوى الأول</th>
-              <th className="text-right py-3 px-4 font-semibold">المستوى الثاني</th>
-              <th className="text-right py-3 px-4 font-semibold">التفاصيل</th>
-              <th className="text-right py-3 px-4 font-semibold">بند العمل</th>
-              <th className="text-right py-3 px-4 font-semibold">الكمية</th>
-              <th className="text-right py-3 px-4 font-semibold">سعر الوحدة</th>
-              <th className="text-right py-3 px-4 font-semibold">القيمة</th>
-              <th className="text-right py-3 px-4 font-semibold">التاريخ</th>
-              <th className="text-right py-3 px-4 font-semibold w-20"></th>
-            </tr>
-          </thead>
-          <tbody className="divide-y divide-[#EFEBDF]">
-            {filtered.map((c) => {
-              const meta = COST_TYPES.find((t) => t.key === c.type);
-              const w = pWorkItems.find((w) => w.id === c.workItemId);
-              return (
-                <tr key={c.id} className="hover:bg-[#FAF8F2] transition group">
-                  <td className="py-3 px-4">
-                    <span className="text-[11px] font-semibold px-2 py-1 rounded-md" style={{ backgroundColor: meta?.color + "18", color: meta?.color }}>{meta?.label}</span>
-                  </td>
-                  <td className="py-3 px-4 font-medium text-[#1E2530]">{c.costLevel1 || "—"}</td>
-                  <td className="py-3 px-4 font-medium text-[#1E2530]">{c.costLevel2 || "—"}</td>
-                  <td className="py-3 px-4 text-[#1E2530]">{c.desc}</td>
-                  <td className="py-3 px-4 text-[#6B7280]">{w ? w.name : "—"}</td>
-                  <td className="py-3 px-4 mono">{fmt(c.qty)} {c.unit}</td>
-                  <td className="py-3 px-4 mono">{fmt(c.price)}</td>
-                  <td className="py-3 px-4 mono font-bold">{money(c.qty * c.price)}</td>
-                  <td className="py-3 px-4 text-[#9A9483] mono text-xs">{c.date}</td>
-                  <td className="py-3 px-4">
-                    <div className="flex gap-1 justify-end opacity-0 group-hover:opacity-100 transition">
-                      <button onClick={() => startEdit(c)} title="تعديل" className="p-1.5 rounded-md text-[#6B7280] hover:bg-[#E1DACB] hover:text-[#1E2530] transition"><Pencil size={14} /></button>
-                      <button onClick={() => onDeleteCost(c.id)} title="حذف" className="p-1.5 rounded-md text-[#C1453B] hover:bg-[#C1453B]/10 transition"><Trash2 size={14} /></button>
-                    </div>
-                  </td>
-                </tr>
-              );
-            })}
-            {filtered.length === 0 && (
-              <tr><td colSpan={10} className="text-center py-8 text-[#9A9483]">لا توجد تكاليف في هذا التصنيف.</td></tr>
-            )}
-          </tbody>
-        </table>
+        {pivot.length === 0 && (
+          <div className="text-center py-10 text-[#9A9483] text-sm">لا توجد تكاليف في هذا التصنيف.</div>
+        )}
+
+        {pivot.map((g) => {
+          const isCollapsed = collapsedGroups[g.key];
+          return (
+            <div key={g.key} className="border-b border-[#EFEBDF] last:border-b-0">
+              <button
+                onClick={() => toggleGroup(g.key)}
+                className="w-full flex items-center justify-between px-4 py-3 bg-[#F6F3EA] hover:bg-[#EFEAD9] transition text-right"
+              >
+                <div className="flex items-center gap-2 min-w-0">
+                  <ChevronDown size={15} className={`text-[#6B7280] shrink-0 transition-transform ${isCollapsed ? "-rotate-90" : ""}`} />
+                  <span className={`font-bold truncate ${g.unassigned ? "text-[#9A9483]" : "text-[#1E2530]"}`}>{g.name}</span>
+                  <span className="text-[11px] text-[#9A9483] mono shrink-0">({g.subItems.length} بند فرعي)</span>
+                </div>
+                <span className="font-bold mono text-[#1E2530] shrink-0">{money(g.groupTotal)}</span>
+              </button>
+
+              {!isCollapsed && (
+                <div>
+                  {g.subItems.map((it) => {
+                    const itemKey = g.key + "::" + it.desc;
+                    const itemOpen = expandedItems[itemKey];
+                    return (
+                      <div key={itemKey} className="border-t border-[#EFEBDF]">
+                        <button
+                          onClick={() => toggleItem(itemKey)}
+                          className="w-full flex items-center justify-between px-4 py-2.5 pr-9 hover:bg-[#FAF8F2] transition text-right"
+                        >
+                          <div className="flex items-center gap-2 min-w-0">
+                            <ChevronRight size={13} className={`text-[#9A9483] shrink-0 transition-transform ${itemOpen ? "rotate-90" : ""}`} />
+                            <span className="text-sm font-semibold text-[#1E2530] truncate">{it.desc}</span>
+                            <div className="flex gap-1 shrink-0">
+                              {it.types.map((t) => {
+                                const meta = COST_TYPES.find((ct) => ct.key === t);
+                                return (
+                                  <span key={t} className="text-[10px] font-semibold px-1.5 py-0.5 rounded" style={{ backgroundColor: meta?.color + "18", color: meta?.color }}>
+                                    {meta?.label}
+                                  </span>
+                                );
+                              })}
+                            </div>
+                            <span className="text-[11px] text-[#9A9483] mono shrink-0">{it.entries.length} حركة</span>
+                          </div>
+                          <div className="flex items-center gap-4 shrink-0">
+                            {it.unit && <span className="text-[11px] text-[#9A9483] mono">{fmt(it.totalQty)} {it.unit}</span>}
+                            <span className="text-sm font-bold mono">{money(it.totalValue)}</span>
+                          </div>
+                        </button>
+
+                        {itemOpen && (
+                          <div className="bg-[#FAF8F2] px-4 pr-14 py-2.5 space-y-1.5">
+                            {it.entries.map((c) => (
+                              <div key={c.id} className="flex items-center justify-between bg-white rounded-lg px-3 py-2 border border-[#E1DACB] text-sm group">
+                                <div className="flex items-center gap-3 min-w-0 text-[#6B7280]">
+                                  <span className="mono text-xs text-[#9A9483] shrink-0">{c.date}</span>
+                                  <span className="shrink-0 mono">{fmt(c.qty)} {c.unit} × {fmt(c.price)}</span>
+                                  {(c.costLevel1 || c.costLevel2) && (
+                                    <span className="text-[11px] text-[#9A9483] truncate">
+                                      {c.costLevel1}{c.costLevel2 ? ` · ${c.costLevel2}` : ""}
+                                    </span>
+                                  )}
+                                </div>
+                                <div className="flex items-center gap-2 shrink-0">
+                                  <span className="font-bold mono">{money(c.qty * c.price)}</span>
+                                  <div className="flex gap-1 opacity-0 group-hover:opacity-100 transition">
+                                    <button onClick={() => startEdit(c)} title="تعديل" className="p-1 rounded-md text-[#6B7280] hover:bg-[#E1DACB] hover:text-[#1E2530] transition"><Pencil size={13} /></button>
+                                    <button onClick={() => onDeleteCost(c.id)} title="حذف" className="p-1 rounded-md text-[#C1453B] hover:bg-[#C1453B]/10 transition"><Trash2 size={13} /></button>
+                                  </div>
+                                </div>
+                              </div>
+                            ))}
+                          </div>
+                        )}
+                      </div>
+                    );
+                  })}
+                </div>
+              )}
+            </div>
+          );
+        })}
+
+        {pivot.length > 0 && (
+          <div className="flex items-center justify-between px-4 py-3 bg-[#1E2530] text-white">
+            <span className="font-bold text-sm">الإجمالي</span>
+            <span className="font-bold mono">{money(grandTotal)}</span>
+          </div>
+        )}
       </div>
     </div>
   );
