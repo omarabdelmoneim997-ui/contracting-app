@@ -49,6 +49,8 @@ function ContractingApp() {
   const [treasuryEntries, setTreasuryEntries] = useState([]);
   const [financePersons, setFinancePersons] = useState([]);
   const [financeTransactions, setFinanceTransactions] = useState([]);
+  const [custodies, setCustodies] = useState([]);
+  const [custodyCategories, setCustodyCategories] = useState([]);
   const [view, setView] = useState("project"); // 'project' | 'finance'
   const [loading, setLoading] = useState(true);
   const [dbError, setDbError] = useState(null);
@@ -59,7 +61,7 @@ function ContractingApp() {
 
   useEffect(() => {
     async function loadAll() {
-      const [projRes, wiRes, costRes, extRes, colRes, treRes, fpRes, ftRes] = await Promise.all([
+      const [projRes, wiRes, costRes, extRes, colRes, treRes, fpRes, ftRes, custRes, ccRes] = await Promise.all([
         supabase.from("projects").select("*").order("created_at"),
         supabase.from("work_items").select("*").order("created_at"),
         supabase.from("costs").select("*").order("created_at"),
@@ -68,9 +70,11 @@ function ContractingApp() {
         supabase.from("treasury_entries").select("*").order("date"),
         supabase.from("finance_persons").select("*").order("created_at"),
         supabase.from("finance_transactions").select("*").order("date"),
+        supabase.from("custodies").select("*").order("created_at"),
+        supabase.from("custody_categories").select("*").order("created_at"),
       ]);
 
-      const firstError = [projRes, wiRes, costRes, extRes, colRes, treRes, fpRes, ftRes].find((r) => r.error);
+      const firstError = [projRes, wiRes, costRes, extRes, colRes, treRes, fpRes, ftRes, custRes, ccRes].find((r) => r.error);
       if (firstError) {
         setDbError(firstError.error.message);
         setLoading(false);
@@ -82,7 +86,7 @@ function ContractingApp() {
         (wiRes.data || []).map((w) => ({ id: w.id, projectId: w.project_id, name: w.name, unit: w.unit, qty: Number(w.qty), price: Number(w.price) }))
       );
       setCosts(
-        (costRes.data || []).map((c) => ({ id: c.id, projectId: c.project_id, workItemId: c.work_item_id, type: c.type, desc: c.description, costLevel1: c.cost_level_1 || "", costLevel2: c.cost_level_2 || "", qty: Number(c.qty), unit: c.unit, price: Number(c.price), date: c.date }))
+        (costRes.data || []).map((c) => ({ id: c.id, projectId: c.project_id, workItemId: c.work_item_id, custodyId: c.custody_id || null, type: c.type, desc: c.description, costLevel1: c.cost_level_1 || "", costLevel2: c.cost_level_2 || "", qty: Number(c.qty), unit: c.unit, price: Number(c.price), date: c.date }))
       );
       setExtracts(
         (extRes.data || []).map((e) => ({ id: e.id, projectId: e.project_id, number: e.number, date: e.date, percentage: Number(e.percentage), amount: Number(e.amount) }))
@@ -97,6 +101,10 @@ function ContractingApp() {
       setFinanceTransactions(
         (ftRes.data || []).map((t) => ({ id: t.id, personId: t.person_id, date: t.date, type: t.type, amount: Number(t.amount), note: t.note }))
       );
+      setCustodies(
+        (custRes.data || []).map((c) => ({ id: c.id, projectId: c.project_id, personName: c.person_name, amountGiven: Number(c.amount_given), dateGiven: c.date_given, status: c.status, notes: c.notes || "", sourceCostId: c.source_cost_id || null }))
+      );
+      setCustodyCategories((ccRes.data || []).map((c) => ({ id: c.id, name: c.name })));
 
       if (projRes.data && projRes.data.length > 0) {
         setActiveProjectId(projRes.data[0].id);
@@ -119,7 +127,7 @@ function ContractingApp() {
   }
 
   async function addCost(c) {
-    const { error } = await supabase.from("costs").insert([{ id: c.id, project_id: c.projectId, work_item_id: c.workItemId, type: c.type, description: c.desc, cost_level_1: c.costLevel1 || null, cost_level_2: c.costLevel2 || null, qty: c.qty, unit: c.unit, price: c.price, date: c.date }]);
+    const { error } = await supabase.from("costs").insert([{ id: c.id, project_id: c.projectId, work_item_id: c.workItemId, custody_id: c.custodyId || null, type: c.type, description: c.desc, cost_level_1: c.costLevel1 || null, cost_level_2: c.costLevel2 || null, qty: c.qty, unit: c.unit, price: c.price, date: c.date }]);
     if (error) { alert("حصل خطأ أثناء حفظ التكلفة: " + error.message); return; }
     setCosts((prev) => [...prev, c]);
   }
@@ -202,6 +210,7 @@ function ContractingApp() {
     setExtracts((prev) => prev.filter((e) => e.projectId !== id));
     setCollections((prev) => prev.filter((c) => !remainingExtractIds.includes(c.extractId)));
     setTreasuryEntries((prev) => prev.filter((t) => t.projectId !== id));
+    setCustodies((prev) => prev.filter((c) => c.projectId !== id));
     if (activeProjectId === id && remaining.length > 0) setActiveProjectId(remaining[0].id);
   }
 
@@ -264,11 +273,66 @@ function ContractingApp() {
     setFinanceTransactions((prev) => prev.filter((t) => t.id !== id));
   }
 
+  async function addCustody(c) {
+    const { error } = await supabase.from("custodies").insert([{ id: c.id, project_id: c.projectId, person_name: c.personName, amount_given: c.amountGiven, date_given: c.dateGiven, status: c.status, notes: c.notes || null }]);
+    if (error) { alert("حصل خطأ أثناء حفظ العهدة: " + error.message); return; }
+    setCustodies((prev) => [...prev, c]);
+  }
+
+  async function updateCustody(id, patch) {
+    const updateData = {};
+    if (patch.personName !== undefined) updateData.person_name = patch.personName;
+    if (patch.amountGiven !== undefined) updateData.amount_given = patch.amountGiven;
+    if (patch.dateGiven !== undefined) updateData.date_given = patch.dateGiven;
+    if (patch.notes !== undefined) updateData.notes = patch.notes || null;
+    if (patch.status !== undefined) updateData.status = patch.status;
+    const { error } = await supabase.from("custodies").update(updateData).eq("id", id);
+    if (error) { alert("حصل خطأ أثناء تعديل العهدة: " + error.message); return; }
+    setCustodies((prev) => prev.map((c) => (c.id === id ? { ...c, ...patch } : c)));
+  }
+
+  async function deleteCustody(id) {
+    if (!window.confirm("متأكد إنك عايز تمسح العهدة دي؟ بنود التصفية المسجّلة عليها هتفضل موجودة كتكاليف عادية، بس هتتفك من ربطها بالعهدة.")) return;
+    const { error: unlinkError } = await supabase.from("costs").update({ custody_id: null }).eq("custody_id", id);
+    if (unlinkError) { alert("حصل خطأ أثناء فك ربط التكاليف المرتبطة: " + unlinkError.message); return; }
+    const { error } = await supabase.from("custodies").delete().eq("id", id);
+    if (error) { alert("حصل خطأ أثناء حذف العهدة: " + error.message); return; }
+    setCustodies((prev) => prev.filter((c) => c.id !== id));
+    setCosts((prev) => prev.map((c) => (c.custodyId === id ? { ...c, custodyId: null } : c)));
+  }
+
+  async function settleCustody(id) {
+    const custody = custodies.find((c) => c.id === id);
+    if (!custody) return;
+    if (custody.sourceCostId) {
+      const { error: delError } = await supabase.from("costs").delete().eq("id", custody.sourceCostId);
+      if (delError) { alert("حصل خطأ أثناء حذف قيد العهدة الأصلي: " + delError.message); return; }
+      setCosts((prev) => prev.filter((c) => c.id !== custody.sourceCostId));
+    }
+    const { error } = await supabase.from("custodies").update({ status: "مصفاة" }).eq("id", id);
+    if (error) { alert("حصل خطأ أثناء تصفية العهدة: " + error.message); return; }
+    setCustodies((prev) => prev.map((c) => (c.id === id ? { ...c, status: "مصفاة" } : c)));
+  }
+
+  async function addCustodyCategory(cat) {
+    const { error } = await supabase.from("custody_categories").insert([{ id: cat.id, name: cat.name }]);
+    if (error) { alert("حصل خطأ أثناء إضافة التصنيف (ربما تصنيف بنفس الاسم موجود بالفعل): " + error.message); return; }
+    setCustodyCategories((prev) => [...prev, cat]);
+  }
+
+  async function deleteCustodyCategory(id) {
+    if (!window.confirm("متأكد إنك عايز تمسح التصنيف ده؟")) return;
+    const { error } = await supabase.from("custody_categories").delete().eq("id", id);
+    if (error) { alert("حصل خطأ أثناء حذف التصنيف: " + error.message); return; }
+    setCustodyCategories((prev) => prev.filter((c) => c.id !== id));
+  }
+
   const project = projects.find((p) => p.id === activeProjectId);
   const pWorkItems = workItems.filter((w) => w.projectId === activeProjectId);
   const pCosts = costs.filter((c) => c.projectId === activeProjectId);
   const pExtracts = extracts.filter((e) => e.projectId === activeProjectId);
   const pTreasuryEntries = treasuryEntries.filter((t) => t.projectId === activeProjectId);
+  const pCustodies = custodies.filter((c) => c.projectId === activeProjectId);
 
   const totals = useMemo(() => {
     const budgetTotal = pWorkItems.reduce((s, w) => s + w.qty * w.price, 0);
@@ -286,6 +350,7 @@ function ContractingApp() {
     { key: "items", label: "بنود الأعمال", icon: Ruler },
     { key: "costs", label: "التكاليف", icon: Hammer },
     { key: "extracts", label: "المستخلصات", icon: FileStack },
+    { key: "custody", label: "تصفية العهد", icon: Landmark },
     { key: "treasury", label: "الخزينة", icon: Banknote },
     { key: "budget", label: "المقايسة / Budget", icon: Wallet },
   ];
@@ -497,6 +562,24 @@ function ContractingApp() {
               projectBudget={project?.budget}
               projectName={project?.name}
               projectClient={project?.client}
+            />
+          )}
+          {tab === "custody" && (
+            <CustodyTab
+              pCustodies={pCustodies}
+              pCosts={pCosts}
+              pWorkItems={pWorkItems}
+              custodyCategories={custodyCategories}
+              activeProjectId={activeProjectId}
+              onAddCustody={addCustody}
+              onUpdateCustody={updateCustody}
+              onDeleteCustody={deleteCustody}
+              onSettleCustody={settleCustody}
+              onAddCost={addCost}
+              onUpdateCost={updateCost}
+              onDeleteCost={deleteCost}
+              onAddCategory={addCustodyCategory}
+              onDeleteCategory={deleteCustodyCategory}
             />
           )}
           {tab === "treasury" && (
@@ -1763,6 +1846,356 @@ function PersonLedger({ person, transactions, onBack, onAddTransaction, onUpdate
           </tbody>
         </table>
       </div>
+    </div>
+  );
+}
+
+/* -------------------------------- تصفية العهد -------------------------------- */
+
+function CustodyTab({
+  pCustodies, pCosts, pWorkItems, custodyCategories, activeProjectId,
+  onAddCustody, onUpdateCustody, onDeleteCustody, onSettleCustody,
+  onAddCost, onUpdateCost, onDeleteCost, onAddCategory, onDeleteCategory,
+}) {
+  const [selectedId, setSelectedId] = useState(null);
+  const [open, setOpen] = useState(false);
+  const [form, setForm] = useState({ personName: "", amount: "", date: "", notes: "" });
+  const [showCategories, setShowCategories] = useState(false);
+  const [newCategory, setNewCategory] = useState("");
+
+  const resetForm = () => setForm({ personName: "", amount: "", date: "", notes: "" });
+
+  const submitCustody = () => {
+    if (!form.personName || !form.amount) return;
+    onAddCustody({
+      id: "cst_" + Math.random().toString(36).slice(2, 8),
+      projectId: activeProjectId,
+      personName: form.personName,
+      amountGiven: Number(form.amount),
+      dateGiven: form.date || new Date().toISOString().slice(0, 10),
+      status: "مفتوحة",
+      notes: form.notes,
+    });
+    resetForm();
+    setOpen(false);
+  };
+
+  const addCategory = () => {
+    if (!newCategory.trim()) return;
+    onAddCategory({ id: "cc_" + Math.random().toString(36).slice(2, 8), name: newCategory.trim() });
+    setNewCategory("");
+  };
+
+  const selected = pCustodies.find((c) => c.id === selectedId);
+  if (selected) {
+    return (
+      <CustodySettlement
+        custody={selected}
+        lines={pCosts.filter((c) => c.custodyId === selected.id)}
+        pWorkItems={pWorkItems}
+        custodyCategories={custodyCategories}
+        activeProjectId={activeProjectId}
+        onBack={() => setSelectedId(null)}
+        onAddCost={onAddCost}
+        onUpdateCost={onUpdateCost}
+        onDeleteCost={onDeleteCost}
+        onSettleCustody={onSettleCustody}
+      />
+    );
+  }
+
+  const openCustodies = pCustodies.filter((c) => c.status !== "مصفاة");
+  const closedCustodies = pCustodies.filter((c) => c.status === "مصفاة");
+  const totalOpen = openCustodies.reduce((s, c) => s + c.amountGiven, 0);
+
+  return (
+    <div className="space-y-5">
+      <div className="flex items-center justify-between">
+        <div>
+          <h2 className="font-bold text-[#1E2530] text-xl">تصفية العهد</h2>
+          <p className="text-[12px] text-[#9A9483] mt-1">عُهد مربوطة بهذا المشروع فقط</p>
+        </div>
+        <div className="flex gap-2">
+          <button onClick={() => setShowCategories((o) => !o)} className="px-3 py-2 rounded-lg bg-white border border-[#E1DACB] text-[#1E2530] text-sm font-semibold hover:border-[#1E2530]/40 transition">
+            إدارة التصنيفات
+          </button>
+          <button onClick={() => setOpen((o) => !o)} className="px-3 py-2 rounded-lg bg-[#1E2530] text-white text-sm font-semibold flex items-center gap-1.5 hover:bg-[#2b3543] transition">
+            <Plus size={15} /> عهدة جديدة
+          </button>
+        </div>
+      </div>
+
+      {showCategories && (
+        <div className="bg-white rounded-xl border border-[#E1DACB] p-4 space-y-3">
+          <div className="text-sm font-bold text-[#1E2530]">تصنيفات التصفية العامة (تستخدم للبنود اللي مش مرتبطة ببند عمل)</div>
+          <div className="flex flex-wrap gap-2">
+            {custodyCategories.map((cat) => (
+              <span key={cat.id} className="flex items-center gap-1.5 text-xs font-semibold bg-[#F6F3EA] border border-[#E1DACB] rounded-full px-3 py-1.5 text-[#1E2530]">
+                {cat.name}
+                <button onClick={() => onDeleteCategory(cat.id)} className="text-[#C1453B] hover:opacity-70"><X size={12} /></button>
+              </span>
+            ))}
+            {custodyCategories.length === 0 && <span className="text-xs text-[#9A9483]">لا توجد تصنيفات بعد.</span>}
+          </div>
+          <div className="flex gap-2">
+            <input
+              value={newCategory}
+              onChange={(e) => setNewCategory(e.target.value)}
+              placeholder="اسم تصنيف جديد، مثال: مصروفات موقع"
+              className="flex-1 border border-[#E1DACB] rounded-lg px-3 py-2 text-sm outline-none focus:border-[#E8672C] transition"
+            />
+            <button onClick={addCategory} className="px-4 py-2 rounded-lg bg-[#E8672C] text-white text-sm font-semibold hover:bg-[#C8511E] transition">إضافة</button>
+          </div>
+        </div>
+      )}
+
+      {open && (
+        <div className="bg-white rounded-xl border border-[#E1DACB] p-4 grid grid-cols-4 gap-3">
+          <Field label="اسم الشخص" value={form.personName} onChange={(v) => setForm((f) => ({ ...f, personName: v }))} placeholder="اسم مستلم العهدة" />
+          <Field label="المبلغ المستلم" value={form.amount} onChange={(v) => setForm((f) => ({ ...f, amount: v }))} type="number" />
+          <Field label="تاريخ الاستلام" value={form.date} onChange={(v) => setForm((f) => ({ ...f, date: v }))} type="date" />
+          <Field label="ملاحظات (اختياري)" value={form.notes} onChange={(v) => setForm((f) => ({ ...f, notes: v }))} placeholder="سبب العهدة" />
+          <div className="col-span-4 flex justify-end gap-2">
+            <button onClick={() => { resetForm(); setOpen(false); }} className="px-4 py-2 rounded-lg bg-[#E1DACB] text-[#1E2530] text-sm font-semibold hover:bg-[#D8D3C7] transition">إلغاء</button>
+            <button onClick={submitCustody} className="px-4 py-2 rounded-lg bg-[#E8672C] text-white text-sm font-semibold hover:bg-[#C8511E] transition">حفظ العهدة</button>
+          </div>
+        </div>
+      )}
+
+      <div className="grid grid-cols-2 gap-3">
+        <div className="bg-white rounded-xl border border-[#E1DACB] p-4">
+          <div className="text-[11px] text-[#9A9483] mb-1">إجمالي العُهد المفتوحة</div>
+          <div className="font-bold mono text-lg text-[#D6A23C]">{money(totalOpen)}</div>
+        </div>
+        <div className="bg-white rounded-xl border border-[#E1DACB] p-4">
+          <div className="text-[11px] text-[#9A9483] mb-1">عدد العُهد المصفاة</div>
+          <div className="font-bold mono text-lg text-[#3F7D63]">{closedCustodies.length}</div>
+        </div>
+      </div>
+
+      <div className="bg-white rounded-xl border border-[#E1DACB] overflow-hidden">
+        <table className="w-full text-sm">
+          <thead>
+            <tr className="bg-[#F6F3EA] text-[#6B7280] text-[12px]">
+              <th className="text-right py-3 px-4 font-semibold">الشخص</th>
+              <th className="text-right py-3 px-4 font-semibold">تاريخ الاستلام</th>
+              <th className="text-right py-3 px-4 font-semibold">المبلغ المستلم</th>
+              <th className="text-right py-3 px-4 font-semibold">الحالة</th>
+              <th className="text-right py-3 px-4 font-semibold w-10"></th>
+            </tr>
+          </thead>
+          <tbody className="divide-y divide-[#EFEBDF]">
+            {[...openCustodies, ...closedCustodies].map((c) => (
+              <tr key={c.id} className="hover:bg-[#FAF8F2] transition cursor-pointer group" onClick={() => setSelectedId(c.id)}>
+                <td className="py-3 px-4 font-semibold text-[#1E2530]">
+                  {c.personName}
+                  {c.notes ? <span className="text-[#9A9483] font-normal text-xs"> — {c.notes}</span> : null}
+                </td>
+                <td className="py-3 px-4 mono text-[#6B7280]">{c.dateGiven}</td>
+                <td className="py-3 px-4 mono font-bold">{money(c.amountGiven)}</td>
+                <td className="py-3 px-4">
+                  <span className={`text-[11px] font-semibold px-2 py-1 rounded-md flex items-center gap-1 w-fit ${c.status === "مصفاة" ? "bg-[#3F7D63]/10 text-[#3F7D63]" : "bg-[#D6A23C]/10 text-[#D6A23C]"}`}>
+                    {c.status === "مصفاة" ? <CheckCircle2 size={12} /> : <Clock size={12} />}
+                    {c.status}
+                  </span>
+                </td>
+                <td className="py-3 px-4">
+                  <button
+                    onClick={(e) => { e.stopPropagation(); onDeleteCustody(c.id); }}
+                    title="حذف العهدة"
+                    className="p-1.5 rounded-md text-[#C1453B] opacity-0 group-hover:opacity-100 hover:bg-[#C1453B]/10 transition"
+                  >
+                    <Trash2 size={14} />
+                  </button>
+                </td>
+              </tr>
+            ))}
+            {pCustodies.length === 0 && (
+              <tr><td colSpan={5} className="text-center py-8 text-[#9A9483]">لا توجد عُهد مسجّلة بعد لهذا المشروع.</td></tr>
+            )}
+          </tbody>
+        </table>
+      </div>
+    </div>
+  );
+}
+
+function CustodySettlement({ custody, lines, pWorkItems, custodyCategories, activeProjectId, onBack, onAddCost, onUpdateCost, onDeleteCost, onSettleCustody }) {
+  const [open, setOpen] = useState(false);
+  const [editId, setEditId] = useState(null);
+  const [form, setForm] = useState({ workItemId: "", category: "", customCategory: "", amount: "", date: "", detail: "" });
+
+  const isLocked = custody.status === "مصفاة";
+
+  const resetForm = () => setForm({ workItemId: "", category: "", customCategory: "", amount: "", date: "", detail: "" });
+
+  const categoryName = form.category === "__custom__" ? form.customCategory : form.category;
+  const finalDesc = categoryName ? (form.detail ? `${categoryName} - ${form.detail}` : categoryName) : form.detail;
+
+  const submitLine = () => {
+    if (!finalDesc || !form.amount) return;
+    if (editId) {
+      onUpdateCost(editId, {
+        type: form.workItemId ? "مصروفات" : "مصروفات عمومية",
+        workItemId: form.workItemId || null,
+        desc: finalDesc,
+        qty: 1,
+        unit: "-",
+        price: Number(form.amount),
+        date: form.date || new Date().toISOString().slice(0, 10),
+      });
+      setEditId(null);
+    } else {
+      onAddCost({
+        id: "c_" + Math.random().toString(36).slice(2, 8),
+        projectId: activeProjectId,
+        workItemId: form.workItemId || null,
+        custodyId: custody.id,
+        type: form.workItemId ? "مصروفات" : "مصروفات عمومية",
+        desc: finalDesc,
+        qty: 1,
+        unit: "-",
+        price: Number(form.amount),
+        date: form.date || new Date().toISOString().slice(0, 10),
+      });
+    }
+    resetForm();
+    setOpen(false);
+  };
+
+  const startEdit = (c) => {
+    setEditId(c.id);
+    setForm({ workItemId: c.workItemId || "", category: "", customCategory: "", amount: String(c.price), date: c.date, detail: c.desc });
+    setOpen(true);
+  };
+
+  const cancelForm = () => {
+    setEditId(null);
+    resetForm();
+    setOpen(false);
+  };
+
+  const totalSettled = lines.reduce((s, c) => s + c.qty * c.price, 0);
+  const remaining = custody.amountGiven - totalSettled;
+
+  const finalize = () => {
+    if (!window.confirm("متأكد إنك عايز تقفل تصفية العهدة دي نهائيًا؟ مش هتقدر تضيف بنود جديدة بعد كده.")) return;
+    onSettleCustody(custody.id);
+  };
+
+  return (
+    <div className="space-y-5">
+      <button onClick={onBack} className="text-sm font-semibold text-[#6B7280] hover:text-[#1E2530] flex items-center gap-1 transition">
+        <ChevronRight size={16} /> رجوع لكل العُهد
+      </button>
+
+      <div className="flex items-center justify-between">
+        <div>
+          <h2 className="font-bold text-[#1E2530] text-xl">{custody.personName}</h2>
+          <p className="text-[12px] text-[#9A9483] mt-1">
+            استُلمت بتاريخ {custody.dateGiven}{custody.notes ? ` — ${custody.notes}` : ""}
+          </p>
+        </div>
+        {!isLocked && (
+          <button onClick={() => (open ? cancelForm() : setOpen(true))} className="px-3 py-2 rounded-lg bg-[#1E2530] text-white text-sm font-semibold flex items-center gap-1.5 hover:bg-[#2b3543] transition">
+            <Plus size={15} /> بند تصفية جديد
+          </button>
+        )}
+      </div>
+
+      <div className="grid grid-cols-3 gap-3">
+        <div className="bg-white rounded-xl border border-[#E1DACB] p-4">
+          <div className="text-[11px] text-[#9A9483] mb-1">المبلغ المستلم</div>
+          <div className="font-bold mono text-lg text-[#1E2530]">{money(custody.amountGiven)}</div>
+        </div>
+        <div className="bg-white rounded-xl border border-[#E1DACB] p-4">
+          <div className="text-[11px] text-[#9A9483] mb-1">إجمالي المُصفّى</div>
+          <div className="font-bold mono text-lg text-[#6B7280]">{money(totalSettled)}</div>
+        </div>
+        <div className="bg-[#1E2530] rounded-xl p-4 text-white">
+          <div className="text-[11px] text-white/50 mb-1">{remaining >= 0 ? "المتبقي عند الشخص" : "مستحق للشخص (صرف أكتر من العهدة)"}</div>
+          <div className={`font-bold mono text-lg ${remaining !== 0 ? "text-[#E8AA6C]" : "text-white"}`}>{money(Math.abs(remaining))}</div>
+        </div>
+      </div>
+
+      {open && !isLocked && (
+        <div className="bg-white rounded-xl border border-[#E1DACB] p-4 grid grid-cols-3 gap-3">
+          {editId && (
+            <div className="col-span-3 text-xs font-semibold text-[#E8672C] bg-[#E8672C]/10 rounded-md px-3 py-1.5">جاري تعديل بند موجود</div>
+          )}
+          <SelectField
+            label="بند العمل (اختياري)"
+            value={form.workItemId}
+            onChange={(v) => setForm((f) => ({ ...f, workItemId: v }))}
+            options={[{ value: "", label: "— غير مرتبط ببند —" }, ...pWorkItems.map((w) => ({ value: w.id, label: w.name }))]}
+          />
+          <SelectField
+            label="تصنيف عام (لو مفيش بند عمل)"
+            value={form.category}
+            onChange={(v) => setForm((f) => ({ ...f, category: v }))}
+            options={[{ value: "", label: "— اختر تصنيف —" }, ...custodyCategories.map((c) => ({ value: c.name, label: c.name })), { value: "__custom__", label: "تصنيف آخر..." }]}
+          />
+          {form.category === "__custom__" ? (
+            <Field label="اسم التصنيف الجديد" value={form.customCategory} onChange={(v) => setForm((f) => ({ ...f, customCategory: v }))} placeholder="مثال: مصروفات إدارية" />
+          ) : (
+            <Field label="التاريخ" value={form.date} onChange={(v) => setForm((f) => ({ ...f, date: v }))} type="date" />
+          )}
+          {form.category === "__custom__" && (
+            <Field label="التاريخ" value={form.date} onChange={(v) => setForm((f) => ({ ...f, date: v }))} type="date" />
+          )}
+          <div className="col-span-3">
+            <Field label="تفاصيل إضافية (اختياري)" value={form.detail} onChange={(v) => setForm((f) => ({ ...f, detail: v }))} placeholder="وصف إضافي للبند" />
+          </div>
+          <Field label="المبلغ" value={form.amount} onChange={(v) => setForm((f) => ({ ...f, amount: v }))} type="number" />
+          <div className="col-span-3 flex justify-end gap-2">
+            {editId && <button onClick={cancelForm} className="px-4 py-2 rounded-lg bg-[#E1DACB] text-[#1E2530] text-sm font-semibold hover:bg-[#D8D3C7] transition">إلغاء</button>}
+            <button onClick={submitLine} className="px-4 py-2 rounded-lg bg-[#E8672C] text-white text-sm font-semibold hover:bg-[#C8511E] transition">{editId ? "حفظ التعديل" : "إضافة البند"}</button>
+          </div>
+        </div>
+      )}
+
+      <div className="bg-white rounded-xl border border-[#E1DACB] overflow-hidden">
+        <table className="w-full text-sm">
+          <thead>
+            <tr className="bg-[#F6F3EA] text-[#6B7280] text-[12px]">
+              <th className="text-right py-3 px-4 font-semibold">التاريخ</th>
+              <th className="text-right py-3 px-4 font-semibold">البند</th>
+              <th className="text-right py-3 px-4 font-semibold">بند العمل</th>
+              <th className="text-right py-3 px-4 font-semibold">المبلغ</th>
+              {!isLocked && <th className="text-right py-3 px-4 font-semibold w-20"></th>}
+            </tr>
+          </thead>
+          <tbody className="divide-y divide-[#EFEBDF]">
+            {lines.map((c) => (
+              <tr key={c.id} className="hover:bg-[#FAF8F2] transition group">
+                <td className="py-3 px-4 mono text-[#1E2530]">{c.date}</td>
+                <td className="py-3 px-4 text-[#6B7280]">{c.desc}</td>
+                <td className="py-3 px-4 text-[#6B7280]">{pWorkItems.find((w) => w.id === c.workItemId)?.name || "—"}</td>
+                <td className="py-3 px-4 mono font-bold">{money(c.qty * c.price)}</td>
+                {!isLocked && (
+                  <td className="py-3 px-4">
+                    <div className="flex gap-1 justify-end opacity-0 group-hover:opacity-100 transition">
+                      <button onClick={() => startEdit(c)} title="تعديل" className="p-1.5 rounded-md text-[#6B7280] hover:bg-[#E1DACB] hover:text-[#1E2530] transition"><Pencil size={14} /></button>
+                      <button onClick={() => onDeleteCost(c.id)} title="حذف" className="p-1.5 rounded-md text-[#C1453B] hover:bg-[#C1453B]/10 transition"><Trash2 size={14} /></button>
+                    </div>
+                  </td>
+                )}
+              </tr>
+            ))}
+            {lines.length === 0 && (
+              <tr><td colSpan={isLocked ? 4 : 5} className="text-center py-8 text-[#9A9483]">لا توجد بنود تصفية مسجّلة بعد.</td></tr>
+            )}
+          </tbody>
+        </table>
+      </div>
+
+      {!isLocked && (
+        <div className="flex justify-end">
+          <button onClick={finalize} className="px-5 py-2.5 rounded-lg bg-[#3F7D63] text-white font-semibold hover:bg-[#356B54] transition flex items-center gap-2">
+            <CheckCircle2 size={16} /> إنهاء وتصفية العهدة نهائيًا
+          </button>
+        </div>
+      )}
     </div>
   );
 }
