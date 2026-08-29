@@ -92,7 +92,7 @@ function ContractingApp() {
         (extRes.data || []).map((e) => ({ id: e.id, projectId: e.project_id, number: e.number, date: e.date, percentage: Number(e.percentage), amount: Number(e.amount) }))
       );
       setCollections(
-        (colRes.data || []).map((c) => ({ id: c.id, extractId: c.extract_id, amount: Number(c.amount), date: c.date, method: c.method }))
+        (colRes.data || []).map((c) => ({ id: c.id, projectId: c.project_id, extractId: c.extract_id || null, amount: Number(c.amount), date: c.date, method: c.method, note: c.note || "" }))
       );
       setTreasuryEntries(
         (treRes.data || []).map((t) => ({ id: t.id, projectId: t.project_id, date: t.date, type: t.type, amount: Number(t.amount), note: t.note }))
@@ -139,7 +139,7 @@ function ContractingApp() {
   }
 
   async function addCollection(cl) {
-    const { error } = await supabase.from("collections").insert([{ id: cl.id, extract_id: cl.extractId, amount: cl.amount, date: cl.date, method: cl.method }]);
+    const { error } = await supabase.from("collections").insert([{ id: cl.id, project_id: cl.projectId, extract_id: cl.extractId || null, amount: cl.amount, date: cl.date, method: cl.method, note: cl.note || null }]);
     if (error) { alert("حصل خطأ أثناء حفظ التحصيل: " + error.message); return; }
     setCollections((prev) => [...prev, cl]);
   }
@@ -206,9 +206,8 @@ function ContractingApp() {
     setProjects(remaining);
     setWorkItems((prev) => prev.filter((w) => w.projectId !== id));
     setCosts((prev) => prev.filter((c) => c.projectId !== id));
-    const remainingExtractIds = extracts.filter((e) => e.projectId === id).map((e) => e.id);
     setExtracts((prev) => prev.filter((e) => e.projectId !== id));
-    setCollections((prev) => prev.filter((c) => !remainingExtractIds.includes(c.extractId)));
+    setCollections((prev) => prev.filter((c) => c.projectId !== id));
     setTreasuryEntries((prev) => prev.filter((t) => t.projectId !== id));
     setCustodies((prev) => prev.filter((c) => c.projectId !== id));
     if (activeProjectId === id && remaining.length > 0) setActiveProjectId(remaining[0].id);
@@ -333,17 +332,15 @@ function ContractingApp() {
   const pExtracts = extracts.filter((e) => e.projectId === activeProjectId);
   const pTreasuryEntries = treasuryEntries.filter((t) => t.projectId === activeProjectId);
   const pCustodies = custodies.filter((c) => c.projectId === activeProjectId);
+  const pCollections = collections.filter((c) => c.projectId === activeProjectId);
 
   const totals = useMemo(() => {
     const budgetTotal = pWorkItems.reduce((s, w) => s + w.qty * w.price, 0);
     const actualTotal = pCosts.reduce((s, c) => s + c.qty * c.price, 0);
     const extractsTotal = pExtracts.reduce((s, e) => s + e.amount, 0);
-    const collectedTotal = pExtracts.reduce((s, e) => {
-      const cs = collections.filter((c) => c.extractId === e.id);
-      return s + cs.reduce((ss, c) => ss + c.amount, 0);
-    }, 0);
+    const collectedTotal = pCollections.reduce((s, c) => s + c.amount, 0);
     return { budgetTotal, actualTotal, extractsTotal, collectedTotal };
-  }, [pWorkItems, pCosts, pExtracts, collections]);
+  }, [pWorkItems, pCosts, pExtracts, pCollections]);
 
   const tabs = [
     { key: "dashboard", label: "لوحة التحكم", icon: LayoutGrid },
@@ -527,7 +524,7 @@ function ContractingApp() {
 
         <div className="p-8">
           {tab === "dashboard" && (
-            <Dashboard totals={totals} pWorkItems={pWorkItems} pCosts={pCosts} pExtracts={pExtracts} collections={collections} />
+            <Dashboard totals={totals} pWorkItems={pWorkItems} pCosts={pCosts} pExtracts={pExtracts} collections={pCollections} />
           )}
           {tab === "items" && (
             <WorkItemsTab
@@ -552,7 +549,7 @@ function ContractingApp() {
           {tab === "extracts" && (
             <ExtractsTab
               pExtracts={pExtracts}
-              collections={collections}
+              collections={pCollections}
               onAddExtract={addExtract}
               onAddCollection={addCollection}
               onUpdateExtract={updateExtract}
@@ -1108,6 +1105,8 @@ function ExtractsTab({ pExtracts, collections, onAddExtract, onAddCollection, on
   const [form, setForm] = useState({ number: "", date: "", percentage: "", amount: "" });
   const [expanded, setExpanded] = useState(null);
   const [collForm, setCollForm] = useState({ amount: "", date: "", method: "تحويل بنكي" });
+  const [showGeneralForm, setShowGeneralForm] = useState(false);
+  const [generalForm, setGeneralForm] = useState({ amount: "", date: "", method: "تحويل بنكي", note: "" });
 
   const resetForm = () => setForm({ number: "", date: "", percentage: "", amount: "" });
 
@@ -1137,8 +1136,26 @@ function ExtractsTab({ pExtracts, collections, onAddExtract, onAddCollection, on
 
   const addCollectionForExtract = (extractId) => {
     if (!collForm.amount) return;
-    onAddCollection({ id: "cl_" + Math.random().toString(36).slice(2, 8), extractId, amount: Number(collForm.amount), date: collForm.date || new Date().toISOString().slice(0, 10), method: collForm.method });
+    onAddCollection({ id: "cl_" + Math.random().toString(36).slice(2, 8), projectId: activeProjectId, extractId, amount: Number(collForm.amount), date: collForm.date || new Date().toISOString().slice(0, 10), method: collForm.method });
     setCollForm({ amount: "", date: "", method: "تحويل بنكي" });
+  };
+
+  const generalCollections = collections.filter((c) => !c.extractId);
+  const generalTotal = generalCollections.reduce((s, c) => s + c.amount, 0);
+
+  const submitGeneralCollection = () => {
+    if (!generalForm.amount) return;
+    onAddCollection({
+      id: "cl_" + Math.random().toString(36).slice(2, 8),
+      projectId: activeProjectId,
+      extractId: null,
+      amount: Number(generalForm.amount),
+      date: generalForm.date || new Date().toISOString().slice(0, 10),
+      method: generalForm.method,
+      note: generalForm.note,
+    });
+    setGeneralForm({ amount: "", date: "", method: "تحويل بنكي", note: "" });
+    setShowGeneralForm(false);
   };
 
   const printExtract = (extract) => {
@@ -1239,10 +1256,53 @@ function ExtractsTab({ pExtracts, collections, onAddExtract, onAddCollection, on
   return (
     <div className="space-y-5">
       <div className="flex items-center justify-between">
-        <h2 className="font-bold text-[#1E2530] text-lg">المستخلصات والتحصيلات</h2>
+        <h2 className="font-bold text-[#1E2530] text-lg">التحصيلات والمستخلصات</h2>
         <button onClick={() => (open ? cancelForm() : setOpen(true))} className="px-3 py-2 rounded-lg bg-[#1E2530] text-white text-sm font-semibold flex items-center gap-1.5 hover:bg-[#2b3543] transition">
           <Plus size={15} /> مستخلص جديد
         </button>
+      </div>
+
+      <div className="bg-white rounded-xl border border-[#E1DACB] overflow-hidden">
+        <div className="w-full flex items-center justify-between px-5 py-4">
+          <div>
+            <div className="font-bold text-[#1E2530]">تحصيلات عامة (بدون مستخلص)</div>
+            <div className="text-[11px] text-[#9A9483] mt-0.5">مبالغ استُلمت من العميل قبل عمل مستخلص (دفعة مقدمة، دفعة تحت الحساب... إلخ)</div>
+          </div>
+          <div className="flex items-center gap-4">
+            <div className="text-right">
+              <div className="text-[11px] text-[#9A9483]">الإجمالي</div>
+              <div className="font-bold mono text-[#3F7D63]">{money(generalTotal)}</div>
+            </div>
+            <button onClick={() => setShowGeneralForm((o) => !o)} className="px-3 py-2 rounded-lg bg-[#3F7D63] text-white text-xs font-semibold hover:bg-[#356A54] transition flex items-center gap-1.5">
+              <Plus size={14} /> تحصيل جديد
+            </button>
+          </div>
+        </div>
+
+        {showGeneralForm && (
+          <div className="border-t border-[#EFEBDF] px-5 py-4 bg-[#FAF8F2] grid grid-cols-4 gap-2 items-end">
+            <Field label="المبلغ" value={generalForm.amount} onChange={(v) => setGeneralForm((f) => ({ ...f, amount: v }))} type="number" small />
+            <Field label="التاريخ" value={generalForm.date} onChange={(v) => setGeneralForm((f) => ({ ...f, date: v }))} type="date" small />
+            <SelectField label="طريقة التحصيل" value={generalForm.method} onChange={(v) => setGeneralForm((f) => ({ ...f, method: v }))} options={[{ value: "تحويل بنكي", label: "تحويل بنكي" }, { value: "شيك", label: "شيك" }, { value: "نقدي", label: "نقدي" }]} small />
+            <Field label="ملاحظة (اختياري)" value={generalForm.note} onChange={(v) => setGeneralForm((f) => ({ ...f, note: v }))} placeholder="مثال: دفعة مقدمة" small />
+            <div className="col-span-4 flex justify-end">
+              <button onClick={submitGeneralCollection} className="px-4 py-2 rounded-lg bg-[#3F7D63] text-white text-sm font-semibold hover:bg-[#356A54] transition">حفظ التحصيل</button>
+            </div>
+          </div>
+        )}
+
+        <div className="border-t border-[#EFEBDF] px-5 py-4 space-y-1.5">
+          {generalCollections.length === 0 && <div className="text-xs text-[#9A9483] py-1">لا توجد تحصيلات عامة مسجّلة بعد.</div>}
+          {generalCollections.map((c) => (
+            <div key={c.id} className="flex items-center justify-between bg-[#FAF8F2] rounded-lg px-3 py-2 border border-[#E1DACB] text-sm group/coll">
+              <span className="text-[#6B7280]">{c.method} · {c.date}{c.note ? ` · ${c.note}` : ""}</span>
+              <div className="flex items-center gap-2">
+                <span className="font-bold mono text-[#3F7D63]">{money(c.amount)}</span>
+                <button onClick={() => onDeleteCollection(c.id)} title="حذف التحصيل" className="p-1 rounded-md text-[#C1453B] opacity-0 group-hover/coll:opacity-100 hover:bg-[#C1453B]/10 transition"><Trash2 size={13} /></button>
+              </div>
+            </div>
+          ))}
+        </div>
       </div>
 
       {open && (
