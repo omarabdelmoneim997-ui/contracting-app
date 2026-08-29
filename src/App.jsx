@@ -51,6 +51,7 @@ function ContractingApp() {
   const [financeTransactions, setFinanceTransactions] = useState([]);
   const [custodies, setCustodies] = useState([]);
   const [custodyCategories, setCustodyCategories] = useState([]);
+  const [expectedCosts, setExpectedCosts] = useState([]);
   const [view, setView] = useState("project"); // 'project' | 'finance'
   const [loading, setLoading] = useState(true);
   const [dbError, setDbError] = useState(null);
@@ -61,7 +62,7 @@ function ContractingApp() {
 
   useEffect(() => {
     async function loadAll() {
-      const [projRes, wiRes, costRes, extRes, colRes, treRes, fpRes, ftRes, custRes, ccRes] = await Promise.all([
+      const [projRes, wiRes, costRes, extRes, colRes, treRes, fpRes, ftRes, custRes, ccRes, ecRes] = await Promise.all([
         supabase.from("projects").select("*").order("created_at"),
         supabase.from("work_items").select("*").order("created_at"),
         supabase.from("costs").select("*").order("created_at"),
@@ -72,9 +73,10 @@ function ContractingApp() {
         supabase.from("finance_transactions").select("*").order("date"),
         supabase.from("custodies").select("*").order("created_at"),
         supabase.from("custody_categories").select("*").order("created_at"),
+        supabase.from("expected_costs").select("*").order("created_at"),
       ]);
 
-      const firstError = [projRes, wiRes, costRes, extRes, colRes, treRes, fpRes, ftRes, custRes, ccRes].find((r) => r.error);
+      const firstError = [projRes, wiRes, costRes, extRes, colRes, treRes, fpRes, ftRes, custRes, ccRes, ecRes].find((r) => r.error);
       if (firstError) {
         setDbError(firstError.error.message);
         setLoading(false);
@@ -105,6 +107,9 @@ function ContractingApp() {
         (custRes.data || []).map((c) => ({ id: c.id, projectId: c.project_id, personName: c.person_name, amountGiven: Number(c.amount_given), dateGiven: c.date_given, status: c.status, notes: c.notes || "", sourceCostId: c.source_cost_id || null }))
       );
       setCustodyCategories((ccRes.data || []).map((c) => ({ id: c.id, name: c.name })));
+      setExpectedCosts(
+        (ecRes.data || []).map((e) => ({ id: e.id, projectId: e.project_id, workItemId: e.work_item_id || null, desc: e.description, amount: Number(e.amount), expectedDate: e.expected_date || "", notes: e.notes || "" }))
+      );
 
       if (projRes.data && projRes.data.length > 0) {
         setActiveProjectId(projRes.data[0].id);
@@ -158,10 +163,13 @@ function ContractingApp() {
     if (!window.confirm("متأكد إنك عايز تمسح بند العمل ده؟ هيتمسح معاه أي تكاليف مرتبطة بيه.")) return;
     const { error: costsError } = await supabase.from("costs").delete().eq("work_item_id", id);
     if (costsError) { alert("حصل خطأ أثناء حذف التكاليف المرتبطة: " + costsError.message); return; }
+    const { error: ecError } = await supabase.from("expected_costs").update({ work_item_id: null }).eq("work_item_id", id);
+    if (ecError) { alert("حصل خطأ أثناء فك ربط المصاريف المتوقعة: " + ecError.message); return; }
     const { error } = await supabase.from("work_items").delete().eq("id", id);
     if (error) { alert("حصل خطأ أثناء حذف بند العمل: " + error.message); return; }
     setWorkItems((prev) => prev.filter((w) => w.id !== id));
     setCosts((prev) => prev.filter((c) => c.workItemId !== id));
+    setExpectedCosts((prev) => prev.map((e) => (e.workItemId === id ? { ...e, workItemId: null } : e)));
   }
 
   async function updateCost(id, patch) {
@@ -210,6 +218,7 @@ function ContractingApp() {
     setCollections((prev) => prev.filter((c) => c.projectId !== id));
     setTreasuryEntries((prev) => prev.filter((t) => t.projectId !== id));
     setCustodies((prev) => prev.filter((c) => c.projectId !== id));
+    setExpectedCosts((prev) => prev.filter((e) => e.projectId !== id));
     if (activeProjectId === id && remaining.length > 0) setActiveProjectId(remaining[0].id);
   }
 
@@ -326,6 +335,31 @@ function ContractingApp() {
     setCustodyCategories((prev) => prev.filter((c) => c.id !== id));
   }
 
+  async function addExpectedCost(ec) {
+    const { error } = await supabase.from("expected_costs").insert([{ id: ec.id, project_id: ec.projectId, work_item_id: ec.workItemId || null, description: ec.desc, amount: ec.amount, expected_date: ec.expectedDate || null, notes: ec.notes || null }]);
+    if (error) { alert("حصل خطأ أثناء إضافة المصروف المتوقع: " + error.message); return; }
+    setExpectedCosts((prev) => [...prev, ec]);
+  }
+
+  async function updateExpectedCost(id, patch) {
+    const updateData = {};
+    if (patch.desc !== undefined) updateData.description = patch.desc;
+    if (patch.amount !== undefined) updateData.amount = patch.amount;
+    if (patch.expectedDate !== undefined) updateData.expected_date = patch.expectedDate || null;
+    if (patch.notes !== undefined) updateData.notes = patch.notes || null;
+    if (patch.workItemId !== undefined) updateData.work_item_id = patch.workItemId || null;
+    const { error } = await supabase.from("expected_costs").update(updateData).eq("id", id);
+    if (error) { alert("حصل خطأ أثناء تعديل المصروف المتوقع: " + error.message); return; }
+    setExpectedCosts((prev) => prev.map((e) => (e.id === id ? { ...e, ...patch } : e)));
+  }
+
+  async function deleteExpectedCost(id) {
+    if (!window.confirm("متأكد إنك عايز تمسح المصروف المتوقع ده؟")) return;
+    const { error } = await supabase.from("expected_costs").delete().eq("id", id);
+    if (error) { alert("حصل خطأ أثناء حذف المصروف المتوقع: " + error.message); return; }
+    setExpectedCosts((prev) => prev.filter((e) => e.id !== id));
+  }
+
   const project = projects.find((p) => p.id === activeProjectId);
   const pWorkItems = workItems.filter((w) => w.projectId === activeProjectId);
   const pCosts = costs.filter((c) => c.projectId === activeProjectId);
@@ -333,6 +367,7 @@ function ContractingApp() {
   const pTreasuryEntries = treasuryEntries.filter((t) => t.projectId === activeProjectId);
   const pCustodies = custodies.filter((c) => c.projectId === activeProjectId);
   const pCollections = collections.filter((c) => c.projectId === activeProjectId);
+  const pExpectedCosts = expectedCosts.filter((e) => e.projectId === activeProjectId);
 
   const totals = useMemo(() => {
     const budgetTotal = pWorkItems.reduce((s, w) => s + w.qty * w.price, 0);
@@ -340,8 +375,10 @@ function ContractingApp() {
     const extractsTotal = pExtracts.reduce((s, e) => s + e.amount, 0);
     const collectedTotal = pCollections.reduce((s, c) => s + c.amount, 0);
     const netProfit = collectedTotal - actualTotal;
-    return { budgetTotal, actualTotal, extractsTotal, collectedTotal, netProfit };
-  }, [pWorkItems, pCosts, pExtracts, pCollections]);
+    const expectedCostsTotal = pExpectedCosts.reduce((s, e) => s + e.amount, 0);
+    const projectedNetProfit = netProfit - expectedCostsTotal;
+    return { budgetTotal, actualTotal, extractsTotal, collectedTotal, netProfit, expectedCostsTotal, projectedNetProfit };
+  }, [pWorkItems, pCosts, pExtracts, pCollections, pExpectedCosts]);
 
   const tabs = [
     { key: "dashboard", label: "لوحة التحكم", icon: LayoutGrid },
@@ -527,11 +564,34 @@ function ContractingApp() {
               color={totals.netProfit >= 0 ? "#3F7D63" : "#C1453B"}
             />
           </div>
+
+          {pExpectedCosts.length > 0 && (
+            <div className="grid grid-cols-2 gap-3 mt-3">
+              <StatCard label="مصاريف متوقعة مستقبلية (لسه هتتصرف)" value={money(totals.expectedCostsTotal)} icon={Clock} color="#D6A23C" />
+              <StatCard
+                label="صافي الربح المتوقع (بعد المصاريف المستقبلية)"
+                value={money(totals.projectedNetProfit)}
+                icon={totals.projectedNetProfit >= 0 ? TrendingUp : TrendingDown}
+                color={totals.projectedNetProfit >= 0 ? "#3F7D63" : "#C1453B"}
+              />
+            </div>
+          )}
         </header>
 
         <div className="p-8">
           {tab === "dashboard" && (
-            <Dashboard totals={totals} pWorkItems={pWorkItems} pCosts={pCosts} pExtracts={pExtracts} collections={pCollections} />
+            <Dashboard
+              totals={totals}
+              pWorkItems={pWorkItems}
+              pCosts={pCosts}
+              pExtracts={pExtracts}
+              collections={pCollections}
+              pExpectedCosts={pExpectedCosts}
+              activeProjectId={activeProjectId}
+              onAddExpectedCost={addExpectedCost}
+              onUpdateExpectedCost={updateExpectedCost}
+              onDeleteExpectedCost={deleteExpectedCost}
+            />
           )}
           {tab === "items" && (
             <WorkItemsTab
@@ -638,7 +698,7 @@ function StatCard({ label, value, icon: Icon, color }) {
 
 /* -------------------------------- dashboard -------------------------------- */
 
-function Dashboard({ totals, pWorkItems, pCosts, pExtracts, collections }) {
+function Dashboard({ totals, pWorkItems, pCosts, pExtracts, collections, pExpectedCosts, activeProjectId, onAddExpectedCost, onUpdateExpectedCost, onDeleteExpectedCost }) {
   const chartData = pWorkItems.map((w) => {
     const actual = pCosts.filter((c) => c.workItemId === w.id).reduce((s, c) => s + c.qty * c.price, 0);
     return { name: w.name.length > 14 ? w.name.slice(0, 14) + "…" : w.name, الميزانية: w.qty * w.price, الفعلي: actual };
@@ -646,6 +706,44 @@ function Dashboard({ totals, pWorkItems, pCosts, pExtracts, collections }) {
 
   const recentCosts = [...pCosts].sort((a, b) => (a.date < b.date ? 1 : -1)).slice(0, 6);
   const variance = totals.budgetTotal - totals.actualTotal;
+
+  const [open, setOpen] = useState(false);
+  const [editId, setEditId] = useState(null);
+  const [form, setForm] = useState({ desc: "", amount: "", expectedDate: "", workItemId: "", notes: "" });
+
+  const resetForm = () => setForm({ desc: "", amount: "", expectedDate: "", workItemId: "", notes: "" });
+
+  const submit = () => {
+    if (!form.desc || !form.amount) return;
+    if (editId) {
+      onUpdateExpectedCost(editId, { desc: form.desc, amount: Number(form.amount), expectedDate: form.expectedDate, workItemId: form.workItemId || null, notes: form.notes });
+      setEditId(null);
+    } else {
+      onAddExpectedCost({
+        id: "ec_" + Math.random().toString(36).slice(2, 8),
+        projectId: activeProjectId,
+        desc: form.desc,
+        amount: Number(form.amount),
+        expectedDate: form.expectedDate,
+        workItemId: form.workItemId || null,
+        notes: form.notes,
+      });
+    }
+    resetForm();
+    setOpen(false);
+  };
+
+  const startEdit = (e) => {
+    setEditId(e.id);
+    setForm({ desc: e.desc, amount: String(e.amount), expectedDate: e.expectedDate, workItemId: e.workItemId || "", notes: e.notes });
+    setOpen(true);
+  };
+
+  const cancelForm = () => {
+    setEditId(null);
+    resetForm();
+    setOpen(false);
+  };
 
   return (
     <div className="space-y-6">
@@ -672,6 +770,65 @@ function Dashboard({ totals, pWorkItems, pCosts, pExtracts, collections }) {
               </Bar>
             </BarChart>
           </ResponsiveContainer>
+        </div>
+      </section>
+
+      <section className="bg-white rounded-xl border border-[#E1DACB] p-5">
+        <div className="flex items-center justify-between mb-4">
+          <div>
+            <h2 className="font-bold text-[#1E2530]">مصاريف متوقعة مستقبلية</h2>
+            <p className="text-[12px] text-[#9A9483] mt-1">حاجات لسه هتتصرف على المشروع، مش مسجّلة كتكلفة فعلية بعد — بتُستخدم لحساب "صافي الربح المتوقع" في أعلى الصفحة</p>
+          </div>
+          <button onClick={() => (open ? cancelForm() : setOpen(true))} className="px-3 py-2 rounded-lg bg-[#1E2530] text-white text-sm font-semibold flex items-center gap-1.5 hover:bg-[#2b3543] transition shrink-0">
+            <Plus size={15} /> مصروف متوقع جديد
+          </button>
+        </div>
+
+        {open && (
+          <div className="bg-[#FAF8F2] rounded-lg border border-[#E1DACB] p-4 grid grid-cols-4 gap-3 mb-4">
+            {editId && <div className="col-span-4 text-xs font-semibold text-[#E8672C] bg-[#E8672C]/10 rounded-md px-3 py-1.5">جاري تعديل مصروف موجود</div>}
+            <div className="col-span-2">
+              <Field label="الوصف" value={form.desc} onChange={(v) => setForm((f) => ({ ...f, desc: v }))} placeholder="مثال: باقي أعمال الدهانات" />
+            </div>
+            <Field label="المبلغ المتوقع" value={form.amount} onChange={(v) => setForm((f) => ({ ...f, amount: v }))} type="number" />
+            <Field label="التاريخ المتوقع (اختياري)" value={form.expectedDate} onChange={(v) => setForm((f) => ({ ...f, expectedDate: v }))} type="date" />
+            <SelectField
+              label="بند العمل (اختياري)"
+              value={form.workItemId}
+              onChange={(v) => setForm((f) => ({ ...f, workItemId: v }))}
+              options={[{ value: "", label: "— غير مرتبط ببند —" }, ...pWorkItems.map((w) => ({ value: w.id, label: w.name }))]}
+            />
+            <div className="col-span-3">
+              <Field label="ملاحظات (اختياري)" value={form.notes} onChange={(v) => setForm((f) => ({ ...f, notes: v }))} placeholder="أي تفاصيل إضافية" />
+            </div>
+            <div className="col-span-4 flex justify-end gap-2">
+              {editId && <button onClick={cancelForm} className="px-4 py-2 rounded-lg bg-[#E1DACB] text-[#1E2530] text-sm font-semibold hover:bg-[#D8D3C7] transition">إلغاء</button>}
+              <button onClick={submit} className="px-4 py-2 rounded-lg bg-[#E8672C] text-white text-sm font-semibold hover:bg-[#C8511E] transition">{editId ? "حفظ التعديل" : "حفظ"}</button>
+            </div>
+          </div>
+        )}
+
+        <div className="divide-y divide-[#EFEBDF]">
+          {pExpectedCosts.length === 0 && <div className="text-sm text-[#9A9483] py-4">لا توجد مصاريف متوقعة مسجّلة حاليًا.</div>}
+          {pExpectedCosts.map((e) => (
+            <div key={e.id} className="py-3 flex items-center justify-between gap-3 group">
+              <div className="min-w-0">
+                <div className="text-sm font-semibold text-[#1E2530] truncate">{e.desc}</div>
+                <div className="text-[11px] text-[#9A9483]">
+                  {pWorkItems.find((w) => w.id === e.workItemId)?.name || "غير مرتبط ببند"}
+                  {e.expectedDate ? ` · متوقع بتاريخ ${e.expectedDate}` : ""}
+                  {e.notes ? ` · ${e.notes}` : ""}
+                </div>
+              </div>
+              <div className="flex items-center gap-3 shrink-0">
+                <div className="text-sm font-bold mono text-[#D6A23C]">{money(e.amount)}</div>
+                <div className="flex gap-1 opacity-0 group-hover:opacity-100 transition">
+                  <button onClick={() => startEdit(e)} title="تعديل" className="p-1.5 rounded-md text-[#6B7280] hover:bg-[#E1DACB] hover:text-[#1E2530] transition"><Pencil size={14} /></button>
+                  <button onClick={() => onDeleteExpectedCost(e.id)} title="حذف" className="p-1.5 rounded-md text-[#C1453B] hover:bg-[#C1453B]/10 transition"><Trash2 size={14} /></button>
+                </div>
+              </div>
+            </div>
+          ))}
         </div>
       </section>
 
