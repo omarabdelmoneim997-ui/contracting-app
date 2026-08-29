@@ -339,7 +339,8 @@ function ContractingApp() {
     const actualTotal = pCosts.reduce((s, c) => s + c.qty * c.price, 0);
     const extractsTotal = pExtracts.reduce((s, e) => s + e.amount, 0);
     const collectedTotal = pCollections.reduce((s, c) => s + c.amount, 0);
-    return { budgetTotal, actualTotal, extractsTotal, collectedTotal };
+    const netProfit = collectedTotal - actualTotal;
+    return { budgetTotal, actualTotal, extractsTotal, collectedTotal, netProfit };
   }, [pWorkItems, pCosts, pExtracts, pCollections]);
 
   const tabs = [
@@ -509,7 +510,7 @@ function ContractingApp() {
             </div>
           </div>
 
-          <div className="grid grid-cols-4 gap-3 mt-5">
+          <div className="grid grid-cols-5 gap-3 mt-5">
             <StatCard label="ميزانية بنود الأعمال" value={money(totals.budgetTotal)} icon={Wallet} color="#1E2530" />
             <StatCard
               label="إجمالي التكاليف الفعلية"
@@ -519,6 +520,12 @@ function ContractingApp() {
             />
             <StatCard label="إجمالي المستخلصات" value={money(totals.extractsTotal)} icon={FileStack} color="#E8672C" />
             <StatCard label="المُحصَّل" value={money(totals.collectedTotal)} icon={CircleDollarSign} color="#3F7D63" />
+            <StatCard
+              label="صافي الربح (المُحصَّل − الفعلي)"
+              value={money(totals.netProfit)}
+              icon={totals.netProfit >= 0 ? TrendingUp : TrendingDown}
+              color={totals.netProfit >= 0 ? "#3F7D63" : "#C1453B"}
+            />
           </div>
         </header>
 
