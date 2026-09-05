@@ -6,7 +6,7 @@ import {
   Building2, LayoutGrid, Hammer, Receipt, FileStack, Wallet, Plus, X,
   TrendingUp, TrendingDown, ChevronDown, ChevronRight, Package, HardHat,
   Landmark, CircleDollarSign, CheckCircle2, Clock, Ruler, Users, Loader2,
-  Trash2, Pencil, Printer, Banknote,
+  Trash2, Pencil, Printer, Banknote, Upload,
 } from "lucide-react";
 import { supabase } from "./supabaseClient";
 
@@ -37,6 +37,119 @@ const money = (n) =>
 
 const fmt = (n, d = 0) =>
   (n || 0).toLocaleString("en-US", { maximumFractionDigits: d });
+
+/* ------------------------ استيراد التكاليف من إكسيل ------------------------ */
+// مكتبة قراءة الإكسل (SheetJS) بتتحمّل من CDN وقت الحاجة، مفيش أي تعديل في package.json
+
+let sheetJSPromise = null;
+function loadSheetJS() {
+  if (typeof window !== "undefined" && window.XLSX) return Promise.resolve(window.XLSX);
+  if (sheetJSPromise) return sheetJSPromise;
+  sheetJSPromise = new Promise((resolve, reject) => {
+    const script = document.createElement("script");
+    script.src = "https://cdn.jsdelivr.net/npm/xlsx@0.18.5/dist/xlsx.full.min.js";
+    script.async = true;
+    script.onload = () => resolve(window.XLSX);
+    script.onerror = () => { sheetJSPromise = null; reject(new Error("تعذّر تحميل مكتبة قراءة الإكسل. تأكد من اتصالك بالإنترنت وحاول تاني.")); };
+    document.body.appendChild(script);
+  });
+  return sheetJSPromise;
+}
+
+const COST_TEMPLATE_HEADERS = ["التاريخ", "بند العمل", "النوع", "الوصف", "المستوى الأول", "المستوى الثاني", "الكمية", "الوحدة", "السعر"];
+
+function downloadCostExcelTemplate(pWorkItems) {
+  loadSheetJS()
+    .then((XLSX) => {
+      const sample = [
+        {
+          "التاريخ": "2026-08-01",
+          "بند العمل": pWorkItems[0]?.name || "أعمال المباني",
+          "النوع": "مشتريات وكميات",
+          "الوصف": "توريد طوب",
+          "المستوى الأول": "",
+          "المستوى الثاني": "",
+          "الكمية": 1000,
+          "الوحدة": "طوبة",
+          "السعر": 2.5,
+        },
+      ];
+      const ws = XLSX.utils.json_to_sheet(sample, { header: COST_TEMPLATE_HEADERS });
+      ws["!cols"] = COST_TEMPLATE_HEADERS.map(() => ({ wch: 18 }));
+      const wb = XLSX.utils.book_new();
+      XLSX.utils.book_append_sheet(wb, ws, "التكاليف");
+      XLSX.writeFile(wb, "قالب استيراد التكاليف.xlsx");
+    })
+    .catch((err) => alert(err.message));
+}
+
+function parseCostExcelFile(file, pWorkItems) {
+  return loadSheetJS().then((XLSX) =>
+    file.arrayBuffer().then((buf) => {
+      const wb = XLSX.read(buf, { type: "array", cellDates: true });
+      const sheet = wb.Sheets[wb.SheetNames[0]];
+      const rows = XLSX.utils.sheet_to_json(sheet, { defval: "" });
+
+      const formatDate = (v) => {
+        if (!v) return "";
+        if (v instanceof Date && !isNaN(v.getTime())) return v.toISOString().slice(0, 10);
+        const s = String(v).trim();
+        if (!s) return "";
+        const parsed = new Date(s);
+        if (!isNaN(parsed.getTime()) && /\d{4}/.test(s)) return parsed.toISOString().slice(0, 10);
+        return s;
+      };
+
+      return rows.map((r, i) => {
+        const warnings = [];
+        const errors = [];
+        const descRaw = String(r["الوصف"] || "").trim();
+        const typeRaw = String(r["النوع"] || "").trim();
+        const workItemRaw = String(r["بند العمل"] || "").trim();
+        const qtyRaw = r["الكمية"];
+        const priceRaw = r["السعر"];
+
+        let type = COST_TYPES.find((t) => t.key === typeRaw || t.label === typeRaw)?.key;
+        if (!type) {
+          type = "مصروفات";
+          if (typeRaw) warnings.push(`نوع "${typeRaw}" غير معروف، اتحطت كـ"مصروفات"`);
+        }
+
+        let workItemId = null;
+        if (workItemRaw) {
+          const match = pWorkItems.find((w) => w.name.trim() === workItemRaw);
+          if (match) workItemId = match.id;
+          else warnings.push(`بند العمل "${workItemRaw}" غير موجود، هتتسجل بدون ربط ببند`);
+        }
+
+        const qty = Number(qtyRaw) || 1;
+        const price = Number(priceRaw);
+
+        if (!descRaw) errors.push("الوصف مطلوب");
+        if (!priceRaw && priceRaw !== 0) errors.push("السعر مطلوب");
+        else if (isNaN(price) || price <= 0) errors.push("السعر لازم يكون رقم أكبر من صفر");
+
+        return {
+          rowIndex: i + 2,
+          valid: errors.length === 0,
+          errors,
+          warnings,
+          data: {
+            date: formatDate(r["التاريخ"]) || new Date().toISOString().slice(0, 10),
+            workItemId,
+            type,
+            desc: descRaw,
+            costLevel1: String(r["المستوى الأول"] || "").trim(),
+            costLevel2: String(r["المستوى الثاني"] || "").trim(),
+            qty,
+            unit: String(r["الوحدة"] || "").trim() || "-",
+            price: isNaN(price) ? 0 : price,
+          },
+        };
+      });
+    })
+  );
+}
 
 /* ---------------------------------- app ---------------------------------- */
 
@@ -135,6 +248,14 @@ function ContractingApp() {
     const { error } = await supabase.from("costs").insert([{ id: c.id, project_id: c.projectId, work_item_id: c.workItemId, custody_id: c.custodyId || null, type: c.type, description: c.desc, cost_level_1: c.costLevel1 || null, cost_level_2: c.costLevel2 || null, qty: c.qty, unit: c.unit, price: c.price, date: c.date }]);
     if (error) { alert("حصل خطأ أثناء حفظ التكلفة: " + error.message); return; }
     setCosts((prev) => [...prev, c]);
+  }
+
+  async function addCostsBulk(list) {
+    if (!list || list.length === 0) return;
+    const payload = list.map((c) => ({ id: c.id, project_id: c.projectId, work_item_id: c.workItemId, custody_id: null, type: c.type, description: c.desc, cost_level_1: c.costLevel1 || null, cost_level_2: c.costLevel2 || null, qty: c.qty, unit: c.unit, price: c.price, date: c.date }));
+    const { error } = await supabase.from("costs").insert(payload);
+    if (error) { alert("حصل خطأ أثناء استيراد التكاليف من الإكسيل: " + error.message); return; }
+    setCosts((prev) => [...prev, ...list]);
   }
 
   async function addExtract(e) {
@@ -609,6 +730,7 @@ function ContractingApp() {
               pWorkItems={pWorkItems}
               activeProjectId={activeProjectId}
               onAddCost={addCost}
+              onAddCostsBulk={addCostsBulk}
               onUpdateCost={updateCost}
               onDeleteCost={deleteCost}
             />
@@ -972,9 +1094,149 @@ function WorkItemsTab({ pWorkItems, pCosts, activeProjectId, onAddWorkItem, onUp
 
 /* --------------------------------- costs --------------------------------- */
 
-function CostsTab({ pCosts, pWorkItems, activeProjectId, onAddCost, onUpdateCost, onDeleteCost }) {
+/* --------------------------- استيراد التكاليف من إكسيل --------------------------- */
+
+function CostExcelImportPanel({ pWorkItems, activeProjectId, onImport, onClose }) {
+  const [loading, setLoading] = useState(false);
+  const [parsed, setParsed] = useState(null);
+  const [fileName, setFileName] = useState("");
+  const [error, setError] = useState("");
+
+  const handleFile = async (e) => {
+    const file = e.target.files?.[0];
+    if (!file) return;
+    setFileName(file.name);
+    setError("");
+    setParsed(null);
+    setLoading(true);
+    try {
+      const rows = await parseCostExcelFile(file, pWorkItems);
+      setParsed(rows);
+    } catch (err) {
+      setError(err.message || "حصل خطأ أثناء قراءة الملف، تأكد إنه ملف إكسيل صحيح (.xlsx أو .xls).");
+    }
+    setLoading(false);
+  };
+
+  const validRows = parsed ? parsed.filter((r) => r.valid) : [];
+  const invalidRows = parsed ? parsed.filter((r) => !r.valid) : [];
+
+  const confirmImport = () => {
+    const costs = validRows.map((r) => ({
+      id: "c_" + Math.random().toString(36).slice(2, 8),
+      projectId: activeProjectId,
+      workItemId: r.data.workItemId,
+      type: r.data.type,
+      desc: r.data.desc,
+      costLevel1: r.data.costLevel1,
+      costLevel2: r.data.costLevel2,
+      qty: r.data.qty,
+      unit: r.data.unit,
+      price: r.data.price,
+      date: r.data.date,
+    }));
+    onImport(costs);
+  };
+
+  return (
+    <div className="bg-white rounded-xl border border-[#E1DACB] p-4 space-y-4">
+      <div className="flex items-start justify-between gap-3">
+        <div>
+          <div className="font-bold text-[#1E2530]">استيراد تكاليف من إكسيل</div>
+          <p className="text-[12px] text-[#9A9483] mt-1">
+            الأعمدة المتوقعة بالترتيب: التاريخ، بند العمل (اختياري)، النوع، الوصف، المستوى الأول (اختياري)، المستوى الثاني (اختياري)، الكمية، الوحدة، السعر
+          </p>
+        </div>
+        <button onClick={() => downloadCostExcelTemplate(pWorkItems)} className="px-3 py-2 rounded-lg bg-white border border-[#E1DACB] text-[#1E2530] text-xs font-semibold hover:border-[#1E2530]/40 transition shrink-0 whitespace-nowrap">
+          تحميل قالب إكسيل
+        </button>
+      </div>
+
+      <div className="flex items-center gap-3 flex-wrap">
+        <label className="px-4 py-2 rounded-lg bg-[#1E2530] text-white text-sm font-semibold cursor-pointer hover:bg-[#2b3543] transition">
+          اختيار ملف إكسيل
+          <input type="file" accept=".xlsx,.xls" onChange={handleFile} className="hidden" />
+        </label>
+        {fileName && <span className="text-xs text-[#6B7280]">{fileName}</span>}
+        {loading && (
+          <span className="text-xs text-[#9A9483] flex items-center gap-1">
+            <Loader2 size={13} className="animate-spin" /> جاري القراءة...
+          </span>
+        )}
+        <button onClick={onClose} className="text-xs text-[#9A9483] hover:text-[#1E2530] transition mr-auto">إلغاء</button>
+      </div>
+
+      {error && <div className="text-xs text-[#C1453B] bg-[#C1453B]/10 rounded-md px-3 py-2">{error}</div>}
+
+      {parsed && (
+        <div className="space-y-3">
+          <div className="flex gap-2 text-xs flex-wrap">
+            <span className="px-3 py-1.5 rounded-full bg-[#3F7D63]/10 text-[#3F7D63] font-semibold">{validRows.length} صف صالح للاستيراد</span>
+            {invalidRows.length > 0 && (
+              <span className="px-3 py-1.5 rounded-full bg-[#C1453B]/10 text-[#C1453B] font-semibold">{invalidRows.length} صف فيه خطأ (هيتجاهل)</span>
+            )}
+          </div>
+
+          <div className="max-h-72 overflow-auto border border-[#E1DACB] rounded-lg">
+            <table className="w-full text-xs">
+              <thead className="sticky top-0 bg-[#F6F3EA]">
+                <tr className="text-[#6B7280]">
+                  <th className="text-right py-2 px-3 font-semibold">صف</th>
+                  <th className="text-right py-2 px-3 font-semibold">التاريخ</th>
+                  <th className="text-right py-2 px-3 font-semibold">بند العمل</th>
+                  <th className="text-right py-2 px-3 font-semibold">النوع</th>
+                  <th className="text-right py-2 px-3 font-semibold">الوصف</th>
+                  <th className="text-right py-2 px-3 font-semibold">الكمية</th>
+                  <th className="text-right py-2 px-3 font-semibold">السعر</th>
+                  <th className="text-right py-2 px-3 font-semibold">ملاحظات</th>
+                </tr>
+              </thead>
+              <tbody className="divide-y divide-[#EFEBDF]">
+                {parsed.map((r) => (
+                  <tr key={r.rowIndex} className={!r.valid ? "bg-[#C1453B]/5" : r.warnings.length ? "bg-[#D6A23C]/5" : ""}>
+                    <td className="py-1.5 px-3 mono">{r.rowIndex}</td>
+                    <td className="py-1.5 px-3 mono">{r.data.date}</td>
+                    <td className="py-1.5 px-3">{pWorkItems.find((w) => w.id === r.data.workItemId)?.name || "—"}</td>
+                    <td className="py-1.5 px-3">{r.data.type}</td>
+                    <td className="py-1.5 px-3">{r.data.desc || "—"}</td>
+                    <td className="py-1.5 px-3 mono">{r.data.qty}</td>
+                    <td className="py-1.5 px-3 mono">{r.data.price}</td>
+                    <td className="py-1.5 px-3 text-[#9A9483]">
+                      {r.errors.map((e, i) => (
+                        <div key={"e" + i} className="text-[#C1453B]">{e}</div>
+                      ))}
+                      {r.warnings.map((w, i) => (
+                        <div key={"w" + i} className="text-[#D6A23C]">{w}</div>
+                      ))}
+                    </td>
+                  </tr>
+                ))}
+              </tbody>
+            </table>
+          </div>
+
+          <div className="flex justify-end gap-2">
+            <button onClick={onClose} className="px-4 py-2 rounded-lg bg-[#E1DACB] text-[#1E2530] text-sm font-semibold hover:bg-[#D8D3C7] transition">إلغاء</button>
+            <button
+              onClick={confirmImport}
+              disabled={validRows.length === 0}
+              className="px-4 py-2 rounded-lg bg-[#3F7D63] text-white text-sm font-semibold hover:bg-[#356A54] transition disabled:opacity-40 disabled:cursor-not-allowed"
+            >
+              استيراد {validRows.length} تكلفة
+            </button>
+          </div>
+        </div>
+      )}
+    </div>
+  );
+}
+
+/* ------------------------------- بنود التكاليف ------------------------------- */
+
+function CostsTab({ pCosts, pWorkItems, activeProjectId, onAddCost, onAddCostsBulk, onUpdateCost, onDeleteCost }) {
   const [filter, setFilter] = useState("الكل");
   const [open, setOpen] = useState(false);
+  const [showImport, setShowImport] = useState(false);
   const [editId, setEditId] = useState(null);
   const [form, setForm] = useState({ type: "مشتريات", workItemId: "", costLevel1: "", costLevel2: "", desc: "", customDesc: "", qty: "1", unit: "", price: "", date: "" });
 
@@ -1027,6 +1289,17 @@ function CostsTab({ pCosts, pWorkItems, activeProjectId, onAddCost, onUpdateCost
     setEditId(null);
     resetForm();
     setOpen(false);
+  };
+
+  const openManualForm = () => {
+    setShowImport(false);
+    setOpen((o) => !o);
+  };
+
+  const openImportPanel = () => {
+    setOpen(false);
+    setEditId(null);
+    setShowImport((o) => !o);
   };
 
   const filtered = filter === "الكل" ? pCosts : pCosts.filter((c) => c.type === filter);
@@ -1097,9 +1370,14 @@ function CostsTab({ pCosts, pWorkItems, activeProjectId, onAddCost, onUpdateCost
     <div className="space-y-5">
       <div className="flex items-center justify-between">
         <h2 className="font-bold text-[#1E2530] text-lg">التكاليف</h2>
-        <button onClick={() => (open ? cancelForm() : setOpen(true))} className="px-3 py-2 rounded-lg bg-[#1E2530] text-white text-sm font-semibold flex items-center gap-1.5 hover:bg-[#2b3543] transition">
-          <Plus size={15} /> تسجيل تكلفة
-        </button>
+        <div className="flex gap-2">
+          <button onClick={openImportPanel} className="px-3 py-2 rounded-lg bg-white border border-[#E1DACB] text-[#1E2530] text-sm font-semibold flex items-center gap-1.5 hover:border-[#1E2530]/40 transition">
+            <Upload size={15} /> استيراد من إكسيل
+          </button>
+          <button onClick={openManualForm} className="px-3 py-2 rounded-lg bg-[#1E2530] text-white text-sm font-semibold flex items-center gap-1.5 hover:bg-[#2b3543] transition">
+            <Plus size={15} /> تسجيل تكلفة
+          </button>
+        </div>
       </div>
 
       <div className="flex gap-2 flex-wrap">
@@ -1115,6 +1393,15 @@ function CostsTab({ pCosts, pWorkItems, activeProjectId, onAddCost, onUpdateCost
           </button>
         ))}
       </div>
+
+      {showImport && (
+        <CostExcelImportPanel
+          pWorkItems={pWorkItems}
+          activeProjectId={activeProjectId}
+          onImport={(list) => { onAddCostsBulk(list); setShowImport(false); }}
+          onClose={() => setShowImport(false)}
+        />
+      )}
 
       {open && (
         <div className="bg-white rounded-xl border border-[#E1DACB] p-4 grid grid-cols-3 gap-3">
