@@ -6,7 +6,7 @@ import {
   Building2, LayoutGrid, Hammer, Receipt, FileStack, Wallet, Plus, X,
   TrendingUp, TrendingDown, ChevronDown, ChevronRight, Package, HardHat,
   Landmark, CircleDollarSign, CheckCircle2, Clock, Ruler, Users, Loader2,
-  Trash2, Pencil, Printer, Banknote, Upload,
+  Trash2, Pencil, Printer, Banknote, Upload, ShieldCheck, LogOut,
 } from "lucide-react";
 import { supabase } from "./supabaseClient";
 
@@ -153,7 +153,7 @@ function parseCostExcelFile(file, pWorkItems) {
 
 /* ---------------------------------- app ---------------------------------- */
 
-function ContractingApp() {
+function ContractingApp({ currentUsername, onLogout }) {
   const [projects, setProjects] = useState([]);
   const [workItems, setWorkItems] = useState([]);
   const [costs, setCosts] = useState([]);
@@ -598,6 +598,15 @@ function ContractingApp() {
             <Users size={16} className={view === "finance" ? "text-[#E8672C]" : ""} />
             حسابات السلف والتمويلات
           </button>
+          <button
+            onClick={() => setView("users")}
+            className={`w-full mt-1 text-right px-3 py-2.5 rounded-lg text-sm flex items-center gap-2.5 transition ${
+              view === "users" ? "bg-white/10 text-white font-bold" : "text-white/60 hover:bg-white/5 hover:text-white/90"
+            }`}
+          >
+            <ShieldCheck size={16} className={view === "users" ? "text-[#E8672C]" : ""} />
+            إدارة المستخدمين
+          </button>
         </div>
 
         <div className="mt-6 px-4">
@@ -635,6 +644,12 @@ function ContractingApp() {
               <Trash2 size={12} /> حذف هذا المشروع
             </button>
           )}
+          <button
+            onClick={() => { if (window.confirm("متأكد إنك عايز تسجّل خروج؟")) onLogout(); }}
+            className="w-full mt-2 px-3 py-2 rounded-lg text-xs font-semibold text-white/70 border border-white/10 hover:bg-white/5 hover:text-white flex items-center justify-center gap-1.5 transition"
+          >
+            <LogOut size={13} /> تسجيل خروج
+          </button>
         </div>
       </aside>
 
@@ -651,6 +666,10 @@ function ContractingApp() {
               onUpdateTransaction={updateFinanceTransaction}
               onDeleteTransaction={deleteFinanceTransaction}
             />
+          </div>
+        ) : view === "users" ? (
+          <div className="p-8">
+            <UsersManagementModule currentUsername={currentUsername} />
           </div>
         ) : (
           <>
@@ -2783,6 +2802,180 @@ function useLiveClock() {
   return now;
 }
 
+/* ---------------------------- إدارة المستخدمين ---------------------------- */
+
+function UsersManagementModule({ currentUsername }) {
+  const [users, setUsers] = useState(null);
+  const [loading, setLoading] = useState(false);
+  const [error, setError] = useState("");
+
+  const [adminUsername, setAdminUsername] = useState(currentUsername || "");
+  const [adminPassword, setAdminPassword] = useState("");
+
+  const [showAdd, setShowAdd] = useState(false);
+  const [newUsername, setNewUsername] = useState("");
+  const [newPassword, setNewPassword] = useState("");
+
+  const [editUsername, setEditUsername] = useState(null); // username اللي بيتعدّل دلوقتي
+  const [editNewUsername, setEditNewUsername] = useState("");
+  const [editNewPassword, setEditNewPassword] = useState("");
+
+  const loadUsers = async () => {
+    if (!adminUsername || !adminPassword) {
+      setError("اكتب اسم المستخدم وكلمة المرور بتاعتك عشان تقدر تشوف قائمة المستخدمين.");
+      return;
+    }
+    setLoading(true);
+    setError("");
+    const { data, error: rpcError } = await supabase.rpc("list_app_users", { p_admin_username: adminUsername, p_admin_password: adminPassword });
+    setLoading(false);
+    if (rpcError) { setError(rpcError.message.includes("بيانات الدخول") ? rpcError.message : "بيانات الدخول غير صحيحة أو حصل خطأ في الاتصال."); setUsers(null); return; }
+    setUsers(data || []);
+  };
+
+  const addUser = async () => {
+    if (!newUsername.trim() || !newPassword.trim()) return;
+    setError("");
+    const { error: rpcError } = await supabase.rpc("admin_add_user", {
+      p_admin_username: adminUsername,
+      p_admin_password: adminPassword,
+      p_new_username: newUsername.trim(),
+      p_new_password: newPassword,
+    });
+    if (rpcError) { setError(rpcError.message); return; }
+    setNewUsername("");
+    setNewPassword("");
+    setShowAdd(false);
+    loadUsers();
+  };
+
+  const startEdit = (u) => {
+    setEditUsername(u.username);
+    setEditNewUsername(u.username);
+    setEditNewPassword("");
+  };
+
+  const saveEdit = async () => {
+    setError("");
+    const { error: rpcError } = await supabase.rpc("admin_update_user", {
+      p_admin_username: adminUsername,
+      p_admin_password: adminPassword,
+      p_target_username: editUsername,
+      p_new_username: editNewUsername.trim() === editUsername ? null : editNewUsername.trim(),
+      p_new_password: editNewPassword.trim() || null,
+    });
+    if (rpcError) { setError(rpcError.message); return; }
+    setEditUsername(null);
+    setEditNewPassword("");
+    loadUsers();
+  };
+
+  const deleteUser = async (username) => {
+    if (!window.confirm(`متأكد إنك عايز تمسح المستخدم "${username}"؟`)) return;
+    setError("");
+    const { error: rpcError } = await supabase.rpc("admin_delete_user", {
+      p_admin_username: adminUsername,
+      p_admin_password: adminPassword,
+      p_target_username: username,
+    });
+    if (rpcError) { setError(rpcError.message); return; }
+    loadUsers();
+  };
+
+  if (!users) {
+    return (
+      <div className="max-w-md">
+        <h2 className="font-bold text-[#1E2530] text-xl mb-1">إدارة المستخدمين</h2>
+        <p className="text-[12px] text-[#9A9483] mb-5">أدخل بيانات دخولك عشان تفتح شاشة إدارة المستخدمين</p>
+        <div className="bg-white rounded-xl border border-[#E1DACB] p-4 space-y-3">
+          <Field label="اسم المستخدم" value={adminUsername} onChange={setAdminUsername} placeholder="اسم المستخدم بتاعك" />
+          <Field label="كلمة المرور" value={adminPassword} onChange={setAdminPassword} type="password" placeholder="كلمة المرور بتاعتك" />
+          {error && <div className="text-xs text-[#C1453B] bg-[#C1453B]/10 rounded-md px-3 py-2">{error}</div>}
+          <button
+            onClick={loadUsers}
+            disabled={loading}
+            className="w-full px-4 py-2.5 rounded-lg bg-[#1E2530] text-white text-sm font-semibold hover:bg-[#2b3543] transition disabled:opacity-60 flex items-center justify-center gap-2"
+          >
+            {loading && <Loader2 size={15} className="animate-spin" />} دخول
+          </button>
+        </div>
+      </div>
+    );
+  }
+
+  return (
+    <div className="space-y-5 max-w-2xl">
+      <div className="flex items-center justify-between">
+        <div>
+          <h2 className="font-bold text-[#1E2530] text-xl">إدارة المستخدمين</h2>
+          <p className="text-[12px] text-[#9A9483] mt-1">إضافة/تعديل/حذف مستخدمين — كل عملية بتتطلب بيانات دخولك للتأكيد</p>
+        </div>
+        <button onClick={() => setShowAdd((o) => !o)} className="px-3 py-2 rounded-lg bg-[#1E2530] text-white text-sm font-semibold flex items-center gap-1.5 hover:bg-[#2b3543] transition">
+          <Plus size={15} /> مستخدم جديد
+        </button>
+      </div>
+
+      {error && <div className="text-xs text-[#C1453B] bg-[#C1453B]/10 rounded-md px-3 py-2">{error}</div>}
+
+      {showAdd && (
+        <div className="bg-white rounded-xl border border-[#E1DACB] p-4 grid grid-cols-2 gap-3">
+          <Field label="اسم المستخدم الجديد" value={newUsername} onChange={setNewUsername} />
+          <Field label="كلمة المرور" value={newPassword} onChange={setNewPassword} type="password" />
+          <div className="col-span-2 flex justify-end gap-2">
+            <button onClick={() => setShowAdd(false)} className="px-4 py-2 rounded-lg bg-[#E1DACB] text-[#1E2530] text-sm font-semibold hover:bg-[#D8D3C7] transition">إلغاء</button>
+            <button onClick={addUser} className="px-4 py-2 rounded-lg bg-[#E8672C] text-white text-sm font-semibold hover:bg-[#C8511E] transition">حفظ</button>
+          </div>
+        </div>
+      )}
+
+      <div className="bg-white rounded-xl border border-[#E1DACB] overflow-hidden">
+        <table className="w-full text-sm">
+          <thead>
+            <tr className="bg-[#F6F3EA] text-[#6B7280] text-[12px]">
+              <th className="text-right py-3 px-4 font-semibold">اسم المستخدم</th>
+              <th className="text-right py-3 px-4 font-semibold w-32"></th>
+            </tr>
+          </thead>
+          <tbody className="divide-y divide-[#EFEBDF]">
+            {users.map((u) => (
+              <React.Fragment key={u.id}>
+                <tr className="hover:bg-[#FAF8F2] transition group">
+                  <td className="py-3 px-4 font-semibold text-[#1E2530]">{u.username}</td>
+                  <td className="py-3 px-4">
+                    <div className="flex gap-1 justify-end opacity-0 group-hover:opacity-100 transition">
+                      <button onClick={() => startEdit(u)} title="تعديل" className="p-1.5 rounded-md text-[#6B7280] hover:bg-[#E1DACB] hover:text-[#1E2530] transition"><Pencil size={14} /></button>
+                      <button onClick={() => deleteUser(u.username)} title="حذف" className="p-1.5 rounded-md text-[#C1453B] hover:bg-[#C1453B]/10 transition"><Trash2 size={14} /></button>
+                    </div>
+                  </td>
+                </tr>
+                {editUsername === u.username && (
+                  <tr>
+                    <td colSpan={2} className="p-4 bg-[#FAF8F2]">
+                      <div className="grid grid-cols-2 gap-3">
+                        <Field label="اسم المستخدم" value={editNewUsername} onChange={setEditNewUsername} />
+                        <Field label="كلمة مرور جديدة (اختياري)" value={editNewPassword} onChange={setEditNewPassword} type="password" placeholder="سيبها فاضية لو مش عايز تغيّرها" />
+                        <div className="col-span-2 flex justify-end gap-2">
+                          <button onClick={() => setEditUsername(null)} className="px-4 py-2 rounded-lg bg-[#E1DACB] text-[#1E2530] text-sm font-semibold hover:bg-[#D8D3C7] transition">إلغاء</button>
+                          <button onClick={saveEdit} className="px-4 py-2 rounded-lg bg-[#E8672C] text-white text-sm font-semibold hover:bg-[#C8511E] transition">حفظ التعديل</button>
+                        </div>
+                      </div>
+                    </td>
+                  </tr>
+                )}
+              </React.Fragment>
+            ))}
+            {users.length === 0 && (
+              <tr><td colSpan={2} className="text-center py-8 text-[#9A9483]">لا يوجد مستخدمون.</td></tr>
+            )}
+          </tbody>
+        </table>
+      </div>
+    </div>
+  );
+}
+
+/* ------------------------------- تسجيل الدخول ------------------------------- */
+
 function LoginScreen({ onSuccess }) {
   const now = useLiveClock();
   const [username, setUsername] = useState("");
@@ -2801,7 +2994,7 @@ function LoginScreen({ onSuccess }) {
     const { data, error: rpcError } = await supabase.rpc("verify_login", { p_username: username, p_password: password });
     setLoading(false);
     if (rpcError) { setError("حصل خطأ في الاتصال بالسيرفر"); return; }
-    if (data === true) { onSuccess(); } else { setError("اسم المستخدم أو كلمة المرور غير صحيحة"); }
+    if (data === true) { onSuccess(username); } else { setError("اسم المستخدم أو كلمة المرور غير صحيحة"); }
   };
 
   return (
@@ -2873,8 +3066,9 @@ function LoginScreen({ onSuccess }) {
 
 export default function App() {
   const [authenticated, setAuthenticated] = useState(false);
+  const [currentUsername, setCurrentUsername] = useState("");
   if (!authenticated) {
-    return <LoginScreen onSuccess={() => setAuthenticated(true)} />;
+    return <LoginScreen onSuccess={(username) => { setCurrentUsername(username); setAuthenticated(true); }} />;
   }
-  return <ContractingApp />;
+  return <ContractingApp currentUsername={currentUsername} onLogout={() => { setAuthenticated(false); setCurrentUsername(""); }} />;
 }
