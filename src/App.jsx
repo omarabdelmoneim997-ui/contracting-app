@@ -2982,6 +2982,7 @@ function LoginScreen({ onSuccess }) {
   const [password, setPassword] = useState("");
   const [error, setError] = useState("");
   const [loading, setLoading] = useState(false);
+  const [showPw, setShowPw] = useState(false);
 
   const dateStr = now.toLocaleDateString("en-US", { weekday: "short", day: "2-digit", month: "short", year: "numeric" });
   const timeStr = now.toLocaleTimeString("en-US", { hour: "2-digit", minute: "2-digit", second: "2-digit", hour12: true });
@@ -2998,67 +2999,99 @@ function LoginScreen({ onSuccess }) {
   };
 
   return (
-    <div dir="rtl" style={{ fontFamily: "'Cairo', sans-serif" }} className="w-full min-h-screen flex items-center justify-center relative overflow-hidden" >
+    <div dir="ltr" className="lh-page">
       <style>{`
-        @import url('https://fonts.googleapis.com/css2?family=Cairo:wght@400;500;600;700;800&family=IBM+Plex+Mono:wght@400;500;600&display=swap');
-        .mono { font-family: 'IBM Plex Mono', monospace; }
-        .login-bg {
-          background-color: #14212C;
-          background-image:
-            radial-gradient(circle at 20% 20%, rgba(232,103,44,0.08), transparent 40%),
-            linear-gradient(rgba(255,255,255,0.035) 1px, transparent 1px),
-            linear-gradient(90deg, rgba(255,255,255,0.035) 1px, transparent 1px);
-          background-size: 100% 100%, 28px 28px, 28px 28px;
+        @import url('https://fonts.googleapis.com/css2?family=Cairo:wght@400;600;700;800&family=IBM+Plex+Mono:wght@500;600&display=swap');
+        .lh-page { --gold:#f0c85a; position:relative; width:100%; min-height:100vh; background:#050505; color:#eee;
+          overflow:hidden; display:flex; align-items:center; justify-content:center; padding:24px;
+          font-family:'Cairo',system-ui,sans-serif; }
+        .lh-page *, .lh-page *::before, .lh-page *::after { box-sizing:border-box; }
+        .lh-lighthouse { position:absolute; left:6vw; bottom:0; width:110px; height:70vh; }
+        .lh-lighthouse svg { width:100%; height:100%; display:block; }
+        .lh-lamp { position:absolute; left:50%; top:calc(30% - 4px); width:0; height:0; }
+        .lh-beam { position:absolute; left:0; top:-90px; width:90vw; height:180px; transform-origin:0 50%;
+          background:linear-gradient(90deg, rgba(255,214,120,.85), rgba(255,190,80,.25) 45%, transparent 90%);
+          clip-path:polygon(0 47%, 100% 0, 100% 100%, 0 53%); filter:blur(3px); mix-blend-mode:screen;
+          animation:lh-sweep 6s ease-in-out infinite; pointer-events:none; }
+        @keyframes lh-sweep { 0%,100%{transform:rotate(-7deg)} 50%{transform:rotate(5deg)} }
+        .lh-glow { position:absolute; left:-30px; top:-30px; width:60px; height:60px; border-radius:50%;
+          background:radial-gradient(circle,#fff3c4,rgba(255,200,90,.5) 40%,transparent 70%);
+          animation:lh-pulse 3s ease-in-out infinite; }
+        @keyframes lh-pulse { 50%{opacity:.6; transform:scale(1.2)} }
+        .lh-card { position:relative; z-index:2; width:100%; max-width:360px; margin-left:12vw; text-align:left;
+          background:#111114; border:1px solid #26262c; border-radius:16px; padding:32px 28px;
+          animation:lh-lit 6s ease-in-out infinite; }
+        @keyframes lh-lit { 50%{ box-shadow:0 0 60px rgba(240,200,90,.18); border-color:#4a4022 } }
+        .lh-eyebrow { font-size:11px; letter-spacing:.2em; color:var(--gold); margin-bottom:10px; }
+        .lh-card h1 { font-size:32px; line-height:1.1; margin:0 0 6px; font-weight:800; }
+        .lh-sub { color:#8b8b95; font-size:14px; margin:0 0 20px; }
+        .lh-card label { display:block; font-size:12px; color:#8b8b95; margin:14px 0 6px; }
+        .lh-field { position:relative; }
+        .lh-card input { width:100%; padding:12px 14px; background:#0a0a0c; color:#eee; border:1px solid #2a2a31;
+          border-radius:10px; font-size:14px; outline:none; transition:border-color .2s; }
+        .lh-card input:focus { border-color:var(--gold); }
+        .lh-toggle { position:absolute; right:10px; top:50%; transform:translateY(-50%); background:none; border:0;
+          color:#8b8b95; font-size:12px; cursor:pointer; }
+        .lh-error { color:#ff6b6b; font-size:13px; font-weight:600; margin:14px 0 0; }
+        .lh-submit { width:100%; margin-top:20px; padding:13px; border:0; border-radius:10px; cursor:pointer;
+          background:var(--gold); color:#1a1405; font-weight:800; font-size:15px; display:flex;
+          align-items:center; justify-content:center; gap:8px; }
+        .lh-submit:disabled { opacity:.6; cursor:wait; }
+        .lh-footer { position:absolute; bottom:0; left:0; right:0; z-index:3; display:flex; justify-content:space-between;
+          align-items:center; padding:16px 24px; font-size:11px; color:rgba(255,255,255,.45); }
+        .lh-clock { font-family:'IBM Plex Mono',monospace; background:#111114; border:1px solid #26262c;
+          border-radius:6px; padding:6px 12px; color:var(--gold); font-size:12px; font-weight:600; }
+        @media (max-width:760px) {
+          .lh-card { margin-left:0; margin-top:26vh; }
+          .lh-lighthouse { left:50%; transform:translateX(-50%); width:70px; height:34vh; top:0; bottom:auto; }
+          .lh-beam { width:70vh; opacity:.6; }
+          .lh-footer { flex-direction:column; gap:6px; }
         }
+        @media (prefers-reduced-motion:reduce) { .lh-beam,.lh-glow,.lh-card { animation:none } }
       `}</style>
-      <div className="login-bg absolute inset-0" />
 
-      <div className="relative z-10 flex flex-col items-center px-6 w-full">
-        <div className="flex flex-col items-center mb-2">
-          <div className="w-16 h-16 rounded-2xl bg-[#E8672C] flex items-center justify-center mb-4 shadow-lg shadow-[#E8672C]/20">
-            <Building2 size={30} className="text-white" strokeWidth={2.2} />
-          </div>
-          <h1 className="text-white text-3xl font-extrabold tracking-wide">Omar ERP</h1>
-          <div className="w-10 h-[2px] bg-[#E8672C] my-3" />
-          <p className="text-white/50 text-xs font-semibold tracking-[0.2em]">CONTRACTING MANAGEMENT</p>
-        </div>
-
-        <form onSubmit={submit} dir="ltr" className="bg-[#F6F3EA] rounded-2xl p-7 w-full max-w-sm mt-8 shadow-2xl text-left">
-          <label className="block text-[12px] font-bold text-[#1E2530] mb-1.5">Username</label>
-          <input
-            autoFocus
-            value={username}
-            onChange={(e) => setUsername(e.target.value)}
-            placeholder="Enter your username"
-            dir="ltr"
-            className="w-full border-0 rounded-lg px-3.5 py-2.5 text-sm outline-none focus:ring-2 focus:ring-[#E8672C]/40 transition bg-white mb-4 text-[#1E2530] placeholder:text-[#B5AF9E] text-left"
-          />
-          <label className="block text-[12px] font-bold text-[#1E2530] mb-1.5">Password</label>
-          <input
-            type="password"
-            value={password}
-            onChange={(e) => setPassword(e.target.value)}
-            placeholder="Enter your password"
-            dir="ltr"
-            className="w-full border-0 rounded-lg px-3.5 py-2.5 text-sm outline-none focus:ring-2 focus:ring-[#E8672C]/40 transition bg-white mb-2 text-[#1E2530] placeholder:text-[#B5AF9E] text-left"
-          />
-          {error && <div className="text-[#C1453B] text-xs font-semibold mb-3 mt-1">{error}</div>}
-          <button
-            type="submit"
-            disabled={loading}
-            className="w-full mt-3 py-2.5 rounded-lg bg-[#1E2530] text-white font-bold text-sm hover:bg-[#2b3543] transition disabled:opacity-60 flex items-center justify-center gap-2"
-          >
-            {loading ? <Loader2 size={16} className="animate-spin" /> : null}
-            Sign In
-          </button>
-        </form>
+      <div className="lh-lighthouse" aria-hidden="true">
+        <svg viewBox="0 0 110 400" preserveAspectRatio="xMidYMax meet">
+          <rect x="44" y="90" width="22" height="10" fill="#222" />
+          <rect x="40" y="70" width="30" height="20" fill="#ddd" opacity=".9" />
+          <polygon points="55,50 38,70 72,70" fill="#c33" />
+          <polygon points="42,100 68,100 82,400 28,400" fill="#e8e8e8" />
+          <polygon points="38,190 72,190 76,250 34,250" fill="#111" />
+          <polygon points="30,320 80,320 82,400 28,400" fill="#111" />
+        </svg>
+        <div className="lh-lamp"><div className="lh-glow" /><div className="lh-beam" /></div>
       </div>
 
-      <div dir="ltr" className="absolute bottom-0 inset-x-0 flex items-center justify-between px-6 py-4 z-10">
-        <span className="text-white/50 text-[11px]">© {now.getFullYear()} Omar ERP. All rights reserved.</span>
-        <span className="mono bg-[#1E2530] border border-white/10 rounded-md px-3 py-1.5 text-[#E8AA6C] text-[12px] font-semibold tracking-wide">
-          {dateStr}, {timeStr}
-        </span>
+      <form onSubmit={submit} className="lh-card">
+        <div className="lh-eyebrow">OMAR ERP · MEMBER ACCESS</div>
+        <h1>Welcome back.</h1>
+        <p className="lh-sub">Sign in to continue your journey</p>
+
+        <label htmlFor="lh-user">Username</label>
+        <input id="lh-user" autoFocus value={username} onChange={(e) => setUsername(e.target.value)}
+               placeholder="Enter your username" autoComplete="username" />
+
+        <label htmlFor="lh-pass">Password</label>
+        <div className="lh-field">
+          <input id="lh-pass" type={showPw ? "text" : "password"} value={password}
+                 onChange={(e) => setPassword(e.target.value)} placeholder="Enter your password"
+                 autoComplete="current-password" />
+          <button type="button" className="lh-toggle" onClick={() => setShowPw((s) => !s)}>
+            {showPw ? "Hide" : "View"}
+          </button>
+        </div>
+
+        {error && <div className="lh-error">{error}</div>}
+
+        <button type="submit" disabled={loading} className="lh-submit">
+          {loading ? <Loader2 size={16} className="animate-spin" /> : null}
+          Sign In
+        </button>
+      </form>
+
+      <div className="lh-footer">
+        <span>© {now.getFullYear()} Omar ERP. All rights reserved.</span>
+        <span className="lh-clock">{dateStr}, {timeStr}</span>
       </div>
     </div>
   );
