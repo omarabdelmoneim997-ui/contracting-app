@@ -2977,15 +2977,14 @@ function UsersManagementModule({ currentUsername }) {
 /* ------------------------------- تسجيل الدخول ------------------------------- */
 
 function LoginScreen({ onSuccess }) {
-  const now = useLiveClock();
   const [username, setUsername] = useState("");
   const [password, setPassword] = useState("");
   const [error, setError] = useState("");
   const [loading, setLoading] = useState(false);
   const [showPw, setShowPw] = useState(false);
+  const [remember, setRemember] = useState(false);
+  const [notice, setNotice] = useState("");
 
-  const dateStr = now.toLocaleDateString("en-US", { weekday: "short", day: "2-digit", month: "short", year: "numeric" });
-  const timeStr = now.toLocaleTimeString("en-US", { hour: "2-digit", minute: "2-digit", second: "2-digit", hour12: true });
 
   const submit = async (e) => {
     e.preventDefault();
@@ -3001,10 +3000,9 @@ function LoginScreen({ onSuccess }) {
   return (
     <div dir="ltr" className="lh-page">
       <style>{`
-        @import url('https://fonts.googleapis.com/css2?family=Cairo:wght@400;600;700;800&family=IBM+Plex+Mono:wght@500;600&display=swap');
-        .lh-page { --gold:#f0c85a; position:relative; width:100%; min-height:100vh; background:#050505; color:#eee;
-          overflow:hidden; display:flex; align-items:center; justify-content:center; padding:24px;
-          font-family:'Cairo',system-ui,sans-serif; }
+        .lh-page { --gold:#f0c85a; --muted:#8b8b95; position:relative; width:100%; min-height:100vh; background:#050505;
+          color:#eee; overflow:hidden; display:flex; align-items:center; justify-content:center; padding:24px;
+          font-family:system-ui,-apple-system,"Segoe UI",sans-serif; }
         .lh-page *, .lh-page *::before, .lh-page *::after { box-sizing:border-box; }
         .lh-lighthouse { position:absolute; left:6vw; bottom:0; width:110px; height:70vh; }
         .lh-lighthouse svg { width:100%; height:100%; display:block; }
@@ -3022,30 +3020,31 @@ function LoginScreen({ onSuccess }) {
           background:#111114; border:1px solid #26262c; border-radius:16px; padding:32px 28px;
           animation:lh-lit 6s ease-in-out infinite; }
         @keyframes lh-lit { 50%{ box-shadow:0 0 60px rgba(240,200,90,.18); border-color:#4a4022 } }
-        .lh-eyebrow { font-size:11px; letter-spacing:.2em; color:var(--gold); margin-bottom:10px; }
-        .lh-card h1 { font-size:32px; line-height:1.1; margin:0 0 6px; font-weight:800; }
-        .lh-sub { color:#8b8b95; font-size:14px; margin:0 0 20px; }
-        .lh-card label { display:block; font-size:12px; color:#8b8b95; margin:14px 0 6px; }
+        .lh-eyebrow { font-size:11px; letter-spacing:.2em; color:var(--gold); margin-bottom:12px; }
+        .lh-card h1 { font-size:32px; line-height:1.1; margin:0 0 6px; font-weight:700; }
+        .lh-sub { color:var(--muted); font-size:14px; margin:0 0 24px; }
+        .lh-card label { display:block; font-size:12px; color:var(--muted); margin:14px 0 6px; }
         .lh-field { position:relative; }
-        .lh-card input { width:100%; padding:12px 14px; background:#0a0a0c; color:#eee; border:1px solid #2a2a31;
-          border-radius:10px; font-size:14px; outline:none; transition:border-color .2s; }
-        .lh-card input:focus { border-color:var(--gold); }
+        .lh-card input[type=text], .lh-card input[type=password] { width:100%; padding:12px 14px; background:#0a0a0c;
+          color:#eee; border:1px solid #2a2a31; border-radius:10px; font-size:14px; outline:none; transition:border-color .2s; }
+        .lh-card input[type=text]:focus, .lh-card input[type=password]:focus { border-color:var(--gold); }
         .lh-toggle { position:absolute; right:10px; top:50%; transform:translateY(-50%); background:none; border:0;
-          color:#8b8b95; font-size:12px; cursor:pointer; }
-        .lh-error { color:#ff6b6b; font-size:13px; font-weight:600; margin:14px 0 0; }
-        .lh-submit { width:100%; margin-top:20px; padding:13px; border:0; border-radius:10px; cursor:pointer;
-          background:var(--gold); color:#1a1405; font-weight:800; font-size:15px; display:flex;
-          align-items:center; justify-content:center; gap:8px; }
+          color:var(--muted); font-size:12px; cursor:pointer; }
+        .lh-row { display:flex; justify-content:space-between; align-items:center; margin:16px 0 20px;
+          font-size:13px; color:var(--muted); }
+        .lh-row label { margin:0; display:flex; gap:6px; align-items:center; font-size:13px; }
+        .lh-row a, .lh-foot a { color:var(--gold); text-decoration:none; cursor:pointer; }
+        .lh-submit { width:100%; padding:13px; border:0; border-radius:10px; cursor:pointer; background:var(--gold);
+          color:#1a1405; font-weight:700; font-size:15px; display:flex; align-items:center; justify-content:center; gap:8px; }
+        .lh-submit:hover { filter:brightness(1.08); }
         .lh-submit:disabled { opacity:.6; cursor:wait; }
-        .lh-footer { position:absolute; bottom:0; left:0; right:0; z-index:3; display:flex; justify-content:space-between;
-          align-items:center; padding:16px 24px; font-size:11px; color:rgba(255,255,255,.45); }
-        .lh-clock { font-family:'IBM Plex Mono',monospace; background:#111114; border:1px solid #26262c;
-          border-radius:6px; padding:6px 12px; color:var(--gold); font-size:12px; font-weight:600; }
+        .lh-foot { text-align:center; margin:18px 0 0; font-size:13px; color:var(--muted); }
+        .lh-error { color:#ff6b6b; font-size:13px; text-align:center; margin:12px 0 0; }
+        .lh-notice { color:var(--gold); font-size:13px; text-align:center; margin:12px 0 0; }
         @media (max-width:760px) {
           .lh-card { margin-left:0; margin-top:26vh; }
           .lh-lighthouse { left:50%; transform:translateX(-50%); width:70px; height:34vh; top:0; bottom:auto; }
           .lh-beam { width:70vh; opacity:.6; }
-          .lh-footer { flex-direction:column; gap:6px; }
         }
         @media (prefers-reduced-motion:reduce) { .lh-beam,.lh-glow,.lh-card { animation:none } }
       `}</style>
@@ -3063,12 +3062,12 @@ function LoginScreen({ onSuccess }) {
       </div>
 
       <form onSubmit={submit} className="lh-card">
-        <div className="lh-eyebrow">OMAR ERP · MEMBER ACCESS</div>
+        <div className="lh-eyebrow">MEMBER ACCESS</div>
         <h1>Welcome back.</h1>
         <p className="lh-sub">Sign in to continue your journey</p>
 
         <label htmlFor="lh-user">Username</label>
-        <input id="lh-user" autoFocus value={username} onChange={(e) => setUsername(e.target.value)}
+        <input id="lh-user" type="text" autoFocus value={username} onChange={(e) => setUsername(e.target.value)}
                placeholder="Enter your username" autoComplete="username" />
 
         <label htmlFor="lh-pass">Password</label>
@@ -3081,18 +3080,25 @@ function LoginScreen({ onSuccess }) {
           </button>
         </div>
 
-        {error && <div className="lh-error">{error}</div>}
+        <div className="lh-row">
+          <label>
+            <input type="checkbox" checked={remember} onChange={(e) => setRemember(e.target.checked)} /> Remember me
+          </label>
+          <a onClick={() => setNotice("Contact your administrator to reset your password.")}>Forgot password?</a>
+        </div>
 
         <button type="submit" disabled={loading} className="lh-submit">
           {loading ? <Loader2 size={16} className="animate-spin" /> : null}
-          Sign In
+          Sign in
         </button>
-      </form>
 
-      <div className="lh-footer">
-        <span>© {now.getFullYear()} Omar ERP. All rights reserved.</span>
-        <span className="lh-clock">{dateStr}, {timeStr}</span>
-      </div>
+        {error && <p className="lh-error">{error}</p>}
+        {notice && !error && <p className="lh-notice">{notice}</p>}
+
+        <p className="lh-foot">
+          New here? <a onClick={() => setNotice("Accounts are created by your administrator.")}>Create an account</a>
+        </p>
+      </form>
     </div>
   );
 }
