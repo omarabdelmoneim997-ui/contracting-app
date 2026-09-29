@@ -526,7 +526,7 @@ function ContractingApp({ currentUsername, onLogout }) {
     pTreasuryEntries.reduce((sum, t) => sum + (t.type === "ايداع" ? t.amount : -t.amount), 0);
 
   return (
-    <div dir="rtl" style={{ fontFamily: "'Cairo', sans-serif" }} className="w-full min-h-screen flex" >
+    <div dir="rtl" style={{ fontFamily: "'Cairo', sans-serif" }} className="w-full min-h-screen flex flex-col" >
       <style>{`
         @import url('https://fonts.googleapis.com/css2?family=Cairo:wght@400;500;600;700;800&family=IBM+Plex+Mono:wght@400;500;600&display=swap');
         .mono { font-family: 'IBM Plex Mono', monospace; }
@@ -563,6 +563,7 @@ function ContractingApp({ currentUsername, onLogout }) {
         </div>
       )}
 
+      <div className="flex flex-1 min-w-0">
       {/* SIDEBAR */}
       <aside className="blueprint-bg w-72 shrink-0 flex flex-col text-[#E7ECEF] sticky top-0 self-start h-screen overflow-y-auto border-l border-white/10">
         {/* الشعار */}
@@ -856,6 +857,9 @@ function ContractingApp({ currentUsername, onLogout }) {
         </>
         )}
       </main>
+      </div>
+
+      <AppFooter />
 
       {showNewProject && (
         <NewProjectModal
@@ -1993,6 +1997,27 @@ function AnalyticsTab({ project, pWorkItems, pCosts, pExtracts, pCollections, pE
         )}
       </AnCard>
     </div>
+  );
+}
+
+/* ------------------------------- فوتر التطبيق ------------------------------- */
+// الساعة والتاريخ ورقم الإصدار فقط. غيّر APP_VERSION مع كل إصدار جديد.
+const APP_VERSION = "v1.0.1864";
+
+function AppFooter() {
+  const now = useLiveClock();
+  const WD = ["Sun", "Mon", "Tue", "Wed", "Thu", "Fri", "Sat"];
+  const MO = ["Jan", "Feb", "Mar", "Apr", "May", "Jun", "Jul", "Aug", "Sept", "Oct", "Nov", "Dec"];
+  const h24 = now.getHours();
+  const h12 = h24 % 12 === 0 ? 12 : h24 % 12;
+  const p2 = (n) => String(n).padStart(2, "0");
+  const stamp = `${WD[now.getDay()]}, ${now.getDate()} ${MO[now.getMonth()]} ${now.getFullYear()}, ${p2(h12)}:${p2(now.getMinutes())}:${p2(now.getSeconds())} ${h24 < 12 ? "am" : "pm"}`;
+
+  return (
+    <footer dir="ltr" className="w-full shrink-0 flex items-center justify-end gap-4 px-6 py-3" style={{ backgroundColor: "#111D33", fontFamily: "Inter, 'Cairo', system-ui, sans-serif" }}>
+      <span className="mono text-[13px] font-semibold rounded-lg px-4 py-2 border" style={{ color: "#D4AF6A", backgroundColor: "#16264A", borderColor: "#1E3054" }}>{stamp}</span>
+      <span className="text-[14px]" style={{ color: "#6783BB" }}>{APP_VERSION}</span>
+    </footer>
   );
 }
 
