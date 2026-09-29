@@ -639,6 +639,7 @@ function ContractingApp({ currentUsername, onLogout }) {
         {/* عام */}
         <div className="mt-4 px-4 pt-4 border-t border-white/10 space-y-0.5">
           <div className="text-[11px] text-white/45 font-bold tracking-wide mb-1.5 px-1">الحسابات العامة</div>
+          <SidebarItem icon={BarChart3} label="مركز التقارير" active={view === "reports"} onClick={() => setView("reports")} />
           <SidebarItem icon={HandCoins} label="التمويلات والسلف" active={view === "finance"} onClick={() => setView("finance")} />
           <SidebarItem icon={ShieldCheck} label="إدارة المستخدمين" active={view === "users"} onClick={() => setView("users")} />
         </div>
@@ -675,7 +676,22 @@ function ContractingApp({ currentUsername, onLogout }) {
 
       {/* MAIN */}
       <main className="flex-1 paper-bg min-h-screen">
-        {view === "finance" ? (
+        {view === "reports" ? (
+          <div className="p-8">
+            <ReportsCenter
+              projects={projects}
+              workItems={workItems}
+              costs={costs}
+              extracts={extracts}
+              collections={collections}
+              treasuryEntries={treasuryEntries}
+              financePersons={financePersons}
+              financeTransactions={financeTransactions}
+              expectedCosts={expectedCosts}
+              defaultProjectId={activeProjectId}
+            />
+          </div>
+        ) : view === "finance" ? (
           <div className="p-8">
             <FinanceAccountsModule
               financePersons={financePersons}
@@ -842,6 +858,709 @@ function ContractingApp({ currentUsername, onLogout }) {
       )}
     </div>
 
+  );
+}
+
+/* =============================== مركز التقارير =============================== */
+// قراءة فقط من البيانات المحمّلة أصلًا من Supabase — لا جداول جديدة ولا كتابة على القاعدة.
+
+const rSum = (arr, fn) => arr.reduce((s, x) => s + fn(x), 0);
+const rLine = (c) => c.qty * c.price;
+const rDay = (d) => String(d || "").slice(0, 10);
+const rPct = (v, d = 1) => (v === null || v === undefined || !isFinite(v) ? "—" : fmt(v, d) + "٪");
+const rTypeLabel = (k) => COST_TYPES.find((t) => t.key === k)?.label || k || "—";
+const rOverTone = (v) => (v > 0 ? "text-[#C1453B]" : "text-[#3F7D63]");
+
+const REPORT_LIST = [
+  { key: "executive", title: "التقرير التنفيذي للمشروع", desc: "قيمة العقد، الأعمال، التكلفة الفعلية والمتوقعة، الربح والهامش، التحصيل وأهم التجاوزات.", icon: LayoutDashboard },
+  { key: "costs", title: "تقرير التكاليف التفصيلي", desc: "التكاليف حسب النوع وبند العمل ومستوى التكلفة الأول والثاني (الكمية × السعر).", icon: ReceiptText },
+  { key: "bva", title: "تقرير Budget vs Actual", desc: "الميزانية مقابل الفعلي لكل بند مع الفرق ونسبة الانحراف وتحديد البنود المتجاوزة.", icon: Gauge },
+  { key: "extracts", title: "تقرير المستخلصات والتحصيلات", desc: "إجمالي المستخلصات والمحصل والمتبقي ونسبة التحصيل لكل مستخلص.", icon: FileCheck2 },
+  { key: "treasury", title: "تقرير الخزينة والسيولة", desc: "الرصيد الحالي، المقبوضات والمدفوعات، التمويلات والسداد، وصافي حركة النقد.", icon: Vault },
+  { key: "financing", title: "تقرير التمويلات والسلف", desc: "إجمالي التمويلات والسداد والرصيد المستحق وكشف حساب لكل ممول.", icon: HandCoins },
+  { key: "items", title: "تقرير البنود", desc: "كل بند رئيسي وتحته تفاصيل التكلفة ومستوى التكلفة الأول والثاني.", icon: Layers },
+];
+
+function ReportShell({ title, notice, s, children }) {
+  const projLabel = s.multi ? "كل المشروعات" : (s.projects[0]?.name || "—");
+  const period = !s.from && !s.to ? "كل الفترات" : `${s.from || "البداية"}  ←  ${s.to || "اليوم"}`;
+  return (
+    <div id="report-print-area" dir="rtl" className="bg-white rounded-xl border border-[#E1DACB] p-8 space-y-6">
+      <div className="flex items-center justify-between border-b-[3px] border-[#E8672C] pb-4">
+        <div className="flex items-center gap-3">
+          <div className="w-10 h-10 rounded-xl bg-[#E8672C] text-white flex items-center justify-center font-extrabold text-lg">O</div>
+          <div>
+            <div className="font-extrabold text-lg text-[#1E2530] leading-tight">Omar ERP</div>
+            <div className="text-[10px] text-[#9A9483] mono tracking-wider">CONTRACTING · MANAGEMENT REPORT</div>
+          </div>
+        </div>
+        <h1 className="text-xl font-extrabold text-[#1E2530]">{title}</h1>
+      </div>
+
+      <div className="grid grid-cols-3 gap-3 bg-[#F6F3EA] rounded-lg px-5 py-3 text-[12px]">
+        <div><span className="block text-[10px] text-[#9A9483]">المشروع</span><span className="font-bold text-[#1E2530]">{projLabel}</span></div>
+        <div><span className="block text-[10px] text-[#9A9483]">الفترة</span><span className="font-bold text-[#1E2530] mono">{period}</span></div>
+        <div><span className="block text-[10px] text-[#9A9483]">تاريخ الإصدار</span><span className="font-bold text-[#1E2530] mono">{new Date().toLocaleDateString("en-GB")}</span></div>
+      </div>
+
+      {notice && <div className="text-[11px] text-[#8A6A1F] bg-[#D6A23C]/10 border border-[#D6A23C]/30 rounded-lg px-4 py-2">{notice}</div>}
+
+      {children}
+
+      <div className="flex justify-between text-[10px] text-[#9A9483] border-t border-[#E1DACB] pt-3">
+        <span>Omar ERP — نظام إدارة المقاولات</span>
+        <span>تقرير سري للإدارة — للاستخدام الداخلي</span>
+      </div>
+    </div>
+  );
+}
+
+function RptKpi({ label, value, sub, color = "#1E2530" }) {
+  return (
+    <div className="rounded-xl border border-[#E1DACB] bg-white px-4 py-3 avoid-break">
+      <div className="text-[11px] text-[#9A9483] mb-1">{label}</div>
+      <div className="text-base font-extrabold mono" style={{ color }}>{value}</div>
+      {sub && <div className="text-[10px] text-[#9A9483] mt-0.5">{sub}</div>}
+    </div>
+  );
+}
+
+function RptSection({ title, hint, children }) {
+  return (
+    <section className="space-y-2">
+      <div>
+        <h3 className="font-bold text-[#1E2530] text-sm border-r-4 border-[#E8672C] pr-2">{title}</h3>
+        {hint && <p className="text-[11px] text-[#9A9483] mt-1 pr-3">{hint}</p>}
+      </div>
+      {children}
+    </section>
+  );
+}
+
+function RptTable({ heads, rows, footer, empty }) {
+  return (
+    <div className="border border-[#E1DACB] rounded-lg overflow-hidden">
+      <table className="w-full text-[12px]">
+        <thead className="bg-[#1E2530] text-white">
+          <tr>{heads.map((h, i) => <th key={i} className="text-right py-2 px-3 font-semibold whitespace-nowrap">{h.label}</th>)}</tr>
+        </thead>
+        <tbody className="divide-y divide-[#EFEBDF]">
+          {rows.length === 0 ? (
+            <tr><td colSpan={heads.length} className="py-6 text-center text-[#9A9483]">{empty || "لا توجد بيانات في هذه الفترة"}</td></tr>
+          ) : rows.map((r, ri) => (
+            <tr key={ri} className={r.className || ""}>
+              {r.cells.map((c, ci) => <td key={ci} className={`py-2 px-3 ${heads[ci]?.num ? "mono" : ""}`}>{c}</td>)}
+            </tr>
+          ))}
+        </tbody>
+        {footer && rows.length > 0 && (
+          <tfoot className="bg-[#F6F3EA] font-bold">
+            <tr>{footer.map((c, ci) => <td key={ci} className={`py-2 px-3 ${heads[ci]?.num ? "mono" : ""}`}>{c}</td>)}</tr>
+          </tfoot>
+        )}
+      </table>
+    </div>
+  );
+}
+
+function RptBar({ label, value, max, color }) {
+  const w = max > 0 ? Math.max(0, Math.min(100, (value / max) * 100)) : 0;
+  return (
+    <div>
+      <div className="flex justify-between text-[12px] mb-1"><span className="font-semibold text-[#1E2530]">{label}</span><span className="mono font-bold">{money(value)}</span></div>
+      <div className="h-2.5 rounded-full bg-[#F1EDE1] overflow-hidden"><div className="h-full rounded-full" style={{ width: `${w}%`, backgroundColor: color }} /></div>
+    </div>
+  );
+}
+
+/* -------- 1) التقرير التنفيذي -------- */
+function ExecutiveReport({ s }) {
+  const contract = rSum(s.projects, (p) => Number(p.budget) || 0);
+  const worksValue = rSum(s.extractsUpTo, (e) => e.amount);
+  const collected = rSum(s.collectionsUpTo, (c) => c.amount);
+  const outstanding = worksValue - collected;
+  const actual = rSum(s.costsUpTo, rLine);
+  const expectedRest = rSum(s.expected, (e) => e.amount);
+  const forecast = actual + expectedRest;
+  const profit = contract - forecast;
+  const margin = contract > 0 ? (profit / contract) * 100 : null;
+  const good = profit >= 0;
+
+  const over = s.works.map((w) => {
+    const b = w.qty * w.price;
+    const a = rSum(s.costsUpTo.filter((c) => c.workItemId === w.id), rLine);
+    const e = rSum(s.expected.filter((x) => x.workItemId === w.id), (x) => x.amount);
+    return { id: w.id, name: w.name, projectId: w.projectId, budget: b, actual: a, forecast: a + e, over: a + e - b };
+  }).filter((r) => r.budget > 0 && r.over > 0).sort((x, y) => y.over - x.over).slice(0, 8);
+
+  const barMax = Math.max(contract, forecast, worksValue, 1);
+
+  return (
+    <ReportShell title="التقرير التنفيذي للمشروع" s={s}
+      notice={s.to ? `الأرقام التراكمية حتى ${s.to} (تاريخ البداية لا يؤثر على هذا التقرير لأنه يقارن بقيمة العقد كاملة).` : "الأرقام تراكمية منذ بداية المشروع."}>
+      <div className="grid grid-cols-3 gap-3">
+        <RptKpi label="قيمة العقد" value={money(contract)} />
+        <RptKpi label="قيمة الأعمال / المستخلصات" value={money(worksValue)} color="#E8672C" />
+        <RptKpi label="التكلفة الفعلية" value={money(actual)} color="#E8672C" />
+        <RptKpi label="التكلفة المتوقعة عند الإنجاز" value={money(forecast)} sub="الفعلي + المصاريف المتوقعة المستقبلية" />
+        <RptKpi label="الربح المتوقع" value={money(profit)} color={good ? "#3F7D63" : "#C1453B"} sub="قيمة العقد − التكلفة المتوقعة" />
+        <RptKpi label="هامش الربح المتوقع" value={rPct(margin)} color={good ? "#3F7D63" : "#C1453B"} />
+        <RptKpi label="إجمالي المحصل" value={money(collected)} color="#3F7D63" />
+        <RptKpi label="المبالغ المستحقة التحصيل" value={money(outstanding)} color={outstanding > 0 ? "#D6A23C" : "#3F7D63"} sub="المستخلصات − المحصل" />
+        <RptKpi label="نسبة التحصيل" value={worksValue > 0 ? rPct((collected / worksValue) * 100) : "—"} />
+      </div>
+
+      <RptSection title="مقارنة سريعة">
+        <div className="space-y-3 avoid-break">
+          <RptBar label="قيمة العقد" value={contract} max={barMax} color="#1E2530" />
+          <RptBar label="المستخلصات" value={worksValue} max={barMax} color="#E8672C" />
+          <RptBar label="التكلفة المتوقعة" value={forecast} max={barMax} color={forecast > contract && contract > 0 ? "#C1453B" : "#D6A23C"} />
+          <RptBar label="المحصل" value={collected} max={barMax} color="#3F7D63" />
+        </div>
+      </RptSection>
+
+      <RptSection title="أهم البنود التي بها تجاوز في التكلفة" hint="مقارنة التكلفة المتوقعة (الفعلي + المتوقع المستقبلي) بميزانية البند في المقايسة.">
+        <RptTable
+          heads={[{ label: "البند" }, { label: "الميزانية", num: true }, { label: "الفعلي", num: true }, { label: "المتوقع", num: true }, { label: "التجاوز", num: true }, { label: "نسبة التجاوز", num: true }]}
+          rows={over.map((r) => ({
+            cells: [
+              <span className="font-semibold">{r.name}{s.multi && <span className="text-[10px] text-[#9A9483] block font-normal">{s.projName(r.projectId)}</span>}</span>,
+              fmt(r.budget), fmt(r.actual), fmt(r.forecast),
+              <span className="text-[#C1453B] font-bold">{fmt(r.over)}</span>,
+              <span className="text-[#C1453B] font-bold">{rPct((r.over / r.budget) * 100)}</span>,
+            ],
+          }))}
+          empty="لا توجد بنود متجاوزة للميزانية 👍"
+        />
+      </RptSection>
+    </ReportShell>
+  );
+}
+
+/* -------- 2) تقرير التكاليف التفصيلي -------- */
+function CostDetailReport({ s }) {
+  const list = s.costsRange;
+  const total = rSum(list, rLine);
+  const itemName = (id) => s.works.find((w) => w.id === id)?.name || "غير مرتبط ببند";
+
+  const groupBy = (keyFn) => {
+    const m = new Map();
+    list.forEach((c) => { const k = keyFn(c); m.set(k, [...(m.get(k) || []), c]); });
+    return [...m.entries()].map(([k, v]) => ({ key: k, lines: v, total: rSum(v, rLine) })).sort((a, b) => b.total - a.total);
+  };
+  const byType = groupBy((c) => c.type || "—");
+  const byItem = groupBy((c) => c.workItemId || "_none");
+
+  const l1Map = new Map();
+  list.forEach((c) => {
+    const a = c.costLevel1 || "بدون مستوى أول";
+    const b = c.costLevel2 || "بدون مستوى ثانٍ";
+    if (!l1Map.has(a)) l1Map.set(a, new Map());
+    const inner = l1Map.get(a);
+    inner.set(b, [...(inner.get(b) || []), c]);
+  });
+  const levelRows = [];
+  [...l1Map.entries()].sort((a, b) => rSum([...b[1].values()].flat(), rLine) - rSum([...a[1].values()].flat(), rLine)).forEach(([l1, inner]) => {
+    const all = [...inner.values()].flat();
+    levelRows.push({ className: "bg-[#F6F3EA] font-bold", cells: [l1, "", all.length, fmt(rSum(all, rLine))] });
+    [...inner.entries()].sort((a, b) => rSum(b[1], rLine) - rSum(a[1], rLine)).forEach(([l2, ls]) => {
+      levelRows.push({ cells: [<span className="pr-4 text-[#6B7280]">↳</span>, l2, ls.length, fmt(rSum(ls, rLine))] });
+    });
+  });
+
+  const lines = [...list].sort((a, b) => rDay(a.date).localeCompare(rDay(b.date)));
+
+  return (
+    <ReportShell title="تقرير التكاليف التفصيلي" s={s}>
+      <div className="grid grid-cols-3 gap-3">
+        <RptKpi label="إجمالي التكاليف في الفترة" value={money(total)} color="#E8672C" />
+        <RptKpi label="عدد بنود التكلفة" value={fmt(list.length)} />
+        <RptKpi label="أعلى نوع تكلفة" value={byType[0] ? rTypeLabel(byType[0].key) : "—"} sub={byType[0] ? money(byType[0].total) : ""} />
+      </div>
+
+      <RptSection title="حسب نوع التكلفة">
+        <RptTable
+          heads={[{ label: "النوع" }, { label: "عدد البنود", num: true }, { label: "الإجمالي", num: true }, { label: "النسبة", num: true }]}
+          rows={byType.map((g) => ({ cells: [rTypeLabel(g.key), g.lines.length, fmt(g.total), rPct(total > 0 ? (g.total / total) * 100 : null)] }))}
+          footer={["الإجمالي", list.length, fmt(total), "100٪"]}
+        />
+      </RptSection>
+
+      <RptSection title="حسب بند العمل">
+        <RptTable
+          heads={[{ label: "البند" }, { label: "عدد البنود", num: true }, { label: "الإجمالي", num: true }, { label: "النسبة", num: true }]}
+          rows={byItem.map((g) => ({ cells: [g.key === "_none" ? "غير مرتبط ببند" : itemName(g.key), g.lines.length, fmt(g.total), rPct(total > 0 ? (g.total / total) * 100 : null)] }))}
+          footer={["الإجمالي", list.length, fmt(total), "100٪"]}
+        />
+      </RptSection>
+
+      <RptSection title="حسب مستوى التكلفة الأول والثاني">
+        <RptTable
+          heads={[{ label: "المستوى الأول" }, { label: "المستوى الثاني" }, { label: "عدد البنود", num: true }, { label: "الإجمالي", num: true }]}
+          rows={levelRows}
+          footer={["الإجمالي", "", list.length, fmt(total)]}
+        />
+      </RptSection>
+
+      <RptSection title="كشف التكاليف التفصيلي" hint="الإجمالي = الكمية × السعر">
+        <RptTable
+          heads={[{ label: "التاريخ" }, { label: "البند" }, { label: "النوع" }, { label: "الوصف" }, { label: "م1" }, { label: "م2" }, { label: "الكمية", num: true }, { label: "الوحدة" }, { label: "السعر", num: true }, { label: "الإجمالي", num: true }]}
+          rows={lines.map((c) => ({
+            cells: [
+              rDay(c.date) || "—",
+              <span>{itemName(c.workItemId)}{s.multi && <span className="text-[10px] text-[#9A9483] block">{s.projName(c.projectId)}</span>}</span>,
+              rTypeLabel(c.type), c.desc, c.costLevel1 || "—", c.costLevel2 || "—",
+              fmt(c.qty, 2), c.unit, fmt(c.price, 2), <b>{fmt(rLine(c))}</b>,
+            ],
+          }))}
+          footer={["", "", "", "", "", "", "", "", "الإجمالي", fmt(total)]}
+        />
+      </RptSection>
+    </ReportShell>
+  );
+}
+
+/* -------- 3) Budget vs Actual -------- */
+function BudgetVsActualReport({ s }) {
+  const rows = s.works.map((w) => {
+    const b = w.qty * w.price;
+    const a = rSum(s.costsUpTo.filter((c) => c.workItemId === w.id), rLine);
+    return { id: w.id, name: w.name, projectId: w.projectId, budget: b, actual: a };
+  });
+  const unlinked = rSum(s.costsUpTo.filter((c) => !c.workItemId), rLine);
+  if (unlinked > 0) rows.push({ id: "_none", name: "تكاليف غير مرتبطة ببند", projectId: null, budget: 0, actual: unlinked });
+
+  const enrich = (r) => {
+    const diff = r.budget - r.actual;
+    const dev = r.budget > 0 ? ((r.actual - r.budget) / r.budget) * 100 : null;
+    const over = r.budget > 0 ? r.actual > r.budget : r.actual > 0;
+    const near = !over && r.budget > 0 && r.actual > r.budget * 0.9;
+    return { ...r, diff, dev, over, near };
+  };
+  const data = rows.map(enrich);
+  const tb = rSum(data, (r) => r.budget);
+  const ta = rSum(data, (r) => r.actual);
+  const totalDev = tb > 0 ? ((ta - tb) / tb) * 100 : null;
+  const overList = data.filter((r) => r.over).sort((a, b) => (b.actual - b.budget) - (a.actual - a.budget));
+
+  const statusCell = (r) => r.over
+    ? <span className="text-[#C1453B] font-bold">{r.budget === 0 ? "بدون ميزانية" : "تجاوز"}</span>
+    : r.near ? <span className="text-[#D6A23C] font-bold">قريب من الحد</span>
+    : <span className="text-[#3F7D63] font-bold">ضمن الميزانية</span>;
+
+  return (
+    <ReportShell title="تقرير Budget vs Actual" s={s}
+      notice={s.to ? `الفعلي تراكمي حتى ${s.to} ومقارن بميزانية البند كاملة.` : "الفعلي تراكمي منذ بداية المشروع ومقارن بميزانية البند كاملة."}>
+      <div className="grid grid-cols-4 gap-3">
+        <RptKpi label="إجمالي الميزانية" value={money(tb)} />
+        <RptKpi label="إجمالي الفعلي" value={money(ta)} color="#E8672C" />
+        <RptKpi label="الفرق (الميزانية − الفعلي)" value={money(tb - ta)} color={tb - ta >= 0 ? "#3F7D63" : "#C1453B"} sub={totalDev === null ? "" : `نسبة الانحراف ${rPct(totalDev)}`} />
+        <RptKpi label="بنود متجاوزة" value={fmt(overList.length)} color={overList.length ? "#C1453B" : "#3F7D63"} />
+      </div>
+
+      <RptSection title="الميزانية مقابل الفعلي لكل بند" hint="نسبة الانحراف = (الفعلي − الميزانية) ÷ الميزانية — الموجب يعني تجاوز.">
+        <RptTable
+          heads={[{ label: "البند" }, { label: "الميزانية", num: true }, { label: "الفعلي", num: true }, { label: "الفرق", num: true }, { label: "نسبة الانحراف", num: true }, { label: "الحالة" }]}
+          rows={data.map((r) => ({
+            className: r.over ? "bg-[#C1453B]/[0.07]" : "",
+            cells: [
+              <span className="font-semibold">{r.name}{s.multi && r.projectId && <span className="text-[10px] text-[#9A9483] block font-normal">{s.projName(r.projectId)}</span>}</span>,
+              fmt(r.budget), fmt(r.actual),
+              <span className={rOverTone(-r.diff) + " font-bold"}>{(r.diff >= 0 ? "+" : "−") + fmt(Math.abs(r.diff))}</span>,
+              r.dev === null ? "—" : <span className={rOverTone(r.dev) + " font-bold"}>{(r.dev > 0 ? "+" : "") + fmt(r.dev, 1)}٪</span>,
+              statusCell(r),
+            ],
+          }))}
+          footer={["الإجمالي", fmt(tb), fmt(ta), (tb - ta >= 0 ? "+" : "−") + fmt(Math.abs(tb - ta)), totalDev === null ? "—" : fmt(totalDev, 1) + "٪", ""]}
+        />
+      </RptSection>
+
+      <RptSection title="البنود المتجاوزة للميزانية">
+        <RptTable
+          heads={[{ label: "البند" }, { label: "قيمة التجاوز", num: true }, { label: "نسبة التجاوز", num: true }]}
+          rows={overList.map((r) => ({ cells: [r.name, <b className="text-[#C1453B]">{fmt(r.actual - r.budget)}</b>, r.dev === null ? "—" : <b className="text-[#C1453B]">{fmt(r.dev, 1)}٪</b>] }))}
+          empty="لا توجد بنود متجاوزة للميزانية 👍"
+        />
+      </RptSection>
+    </ReportShell>
+  );
+}
+
+/* -------- 4) المستخلصات والتحصيلات -------- */
+function ExtractsReport({ s }) {
+  const exts = [...s.extractsRange].sort((a, b) => rDay(a.date).localeCompare(rDay(b.date)));
+  const rows = exts.map((e) => {
+    const col = rSum(s.collectionsUpTo.filter((c) => c.extractId === e.id), (c) => c.amount);
+    return { ...e, collected: col, remaining: e.amount - col, rate: e.amount > 0 ? (col / e.amount) * 100 : null };
+  });
+  const totalExt = rSum(rows, (r) => r.amount);
+  const totalCol = rSum(rows, (r) => r.collected);
+  const totalRem = totalExt - totalCol;
+  const rate = totalExt > 0 ? (totalCol / totalExt) * 100 : null;
+  const general = s.collectionsRange.filter((c) => !c.extractId);
+  const generalTotal = rSum(general, (c) => c.amount);
+  const periodCollected = rSum(s.collectionsRange, (c) => c.amount);
+
+  return (
+    <ReportShell title="تقرير المستخلصات والتحصيلات" s={s}
+      notice="التحصيل لكل مستخلص يشمل كل ما تم تحصيله عليه حتى تاريخ نهاية الفترة.">
+      <div className="grid grid-cols-4 gap-3">
+        <RptKpi label="إجمالي المستخلصات" value={money(totalExt)} color="#E8672C" />
+        <RptKpi label="المحصل" value={money(totalCol)} color="#3F7D63" />
+        <RptKpi label="المتبقي" value={money(totalRem)} color={totalRem > 0 ? "#D6A23C" : "#3F7D63"} />
+        <RptKpi label="نسبة التحصيل" value={rPct(rate)} />
+      </div>
+
+      <RptSection title="بيان المستخلصات">
+        <RptTable
+          heads={[{ label: "رقم" }, ...(s.multi ? [{ label: "المشروع" }] : []), { label: "التاريخ" }, { label: "نسبة الإنجاز", num: true }, { label: "قيمة المستخلص", num: true }, { label: "المحصل", num: true }, { label: "المتبقي", num: true }, { label: "نسبة التحصيل", num: true }]}
+          rows={rows.map((r) => ({
+            cells: [
+              <b>{r.number}</b>, ...(s.multi ? [s.projName(r.projectId)] : []),
+              rDay(r.date) || "—", rPct(r.percentage), fmt(r.amount),
+              <span className="text-[#3F7D63] font-bold">{fmt(r.collected)}</span>,
+              <span className={r.remaining > 0 ? "text-[#D6A23C] font-bold" : "text-[#3F7D63] font-bold"}>{fmt(r.remaining)}</span>,
+              rPct(r.rate),
+            ],
+          }))}
+          footer={["الإجمالي", ...(s.multi ? [""] : []), "", "", fmt(totalExt), fmt(totalCol), fmt(totalRem), rPct(rate)]}
+        />
+      </RptSection>
+
+      <RptSection title="تحصيلات عامة غير مرتبطة بمستخلص (في الفترة)">
+        <RptTable
+          heads={[{ label: "التاريخ" }, ...(s.multi ? [{ label: "المشروع" }] : []), { label: "الطريقة" }, { label: "ملاحظة" }, { label: "المبلغ", num: true }]}
+          rows={general.map((c) => ({ cells: [rDay(c.date) || "—", ...(s.multi ? [s.projName(c.projectId)] : []), c.method || "—", c.note || "—", fmt(c.amount)] }))}
+          footer={["الإجمالي", ...(s.multi ? [""] : []), "", "", fmt(generalTotal)]}
+          empty="لا توجد تحصيلات عامة في هذه الفترة"
+        />
+      </RptSection>
+
+      <div className="text-[12px] text-[#6B7280] avoid-break">إجمالي التحصيلات المسجّلة خلال الفترة (المرتبطة وغير المرتبطة): <b className="mono text-[#1E2530]">{money(periodCollected)}</b></div>
+    </ReportShell>
+  );
+}
+
+/* -------- 5) الخزينة والسيولة -------- */
+function TreasuryReport({ s }) {
+  const opening = rSum(s.projects, (p) => Number(p.treasury_opening_balance) || 0);
+  const sign = (t) => (t.type === "ايداع" ? t.amount : -t.amount);
+  const currentBalance = opening + rSum(s.treasuryAll, sign);
+
+  const before = s.from ? s.treasuryAll.filter((t) => rDay(t.date) < s.from) : [];
+  const periodOpening = opening + rSum(before, sign);
+  const inPeriod = s.treasuryAll.filter((t) => s.inRange(t.date)).sort((a, b) => rDay(a.date).localeCompare(rDay(b.date)));
+  const receipts = rSum(inPeriod.filter((t) => t.type === "ايداع"), (t) => t.amount);
+  const payments = rSum(inPeriod.filter((t) => t.type !== "ايداع"), (t) => t.amount);
+  const net = receipts - payments;
+
+  const fin = s.finTx.filter((t) => t.type === "تمويل" || t.type === "سلفة");
+  const rep = s.finTx.filter((t) => t.type === "سداد");
+  const finTotal = rSum(fin, (t) => t.amount);
+  const repTotal = rSum(rep, (t) => t.amount);
+
+  const months = new Map();
+  inPeriod.forEach((t) => {
+    const k = rDay(t.date).slice(0, 7) || "بدون تاريخ";
+    const m = months.get(k) || { in: 0, out: 0 };
+    if (t.type === "ايداع") m.in += t.amount; else m.out += t.amount;
+    months.set(k, m);
+  });
+  const monthRows = [...months.entries()].sort((a, b) => a[0].localeCompare(b[0]));
+
+  return (
+    <ReportShell title="تقرير الخزينة والسيولة" s={s}
+      notice="التمويلات والسداد حسابات عامة غير مرتبطة بمشروع، لذلك تظهر بنفس الأرقام مهما كان المشروع المختار، وتخضع لفلتر التاريخ فقط. ولم تُدمج مع حركة الخزينة لتفادي أي ازدواج.">
+      <div className="grid grid-cols-4 gap-3">
+        <RptKpi label="الرصيد الحالي للخزينة" value={money(currentBalance)} color={currentBalance >= 0 ? "#3F7D63" : "#C1453B"} sub="رصيد البداية + الإيداعات − المصروفات (تراكمي)" />
+        <RptKpi label="المقبوضات (إيداعات)" value={money(receipts)} color="#3F7D63" />
+        <RptKpi label="المدفوعات (صرف)" value={money(payments)} color="#C1453B" />
+        <RptKpi label="صافي حركة النقد" value={money(net)} color={net >= 0 ? "#3F7D63" : "#C1453B"} />
+      </div>
+      <div className="grid grid-cols-3 gap-3">
+        <RptKpi label="التمويلات والسلف (في الفترة)" value={money(finTotal)} color="#6B5CA5" />
+        <RptKpi label="السداد (في الفترة)" value={money(repTotal)} color="#3F7D63" />
+        <RptKpi label="صافي التمويل (تمويلات − سداد)" value={money(finTotal - repTotal)} />
+      </div>
+
+      <RptSection title="ملخص السيولة خلال الفترة">
+        <RptTable
+          heads={[{ label: "البيان" }, { label: "المبلغ", num: true }]}
+          rows={[
+            { cells: ["رصيد أول الفترة", fmt(periodOpening)] },
+            { cells: ["+ المقبوضات", <span className="text-[#3F7D63] font-bold">{fmt(receipts)}</span>] },
+            { cells: ["− المدفوعات", <span className="text-[#C1453B] font-bold">{fmt(payments)}</span>] },
+          ]}
+          footer={["رصيد آخر الفترة", fmt(periodOpening + net)]}
+        />
+      </RptSection>
+
+      <RptSection title="الحركة الشهرية">
+        <RptTable
+          heads={[{ label: "الشهر" }, { label: "مقبوضات", num: true }, { label: "مدفوعات", num: true }, { label: "الصافي", num: true }]}
+          rows={monthRows.map(([k, m]) => ({ cells: [k, fmt(m.in), fmt(m.out), <b className={m.in - m.out >= 0 ? "text-[#3F7D63]" : "text-[#C1453B]"}>{fmt(m.in - m.out)}</b>] }))}
+          footer={["الإجمالي", fmt(receipts), fmt(payments), fmt(net)]}
+        />
+      </RptSection>
+
+      <RptSection title="حركات الخزينة">
+        <RptTable
+          heads={[{ label: "التاريخ" }, ...(s.multi ? [{ label: "المشروع" }] : []), { label: "النوع" }, { label: "البيان" }, { label: "المبلغ", num: true }]}
+          rows={inPeriod.map((t) => ({
+            cells: [rDay(t.date) || "—", ...(s.multi ? [s.projName(t.projectId)] : []),
+              t.type === "ايداع" ? <span className="text-[#3F7D63] font-bold">إيداع</span> : <span className="text-[#C1453B] font-bold">صرف</span>,
+              t.note || "—", fmt(t.amount)],
+          }))}
+        />
+      </RptSection>
+    </ReportShell>
+  );
+}
+
+/* -------- 6) التمويلات والسلف -------- */
+function FinancingReport({ s }) {
+  const signed = (t) => (t.type === "سداد" ? -t.amount : t.amount);
+  const persons = s.persons.map((p) => {
+    const all = s.financeAll.filter((t) => t.personId === p.id).sort((a, b) => rDay(a.date).localeCompare(rDay(b.date)));
+    const before = s.from ? all.filter((t) => rDay(t.date) < s.from) : [];
+    const opening = rSum(before, signed);
+    const txs = all.filter((t) => s.inRange(t.date));
+    const fin = rSum(txs.filter((t) => t.type !== "سداد"), (t) => t.amount);
+    const rep = rSum(txs.filter((t) => t.type === "سداد"), (t) => t.amount);
+    return { ...p, opening, txs, fin, rep, closing: opening + fin - rep };
+  });
+  const tf = rSum(persons, (p) => p.fin);
+  const tr = rSum(persons, (p) => p.rep);
+  const to_ = rSum(persons, (p) => p.opening);
+  const tc = rSum(persons, (p) => p.closing);
+
+  return (
+    <ReportShell title="تقرير التمويلات والسلف" s={s}
+      notice="التمويلات والسلف حسابات عامة مستقلة غير مرتبطة بمشروع، لذلك لا يؤثر عليها فلتر المشروع.">
+      <div className="grid grid-cols-4 gap-3">
+        <RptKpi label="إجمالي التمويلات (في الفترة)" value={money(tf)} color="#6B5CA5" />
+        <RptKpi label="إجمالي السداد (في الفترة)" value={money(tr)} color="#3F7D63" />
+        <RptKpi label="الرصيد المستحق" value={money(tc)} color={tc > 0 ? "#D6A23C" : "#3F7D63"} sub={s.to ? `حتى ${s.to}` : "حتى اليوم"} />
+        <RptKpi label="عدد الممولين" value={fmt(persons.length)} />
+      </div>
+
+      <RptSection title="ملخص الممولين">
+        <RptTable
+          heads={[{ label: "الممول" }, { label: "رصيد أول الفترة", num: true }, { label: "تمويلات", num: true }, { label: "سداد", num: true }, { label: "الرصيد المستحق", num: true }]}
+          rows={persons.map((p) => ({ cells: [<b>{p.name}</b>, fmt(p.opening), fmt(p.fin), fmt(p.rep), <b className={p.closing > 0 ? "text-[#D6A23C]" : "text-[#3F7D63]"}>{fmt(p.closing)}</b>] }))}
+          footer={["الإجمالي", fmt(to_), fmt(tf), fmt(tr), fmt(tc)]}
+          empty="لا يوجد ممولون مسجلون"
+        />
+      </RptSection>
+
+      {persons.filter((p) => p.txs.length > 0 || p.opening !== 0).map((p) => {
+        let running = p.opening;
+        const rows = p.txs.map((t) => {
+          running += signed(t);
+          return { cells: [rDay(t.date) || "—", t.type, t.note || "—", t.type === "سداد" ? "" : fmt(t.amount), t.type === "سداد" ? fmt(t.amount) : "", <b>{fmt(running)}</b>] };
+        });
+        return (
+          <RptSection key={p.id} title={`كشف حساب: ${p.name}`}>
+            <RptTable
+              heads={[{ label: "التاريخ" }, { label: "النوع" }, { label: "البيان" }, { label: "مدين (تمويل)", num: true }, { label: "دائن (سداد)", num: true }, { label: "الرصيد", num: true }]}
+              rows={[{ className: "bg-[#F6F3EA]", cells: ["", "رصيد سابق", "", "", "", fmt(p.opening)] }, ...rows]}
+              footer={["الإجمالي", "", "", fmt(p.fin), fmt(p.rep), fmt(p.closing)]}
+            />
+          </RptSection>
+        );
+      })}
+    </ReportShell>
+  );
+}
+
+/* -------- 7) تقرير البنود -------- */
+function ItemsReport({ s }) {
+  const groups = s.works.map((w) => ({ id: w.id, name: w.name, unit: w.unit, qty: w.qty, price: w.price, projectId: w.projectId, lines: s.costsRange.filter((c) => c.workItemId === w.id) }));
+  const orphan = s.costsRange.filter((c) => !c.workItemId);
+  if (orphan.length > 0) groups.push({ id: "_none", name: "تكاليف غير مرتبطة ببند", unit: "", qty: 0, price: 0, projectId: null, lines: orphan });
+
+  const grandTotal = rSum(groups, (g) => rSum(g.lines, rLine));
+
+  const buildRows = (lines) => {
+    const m = new Map();
+    lines.forEach((c) => {
+      const k = `${c.costLevel1 || "بدون مستوى أول"}\u0000${c.costLevel2 || "بدون مستوى ثانٍ"}`;
+      m.set(k, [...(m.get(k) || []), c]);
+    });
+    const rows = [];
+    [...m.entries()].sort((a, b) => a[0].localeCompare(b[0])).forEach(([k, ls]) => {
+      const [l1, l2] = k.split("\u0000");
+      rows.push({ className: "bg-[#F6F3EA] font-bold", cells: [`${l1}  ›  ${l2}`, "", "", "", "", "", fmt(rSum(ls, rLine))] });
+      ls.sort((a, b) => rDay(a.date).localeCompare(rDay(b.date))).forEach((c) => {
+        rows.push({ cells: [<span className="pr-4 text-[#6B7280]">{c.desc}</span>, rDay(c.date) || "—", rTypeLabel(c.type), fmt(c.qty, 2), c.unit, fmt(c.price, 2), fmt(rLine(c))] });
+      });
+    });
+    return rows;
+  };
+
+  return (
+    <ReportShell title="تقرير البنود" s={s}>
+      <div className="grid grid-cols-3 gap-3">
+        <RptKpi label="عدد البنود" value={fmt(s.works.length)} />
+        <RptKpi label="ميزانية البنود" value={money(rSum(s.works, (w) => w.qty * w.price))} />
+        <RptKpi label="التكاليف في الفترة" value={money(grandTotal)} color="#E8672C" />
+      </div>
+
+      {groups.map((g) => {
+        const actual = rSum(g.lines, rLine);
+        const budget = g.qty * g.price;
+        const over = budget > 0 && actual > budget;
+        return (
+          <section key={g.id} className="space-y-2">
+            <div className="flex items-center justify-between bg-[#1E2530] text-white rounded-lg px-4 py-2.5 avoid-break">
+              <div>
+                <div className="font-bold text-sm">{g.name}</div>
+                <div className="text-[10px] text-white/60">
+                  {g.id !== "_none" && <>{fmt(g.qty, 2)} {g.unit} × {fmt(g.price, 2)}</>}
+                  {s.multi && g.projectId && <> · {s.projName(g.projectId)}</>}
+                </div>
+              </div>
+              <div className="text-left text-[11px] mono">
+                {g.id !== "_none" && <div className="text-white/60">الميزانية: {fmt(budget)}</div>}
+                <div className={`font-bold text-sm ${over ? "text-[#F0918A]" : ""}`}>الفعلي: {fmt(actual)}</div>
+              </div>
+            </div>
+            <RptTable
+              heads={[{ label: "المستوى الأول › الثاني / الوصف" }, { label: "التاريخ" }, { label: "النوع" }, { label: "الكمية", num: true }, { label: "الوحدة" }, { label: "السعر", num: true }, { label: "الإجمالي", num: true }]}
+              rows={buildRows(g.lines)}
+              footer={["إجمالي البند", "", "", "", "", "", fmt(actual)]}
+              empty="لا توجد تكاليف على هذا البند في الفترة"
+            />
+          </section>
+        );
+      })}
+      {groups.length === 0 && <div className="text-center text-[#9A9483] py-8 text-sm">لا توجد بنود مسجلة</div>}
+    </ReportShell>
+  );
+}
+
+/* -------- مركز التقارير (الواجهة الرئيسية) -------- */
+function ReportsCenter({ projects, workItems, costs, extracts, collections, treasuryEntries, financePersons, financeTransactions, expectedCosts, defaultProjectId }) {
+  const [reportKey, setReportKey] = useState(null);
+  const [projectId, setProjectId] = useState(defaultProjectId || "all");
+  const [from, setFrom] = useState("");
+  const [to, setTo] = useState("");
+
+  const inScope = (x) => projectId === "all" || x.projectId === projectId;
+  const inRange = (d) => {
+    if (!from && !to) return true;
+    const x = rDay(d);
+    if (!x) return false;
+    return (!from || x >= from) && (!to || x <= to);
+  };
+  const upTo = (d) => {
+    if (!to) return true;
+    const x = rDay(d);
+    return !x || x <= to;
+  };
+
+  const s = {
+    multi: projectId === "all",
+    from, to, inRange, upTo,
+    projects: projects.filter((p) => projectId === "all" || p.id === projectId),
+    projName: (id) => projects.find((p) => p.id === id)?.name || "—",
+    works: workItems.filter(inScope),
+    costsRange: costs.filter((c) => inScope(c) && inRange(c.date)),
+    costsUpTo: costs.filter((c) => inScope(c) && upTo(c.date)),
+    extractsRange: extracts.filter((e) => inScope(e) && inRange(e.date)),
+    extractsUpTo: extracts.filter((e) => inScope(e) && upTo(e.date)),
+    collectionsRange: collections.filter((c) => inScope(c) && inRange(c.date)),
+    collectionsUpTo: collections.filter((c) => inScope(c) && upTo(c.date)),
+    treasuryAll: treasuryEntries.filter(inScope),
+    expected: expectedCosts.filter(inScope),
+    persons: financePersons,
+    financeAll: financeTransactions,
+    finTx: financeTransactions.filter((t) => inRange(t.date)),
+  };
+
+  const current = REPORT_LIST.find((r) => r.key === reportKey);
+
+  return (
+    <div className="space-y-5">
+      <style>{`
+        @media print {
+          body * { visibility: hidden !important; }
+          #report-print-area, #report-print-area * { visibility: visible !important; }
+          #report-print-area { position: absolute !important; left: 0; top: 0; width: 100% !important; border: none !important; border-radius: 0 !important; padding: 0 !important; }
+          #report-print-area * { -webkit-print-color-adjust: exact; print-color-adjust: exact; }
+          .no-print { display: none !important; }
+          .avoid-break, tr { break-inside: avoid; }
+          thead { display: table-header-group; }
+          tfoot { display: table-row-group; }
+          @page { size: A4; margin: 12mm; }
+        }
+      `}</style>
+
+      <div className="no-print flex items-start justify-between">
+        <div>
+          <h2 className="font-bold text-[#1E2530] text-xl flex items-center gap-2"><BarChart3 size={20} className="text-[#E8672C]" /> مركز التقارير</h2>
+          <p className="text-[12px] text-[#9A9483] mt-1">تقارير إدارية جاهزة للتقديم — مبنية على البيانات المسجلة فعليًا في النظام</p>
+        </div>
+        {current && (
+          <div className="flex gap-2">
+            <button onClick={() => setReportKey(null)} className="px-3 py-2 rounded-lg border border-[#E1DACB] bg-white text-sm font-semibold text-[#1E2530] hover:bg-[#F6F3EA] flex items-center gap-1.5 transition">
+              <ChevronRight size={15} /> كل التقارير
+            </button>
+            <button onClick={() => window.print()} className="px-3 py-2 rounded-lg bg-[#E8672C] text-white text-sm font-semibold flex items-center gap-1.5 hover:bg-[#d55a22] transition">
+              <Printer size={15} /> طباعة / PDF
+            </button>
+          </div>
+        )}
+      </div>
+
+      <div className="no-print bg-white rounded-xl border border-[#E1DACB] p-4 flex flex-wrap items-end gap-4">
+        <label className="text-[11px] text-[#9A9483] font-semibold">
+          المشروع
+          <select value={projectId} onChange={(e) => setProjectId(e.target.value)} className="block mt-1 min-w-[200px] px-3 py-2 rounded-lg border border-[#E1DACB] bg-white text-sm text-[#1E2530]">
+            <option value="all">كل المشروعات</option>
+            {projects.map((p) => <option key={p.id} value={p.id}>{p.name}</option>)}
+          </select>
+        </label>
+        <label className="text-[11px] text-[#9A9483] font-semibold">
+          من تاريخ
+          <input type="date" value={from} onChange={(e) => setFrom(e.target.value)} className="block mt-1 px-3 py-2 rounded-lg border border-[#E1DACB] bg-white text-sm text-[#1E2530]" />
+        </label>
+        <label className="text-[11px] text-[#9A9483] font-semibold">
+          إلى تاريخ
+          <input type="date" value={to} onChange={(e) => setTo(e.target.value)} className="block mt-1 px-3 py-2 rounded-lg border border-[#E1DACB] bg-white text-sm text-[#1E2530]" />
+        </label>
+        {(from || to) && (
+          <button onClick={() => { setFrom(""); setTo(""); }} className="px-3 py-2 rounded-lg text-xs font-semibold text-[#6B7280] hover:bg-[#F6F3EA] flex items-center gap-1 transition">
+            <X size={13} /> مسح التاريخ
+          </button>
+        )}
+      </div>
+
+      {!current && (
+        <div className="no-print grid grid-cols-2 gap-4">
+          {REPORT_LIST.map((r) => {
+            const Icon = r.icon;
+            return (
+              <button key={r.key} onClick={() => setReportKey(r.key)} className="text-right bg-white rounded-xl border border-[#E1DACB] p-5 flex items-start gap-4 hover:border-[#E8672C] hover:shadow-md transition">
+                <div className="w-11 h-11 rounded-xl bg-[#E8672C]/10 flex items-center justify-center shrink-0"><Icon size={20} className="text-[#E8672C]" /></div>
+                <div className="min-w-0">
+                  <div className="font-bold text-[#1E2530]">{r.title}</div>
+                  <div className="text-[12px] text-[#9A9483] mt-1 leading-relaxed">{r.desc}</div>
+                </div>
+              </button>
+            );
+          })}
+        </div>
+      )}
+
+      {reportKey === "executive" && <ExecutiveReport s={s} />}
+      {reportKey === "costs" && <CostDetailReport s={s} />}
+      {reportKey === "bva" && <BudgetVsActualReport s={s} />}
+      {reportKey === "extracts" && <ExtractsReport s={s} />}
+      {reportKey === "treasury" && <TreasuryReport s={s} />}
+      {reportKey === "financing" && <FinancingReport s={s} />}
+      {reportKey === "items" && <ItemsReport s={s} />}
+    </div>
   );
 }
 
