@@ -565,7 +565,7 @@ function ContractingApp({ currentUsername, onLogout }) {
 
       <div className="flex flex-1 min-w-0">
       {/* SIDEBAR */}
-      <aside className="blueprint-bg w-72 shrink-0 flex flex-col text-[#E7ECEF] sticky top-0 self-start h-screen overflow-y-auto border-l border-white/10">
+      <aside style={{ height: "calc(100vh - 48px)" }} className="blueprint-bg w-72 shrink-0 flex flex-col text-[#E7ECEF] sticky top-0 self-start overflow-y-auto border-l border-white/10">
         {/* الشعار */}
         <div className="px-5 pt-6 pb-5 border-b border-white/10">
           <div className="flex items-center gap-3">
@@ -2014,8 +2014,8 @@ function AppFooter() {
   const stamp = `${WD[now.getDay()]}, ${now.getDate()} ${MO[now.getMonth()]} ${now.getFullYear()}, ${p2(h12)}:${p2(now.getMinutes())}:${p2(now.getSeconds())} ${h24 < 12 ? "am" : "pm"}`;
 
   return (
-    <footer dir="ltr" className="w-full shrink-0 flex items-center justify-end gap-4 px-6 py-3" style={{ backgroundColor: "#111D33", fontFamily: "Inter, 'Cairo', system-ui, sans-serif" }}>
-      <span className="mono text-[13px] font-semibold rounded-lg px-4 py-2 border" style={{ color: "#D4AF6A", backgroundColor: "#16264A", borderColor: "#1E3054" }}>{stamp}</span>
+    <footer dir="ltr" className="no-print w-full shrink-0 flex items-center justify-end gap-4 px-6 sticky bottom-0 z-40" style={{ height: 48, backgroundColor: "#111D33", borderTop: "1px solid #1E3054", fontFamily: "Inter, 'Cairo', system-ui, sans-serif" }}>
+      <span className="mono text-[13px] font-semibold rounded-lg px-4 py-1 border" style={{ color: "#D4AF6A", backgroundColor: "#16264A", borderColor: "#1E3054" }}>{stamp}</span>
       <span className="text-[14px]" style={{ color: "#6783BB" }}>{APP_VERSION}</span>
     </footer>
   );
@@ -4551,6 +4551,10 @@ function LoginScreen({ onSuccess }) {
           New here? <a onClick={() => setNotice("Accounts are created by your administrator.")}>Create an account</a>
         </p>
       </form>
+
+      <div style={{ position: "absolute", left: 0, right: 0, bottom: 0, zIndex: 5 }}>
+        <AppFooter />
+      </div>
     </div>
   );
 }
