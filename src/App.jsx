@@ -2015,9 +2015,9 @@ function AppFooter({ variant = "app" }) {
   const stamp = `${WD[now.getDay()]}, ${now.getDate()} ${MO[now.getMonth()]} ${now.getFullYear()}, ${p2(h12)}:${p2(now.getMinutes())}:${p2(now.getSeconds())} ${h24 < 12 ? "am" : "pm"}`;
 
   return (
-    <footer dir="ltr" className="no-print w-full shrink-0 flex items-center justify-end gap-4 px-6 sticky bottom-0 z-40" style={{ height: 48, backgroundColor: login ? "transparent" : "#111D33", borderTop: login ? "1px solid #1a1a1f" : "1px solid #1E3054", fontFamily: login ? "system-ui, -apple-system, 'Segoe UI', sans-serif" : "Inter, 'Cairo', system-ui, sans-serif" }}>
-      <span className="mono text-[13px] font-semibold rounded-lg px-4 py-1 border" style={login ? { color: "#f0c85a", backgroundColor: "#111114", borderColor: "#26262c" } : { color: "#D4AF6A", backgroundColor: "#16264A", borderColor: "#1E3054" }}>{stamp}</span>
-      <span className="text-[14px]" style={{ color: login ? "#8b8b95" : "#6783BB" }}>{APP_VERSION}</span>
+    <footer dir="ltr" className={`no-print w-full shrink-0${login ? "" : " blueprint-bg"} flex items-center justify-end gap-4 px-6 sticky bottom-0 z-40`} style={{ height: 48, backgroundColor: login ? "transparent" : "#14212C", borderTop: login ? "1px solid #1a1a1f" : "1px solid rgba(255,255,255,0.10)", fontFamily: login ? "system-ui, -apple-system, 'Segoe UI', sans-serif" : "'Cairo', sans-serif" }}>
+      <span className="mono text-[13px] font-semibold rounded-lg px-4 py-1 border" style={login ? { color: "#f0c85a", backgroundColor: "#111114", borderColor: "#26262c" } : { color: "#E8672C", backgroundColor: "rgba(255,255,255,0.05)", borderColor: "rgba(255,255,255,0.12)" }}>{stamp}</span>
+      <span className="text-[14px]" style={{ color: login ? "#8b8b95" : "rgba(255,255,255,0.45)" }}>{APP_VERSION}</span>
     </footer>
   );
 }
