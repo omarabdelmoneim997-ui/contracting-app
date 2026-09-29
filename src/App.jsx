@@ -1,7 +1,7 @@
 import React, { useState, useMemo, useEffect } from "react";
 import {
   BarChart, Bar, XAxis, YAxis, CartesianGrid, Tooltip, ResponsiveContainer, Cell,
-  PieChart as RePieChart, Pie,
+  PieChart as RePieChart, Pie, Legend, LineChart, Line,
 } from "recharts";
 import {
   Building2, LayoutGrid, Hammer, Receipt, FileStack, Wallet, Plus, X,
@@ -506,6 +506,7 @@ function ContractingApp({ currentUsername, onLogout }) {
 
   const tabs = [
     { key: "dashboard", label: "ملخص المشروع", icon: LayoutDashboard },
+    { key: "analytics", label: "التحليلات والرسوم", icon: Gauge },
     { key: "items", label: "الأعمال والمقايسة", icon: ClipboardList },
     { key: "costs", label: "التكاليف الفعلية", icon: ReceiptText },
     { key: "extracts", label: "المستخلصات والتحصيلات", icon: FileCheck2 },
@@ -515,7 +516,7 @@ function ContractingApp({ currentUsername, onLogout }) {
   ];
 
   const navGroups = [
-    { title: "نظرة عامة", keys: ["dashboard"] },
+    { title: "نظرة عامة", keys: ["dashboard", "analytics"] },
     { title: "التخطيط والتنفيذ", keys: ["items", "budget", "costs"] },
     { title: "المالية والتحصيل", keys: ["extracts", "treasury", "custody"] },
   ];
@@ -840,6 +841,16 @@ function ContractingApp({ currentUsername, onLogout }) {
           )}
           {tab === "budget" && (
             <BudgetTab pWorkItems={pWorkItems} pCosts={pCosts} />
+          )}
+          {tab === "analytics" && (
+            <AnalyticsTab
+              project={project}
+              pWorkItems={pWorkItems}
+              pCosts={pCosts}
+              pExtracts={pExtracts}
+              pCollections={pCollections}
+              pExpectedCosts={pExpectedCosts}
+            />
           )}
         </div>
         </>
@@ -1560,6 +1571,427 @@ function ReportsCenter({ projects, workItems, costs, extracts, collections, trea
       {reportKey === "treasury" && <TreasuryReport s={s} />}
       {reportKey === "financing" && <FinancingReport s={s} />}
       {reportKey === "items" && <ItemsReport s={s} />}
+    </div>
+  );
+}
+
+/* ============================ التحليلات والرسوم البيانية ============================ */
+// قراءة فقط من بيانات المشروع المحمّلة أصلًا — لا كتابة على القاعدة ولا تغيير في الـ Schema.
+
+const AN_COLORS = { budget: "#1E2530", actual: "#E8672C", forecast: "#D6A23C", good: "#3F7D63", bad: "#C1453B", extract: "#1E2530", collect: "#3F7D63" };
+const AN_TIP = { fontFamily: "Cairo", fontSize: 12, borderRadius: 8, border: "1px solid #E1DACB", direction: "rtl", textAlign: "right" };
+const AN_TICK = { fontSize: 11, fontFamily: "Cairo", fill: "#6B7280" };
+const anCompact = (v) => {
+  const a = Math.abs(v);
+  if (a >= 1e6) return (v / 1e6).toFixed(a >= 1e7 ? 0 : 1) + "M";
+  if (a >= 1e3) return (v / 1e3).toFixed(0) + "k";
+  return String(v);
+};
+const anShort = (s, n = 18) => (String(s).length > n ? String(s).slice(0, n - 1) + "…" : String(s));
+
+function AnCard({ title, subtitle, icon: Icon, right, children }) {
+  return (
+    <section className="bg-white rounded-xl border border-[#E1DACB] p-5">
+      <div className="flex items-start justify-between gap-3 mb-4">
+        <div>
+          <h2 className="font-bold text-[#1E2530] flex items-center gap-2">{Icon && <Icon size={16} className="text-[#E8672C]" />} {title}</h2>
+          {subtitle && <p className="text-[12px] text-[#9A9483] mt-1">{subtitle}</p>}
+        </div>
+        {right}
+      </div>
+      {children}
+    </section>
+  );
+}
+
+function AnEmpty({ text }) {
+  return <div className="text-sm text-[#9A9483] py-10 text-center">{text}</div>;
+}
+
+function AnalyticsTab({ project, pWorkItems, pCosts, pExtracts, pCollections, pExpectedCosts }) {
+  const [monthMode, setMonthMode] = useState("monthly");
+
+  /* ---------- أرقام أساسية ---------- */
+  const contract = Number(project?.budget) || 0;
+  const worksValue = rSum(pExtracts, (e) => e.amount);
+  const actualTotal = rSum(pCosts, rLine);
+  const expectedRest = rSum(pExpectedCosts, (e) => e.amount);
+  const forecastTotal = actualTotal + expectedRest;
+  const revenueBase = contract > 0 ? contract : worksValue;
+  const expectedProfit = revenueBase - forecastTotal;
+  const margin = revenueBase > 0 ? (expectedProfit / revenueBase) * 100 : null;
+  const profitGood = expectedProfit >= 0;
+
+  /* ---------- 1) الميزانية × الفعلي × المتوقع لكل بند ---------- */
+  const itemRows = useMemo(() => {
+    const rows = pWorkItems.map((w) => {
+      const budget = w.qty * w.price;
+      const actual = rSum(pCosts.filter((c) => c.workItemId === w.id), rLine);
+      const expected = rSum(pExpectedCosts.filter((x) => x.workItemId === w.id), (x) => x.amount);
+      return { id: w.id, name: w.name, budget, actual, expected };
+    });
+    const ua = rSum(pCosts.filter((c) => !c.workItemId), rLine);
+    const ue = rSum(pExpectedCosts.filter((x) => !x.workItemId), (x) => x.amount);
+    if (ua > 0 || ue > 0) rows.push({ id: "_none", name: "غير مرتبط ببند", budget: 0, actual: ua, expected: ue });
+    return rows.map((r) => {
+      const forecast = r.actual + r.expected;
+      const overActual = Math.max(0, r.actual - r.budget);
+      const overForecast = Math.max(0, forecast - r.budget);
+      return {
+        ...r, forecast, overActual, overForecast,
+        overExtra: Math.max(0, overForecast - overActual),
+        pctActual: r.budget > 0 ? (overActual / r.budget) * 100 : null,
+        pctForecast: r.budget > 0 ? (overForecast / r.budget) * 100 : null,
+      };
+    });
+  }, [pWorkItems, pCosts, pExpectedCosts]);
+
+  const itemStatus = (r) => {
+    if (r.budget <= 0 && r.forecast <= 0) return { label: "—", color: "#9A9483" };
+    if (r.overActual > 0.5) return { label: r.budget <= 0 ? "بدون ميزانية" : "تجاوز فعلي", color: AN_COLORS.bad };
+    if (r.overForecast > 0.5) return { label: "تجاوز متوقع", color: "#B5651D" };
+    if (r.budget > 0 && r.forecast > r.budget * 0.9) return { label: "قريب من الحد", color: AN_COLORS.forecast };
+    return { label: "ضمن الميزانية", color: AN_COLORS.good };
+  };
+
+  const CHART_MAX_ITEMS = 12;
+  const itemsForChart = [...itemRows]
+    .filter((r) => r.budget > 0 || r.forecast > 0)
+    .sort((a, b) => Math.max(b.budget, b.forecast) - Math.max(a.budget, a.forecast));
+  const itemChartData = itemsForChart.slice(0, CHART_MAX_ITEMS).map((r) => ({
+    name: r.name, "الميزانية": r.budget, "الفعلي": r.actual, "المتوقع": r.forecast, over: r.budget > 0 && r.forecast > r.budget,
+  }));
+
+  /* ---------- 2) توزيع التكاليف حسب النوع ---------- */
+  const typeData = COST_TYPES.map((t) => ({
+    key: t.key, name: t.label, color: t.color, icon: t.icon,
+    value: rSum(pCosts.filter((c) => c.type === t.key), rLine),
+    count: pCosts.filter((c) => c.type === t.key).length,
+  }));
+  const knownTotal = rSum(typeData, (d) => d.value);
+  const otherTotal = actualTotal - knownTotal;
+  if (otherTotal > 0.5) typeData.push({ key: "_other", name: "أنواع أخرى", color: "#9A9483", icon: Receipt, value: otherTotal, count: pCosts.filter((c) => !COST_TYPES.some((t) => t.key === c.type)).length });
+  const typePie = typeData.filter((d) => d.value > 0);
+
+  /* ---------- 3) الرسم الشهري ---------- */
+  const monthly = useMemo(() => {
+    const map = new Map();
+    let undated = 0;
+    const add = (date, field, val) => {
+      const m = rDay(date).slice(0, 7);
+      if (!/^\d{4}-\d{2}$/.test(m)) { undated += 1; return; }
+      const cur = map.get(m) || { costs: 0, extracts: 0, collections: 0 };
+      cur[field] += val;
+      map.set(m, cur);
+    };
+    pCosts.forEach((c) => add(c.date, "costs", rLine(c)));
+    pExtracts.forEach((e) => add(e.date, "extracts", e.amount));
+    pCollections.forEach((c) => add(c.date, "collections", c.amount));
+    if (map.size === 0) return { data: [], cumulative: [], undated };
+
+    const keys = [...map.keys()].sort();
+    let [y, m] = keys[0].split("-").map(Number);
+    const [ey, em] = keys[keys.length - 1].split("-").map(Number);
+    const data = [];
+    let guard = 0;
+    while ((y < ey || (y === ey && m <= em)) && guard < 120) {
+      const k = `${y}-${String(m).padStart(2, "0")}`;
+      const v = map.get(k) || { costs: 0, extracts: 0, collections: 0 };
+      data.push({ label: `${String(m).padStart(2, "0")}/${y}`, "التكاليف الفعلية": v.costs, "المستخلصات": v.extracts, "التحصيلات": v.collections });
+      m += 1; if (m > 12) { m = 1; y += 1; }
+      guard += 1;
+    }
+    let c1 = 0, c2 = 0, c3 = 0;
+    const cumulative = data.map((d) => {
+      c1 += d["التكاليف الفعلية"]; c2 += d["المستخلصات"]; c3 += d["التحصيلات"];
+      return { label: d.label, "التكاليف الفعلية": c1, "المستخلصات": c2, "التحصيلات": c3 };
+    });
+    return { data, cumulative, undated };
+  }, [pCosts, pExtracts, pCollections]);
+
+  /* ---------- 4) تحليل الانحرافات ---------- */
+  const overList = itemRows
+    .filter((r) => r.overForecast > 0.5)
+    .sort((a, b) => b.overForecast - a.overForecast);
+  const totalOverForecast = rSum(overList, (r) => r.overForecast);
+  const totalOverActual = rSum(overList, (r) => r.overActual);
+  const overChartData = overList.slice(0, CHART_MAX_ITEMS).map((r) => ({
+    name: r.name, "تجاوز فعلي": r.overActual, "تجاوز متوقع إضافي": r.overExtra,
+  }));
+
+  /* ---------- 5) الربحية ---------- */
+  const profitChart = [
+    ...(contract > 0 ? [{ name: "قيمة العقد", value: contract, color: AN_COLORS.budget }] : []),
+    { name: "قيمة الأعمال", value: worksValue, color: "#6B5CA5" },
+    { name: "التكلفة الفعلية", value: actualTotal, color: AN_COLORS.actual },
+    { name: "التكلفة المتوقعة", value: forecastTotal, color: AN_COLORS.forecast },
+    { name: "الربح المتوقع", value: expectedProfit, color: profitGood ? AN_COLORS.good : AN_COLORS.bad },
+  ];
+
+  const hasAnyData = pWorkItems.length > 0 || pCosts.length > 0 || pExtracts.length > 0;
+  if (!hasAnyData) {
+    return <AnCard title="التحليلات والرسوم البيانية" icon={Gauge}><AnEmpty text="لا توجد بيانات كافية لهذا المشروع بعد. أضف بنودًا وتكاليف ومستخلصات لتظهر التحليلات." /></AnCard>;
+  }
+
+  return (
+    <div className="space-y-6" dir="rtl">
+      {/* ---- 1) Budget vs Actual vs Forecast ---- */}
+      <AnCard
+        title="الميزانية × الفعلي × المتوقع لكل بند"
+        subtitle="المتوقع = التكلفة الفعلية + المصاريف المتوقعة المستقبلية للبند. الأعمدة الحمراء للمتوقع = بند متوقع تجاوزه للميزانية."
+        icon={Gauge}
+      >
+        {itemChartData.length === 0 ? (
+          <AnEmpty text="لا توجد بنود بميزانية أو تكاليف بعد." />
+        ) : (
+          <>
+            <div style={{ width: "100%", height: Math.max(260, itemChartData.length * 62) }}>
+              <ResponsiveContainer>
+                <BarChart data={itemChartData} layout="vertical" barGap={2} barCategoryGap="24%" margin={{ top: 4, right: 4, left: 12, bottom: 4 }}>
+                  <CartesianGrid strokeDasharray="3 3" stroke="#E1DACB" horizontal={false} />
+                  <XAxis type="number" reversed tick={AN_TICK} stroke="#9A9483" tickFormatter={anCompact} />
+                  <YAxis type="category" dataKey="name" orientation="right" width={130} tick={AN_TICK} stroke="#9A9483" tickFormatter={(v) => anShort(v)} />
+                  <Tooltip formatter={(v) => money(v)} contentStyle={AN_TIP} cursor={{ fill: "#F6F3EA" }} />
+                  <Legend wrapperStyle={{ fontFamily: "Cairo", fontSize: 12 }} />
+                  <Bar dataKey="الميزانية" fill={AN_COLORS.budget} radius={3} />
+                  <Bar dataKey="الفعلي" fill={AN_COLORS.actual} radius={3} />
+                  <Bar dataKey="المتوقع" fill={AN_COLORS.forecast} radius={3}>
+                    {itemChartData.map((d, i) => <Cell key={i} fill={d.over ? AN_COLORS.bad : AN_COLORS.forecast} />)}
+                  </Bar>
+                </BarChart>
+              </ResponsiveContainer>
+            </div>
+            {itemsForChart.length > CHART_MAX_ITEMS && (
+              <p className="text-[11px] text-[#9A9483] mt-2">الرسم يعرض أكبر {CHART_MAX_ITEMS} بندًا من {itemsForChart.length}. الجدول التالي يشمل كل البنود.</p>
+            )}
+          </>
+        )}
+
+        {itemRows.length > 0 && (
+          <div className="mt-4 border border-[#EFEBDF] rounded-lg overflow-hidden">
+            <div className="max-h-80 overflow-auto">
+              <table className="w-full text-[12px]">
+                <thead className="bg-[#F6F3EA] text-[#6B7280] sticky top-0">
+                  <tr>
+                    {["البند", "الميزانية", "الفعلي", "المتوقع", "الفرق (الميزانية − المتوقع)", "الحالة"].map((h) => <th key={h} className="text-right py-2 px-3 font-semibold whitespace-nowrap">{h}</th>)}
+                  </tr>
+                </thead>
+                <tbody className="divide-y divide-[#EFEBDF]">
+                  {itemRows.map((r) => {
+                    const st = itemStatus(r);
+                    const diff = r.budget - r.forecast;
+                    return (
+                      <tr key={r.id}>
+                        <td className="py-2 px-3 font-semibold text-[#1E2530]">{r.name}</td>
+                        <td className="py-2 px-3 mono">{fmt(r.budget)}</td>
+                        <td className="py-2 px-3 mono text-[#E8672C]">{fmt(r.actual)}</td>
+                        <td className="py-2 px-3 mono">{fmt(r.forecast)}</td>
+                        <td className={`py-2 px-3 mono font-bold ${r.budget === 0 ? "text-[#9A9483]" : diff >= 0 ? "text-[#3F7D63]" : "text-[#C1453B]"}`}>{r.budget === 0 ? "—" : (diff >= 0 ? "+" : "−") + fmt(Math.abs(diff))}</td>
+                        <td className="py-2 px-3"><span className="text-[11px] font-bold rounded-full px-2.5 py-0.5" style={{ color: st.color, backgroundColor: st.color + "18" }}>{st.label}</span></td>
+                      </tr>
+                    );
+                  })}
+                </tbody>
+              </table>
+            </div>
+          </div>
+        )}
+      </AnCard>
+
+      {/* ---- 2) توزيع التكاليف ---- */}
+      <AnCard title="توزيع التكاليف حسب النوع" subtitle="من إجمالي التكاليف الفعلية المسجّلة (الكمية × السعر)" icon={Layers}>
+        {actualTotal <= 0 ? (
+          <AnEmpty text="لا توجد تكاليف مسجّلة بعد." />
+        ) : (
+          <div className="grid grid-cols-5 gap-6 items-center">
+            <div className="col-span-2 relative" style={{ width: "100%", height: 260 }}>
+              <ResponsiveContainer>
+                <RePieChart>
+                  <Pie data={typePie} dataKey="value" nameKey="name" innerRadius={72} outerRadius={112} paddingAngle={2} stroke="none">
+                    {typePie.map((d) => <Cell key={d.key} fill={d.color} />)}
+                  </Pie>
+                  <Tooltip formatter={(v, n) => [money(v), n]} contentStyle={AN_TIP} />
+                </RePieChart>
+              </ResponsiveContainer>
+              <div className="absolute inset-0 flex flex-col items-center justify-center pointer-events-none">
+                <div className="text-[11px] text-[#9A9483]">إجمالي الفعلي</div>
+                <div className="text-base font-extrabold mono text-[#1E2530]">{fmt(actualTotal)}</div>
+              </div>
+            </div>
+            <div className="col-span-3 space-y-3">
+              {typeData.map((d) => {
+                const Icon = d.icon;
+                const p = actualTotal > 0 ? (d.value / actualTotal) * 100 : 0;
+                return (
+                  <div key={d.key}>
+                    <div className="flex items-center justify-between text-sm mb-1">
+                      <span className="flex items-center gap-2 font-semibold text-[#1E2530]">
+                        <span className="w-6 h-6 rounded-md flex items-center justify-center" style={{ backgroundColor: d.color + "20" }}><Icon size={13} style={{ color: d.color }} /></span>
+                        {d.name}
+                        <span className="text-[11px] text-[#9A9483] font-normal">· {fmt(d.count)} بند</span>
+                      </span>
+                      <span className="mono text-[12px]"><b>{fmt(d.value)}</b> <span className="text-[#9A9483]">({fmt(p, 1)}٪)</span></span>
+                    </div>
+                    <div className="h-2 rounded-full bg-[#F1EDE1] overflow-hidden"><div className="h-full rounded-full" style={{ width: `${p}%`, backgroundColor: d.color }} /></div>
+                  </div>
+                );
+              })}
+            </div>
+          </div>
+        )}
+      </AnCard>
+
+      {/* ---- 3) الرسم الشهري ---- */}
+      <AnCard
+        title="التكاليف والمستخلصات والتحصيلات"
+        subtitle="التجميع حسب شهر تاريخ كل عملية. الترتيب الزمني من اليمين إلى اليسار."
+        icon={TrendingUp}
+        right={
+          <div className="flex rounded-lg border border-[#E1DACB] overflow-hidden text-[12px] font-semibold shrink-0">
+            {[{ k: "monthly", l: "شهري" }, { k: "cumulative", l: "تراكمي" }].map((o) => (
+              <button key={o.k} onClick={() => setMonthMode(o.k)} className={`px-3 py-1.5 transition ${monthMode === o.k ? "bg-[#1E2530] text-white" : "bg-white text-[#6B7280] hover:bg-[#F6F3EA]"}`}>{o.l}</button>
+            ))}
+          </div>
+        }
+      >
+        {monthly.data.length === 0 ? (
+          <AnEmpty text="لا توجد عمليات مؤرخة لعرضها." />
+        ) : (
+          <>
+            <div style={{ width: "100%", height: 320 }}>
+              <ResponsiveContainer>
+                {monthMode === "monthly" ? (
+                  <BarChart data={monthly.data} barGap={3} margin={{ top: 8, right: 4, left: 4, bottom: 4 }}>
+                    <CartesianGrid strokeDasharray="3 3" stroke="#E1DACB" vertical={false} />
+                    <XAxis dataKey="label" reversed tick={AN_TICK} stroke="#9A9483" />
+                    <YAxis orientation="right" tick={AN_TICK} stroke="#9A9483" tickFormatter={anCompact} />
+                    <Tooltip formatter={(v) => money(v)} contentStyle={AN_TIP} cursor={{ fill: "#F6F3EA" }} />
+                    <Legend wrapperStyle={{ fontFamily: "Cairo", fontSize: 12 }} />
+                    <Bar dataKey="التكاليف الفعلية" fill={AN_COLORS.actual} radius={[3, 3, 0, 0]} />
+                    <Bar dataKey="المستخلصات" fill={AN_COLORS.extract} radius={[3, 3, 0, 0]} />
+                    <Bar dataKey="التحصيلات" fill={AN_COLORS.collect} radius={[3, 3, 0, 0]} />
+                  </BarChart>
+                ) : (
+                  <LineChart data={monthly.cumulative} margin={{ top: 8, right: 4, left: 4, bottom: 4 }}>
+                    <CartesianGrid strokeDasharray="3 3" stroke="#E1DACB" vertical={false} />
+                    <XAxis dataKey="label" reversed tick={AN_TICK} stroke="#9A9483" />
+                    <YAxis orientation="right" tick={AN_TICK} stroke="#9A9483" tickFormatter={anCompact} />
+                    <Tooltip formatter={(v) => money(v)} contentStyle={AN_TIP} />
+                    <Legend wrapperStyle={{ fontFamily: "Cairo", fontSize: 12 }} />
+                    <Line type="monotone" dataKey="التكاليف الفعلية" stroke={AN_COLORS.actual} strokeWidth={2.5} dot={{ r: 3 }} />
+                    <Line type="monotone" dataKey="المستخلصات" stroke={AN_COLORS.extract} strokeWidth={2.5} dot={{ r: 3 }} />
+                    <Line type="monotone" dataKey="التحصيلات" stroke={AN_COLORS.collect} strokeWidth={2.5} dot={{ r: 3 }} />
+                  </LineChart>
+                )}
+              </ResponsiveContainer>
+            </div>
+            <div className="grid grid-cols-3 gap-3 mt-4">
+              <RptKpi label="إجمالي التكاليف الفعلية" value={money(actualTotal)} color={AN_COLORS.actual} />
+              <RptKpi label="إجمالي المستخلصات" value={money(worksValue)} />
+              <RptKpi label="إجمالي التحصيلات" value={money(rSum(pCollections, (c) => c.amount))} color={AN_COLORS.good} />
+            </div>
+            {monthly.undated > 0 && <p className="text-[11px] text-[#9A9483] mt-2">ملاحظة: {monthly.undated} عملية بدون تاريخ صحيح لم تظهر في الرسم الشهري.</p>}
+          </>
+        )}
+      </AnCard>
+
+      {/* ---- 4) تحليل الانحرافات ---- */}
+      <AnCard
+        title="تحليل الانحرافات"
+        subtitle="البنود التي تجاوزت ميزانيتها فعليًا، أو يُتوقع تجاوزها بعد احتساب المصاريف المستقبلية."
+        icon={TrendingUp}
+      >
+        {overList.length === 0 ? (
+          <AnEmpty text="لا توجد بنود متجاوزة للميزانية حاليًا." />
+        ) : (
+          <>
+            <div className="grid grid-cols-3 gap-3 mb-4">
+              <RptKpi label="عدد البنود المتجاوزة" value={fmt(overList.length)} color={AN_COLORS.bad} />
+              <RptKpi label="إجمالي التجاوز الفعلي" value={money(totalOverActual)} color={AN_COLORS.bad} />
+              <RptKpi label="إجمالي التجاوز المتوقع" value={money(totalOverForecast)} color="#B5651D" sub="يشمل الفعلي + المتوقع المستقبلي" />
+            </div>
+            <div style={{ width: "100%", height: Math.max(220, overChartData.length * 52) }}>
+              <ResponsiveContainer>
+                <BarChart data={overChartData} layout="vertical" barCategoryGap="28%" margin={{ top: 4, right: 4, left: 12, bottom: 4 }}>
+                  <CartesianGrid strokeDasharray="3 3" stroke="#E1DACB" horizontal={false} />
+                  <XAxis type="number" reversed tick={AN_TICK} stroke="#9A9483" tickFormatter={anCompact} />
+                  <YAxis type="category" dataKey="name" orientation="right" width={130} tick={AN_TICK} stroke="#9A9483" tickFormatter={(v) => anShort(v)} />
+                  <Tooltip formatter={(v) => money(v)} contentStyle={AN_TIP} cursor={{ fill: "#F6F3EA" }} />
+                  <Legend wrapperStyle={{ fontFamily: "Cairo", fontSize: 12 }} />
+                  <Bar dataKey="تجاوز فعلي" stackId="over" fill={AN_COLORS.bad} />
+                  <Bar dataKey="تجاوز متوقع إضافي" stackId="over" fill={AN_COLORS.forecast} />
+                </BarChart>
+              </ResponsiveContainer>
+            </div>
+            <div className="mt-4 border border-[#EFEBDF] rounded-lg overflow-hidden">
+              <table className="w-full text-[12px]">
+                <thead className="bg-[#F6F3EA] text-[#6B7280]">
+                  <tr>
+                    {["البند", "الميزانية", "الفعلي", "المتوقع", "قيمة التجاوز", "نسبة التجاوز"].map((h) => <th key={h} className="text-right py-2 px-3 font-semibold whitespace-nowrap">{h}</th>)}
+                  </tr>
+                </thead>
+                <tbody className="divide-y divide-[#EFEBDF]">
+                  {overList.map((r) => (
+                    <tr key={r.id}>
+                      <td className="py-2 px-3 font-semibold text-[#1E2530]">{r.name}</td>
+                      <td className="py-2 px-3 mono">{fmt(r.budget)}</td>
+                      <td className="py-2 px-3 mono text-[#E8672C]">{fmt(r.actual)}</td>
+                      <td className="py-2 px-3 mono">{fmt(r.forecast)}</td>
+                      <td className="py-2 px-3 mono font-bold text-[#C1453B]">{fmt(r.overForecast)}</td>
+                      <td className="py-2 px-3 mono font-bold text-[#C1453B]">{r.pctForecast === null ? "بدون ميزانية" : fmt(r.pctForecast, 1) + "٪"}</td>
+                    </tr>
+                  ))}
+                </tbody>
+              </table>
+            </div>
+            <p className="text-[11px] text-[#9A9483] mt-2">قيمة التجاوز = المتوقع − الميزانية، ونسبة التجاوز = قيمة التجاوز ÷ الميزانية.</p>
+          </>
+        )}
+      </AnCard>
+
+      {/* ---- 5) تحليل الربحية ---- */}
+      <AnCard
+        title="تحليل الربحية"
+        subtitle={contract > 0 ? "الربح المتوقع = قيمة العقد − التكلفة المتوقعة، والهامش = الربح ÷ قيمة العقد." : "لم تُسجَّل قيمة عقد للمشروع، فاحتُسب الربح المتوقع على أساس قيمة الأعمال (المستخلصات)."}
+        icon={CircleDollarSign}
+      >
+        <div className="grid grid-cols-5 gap-3 mb-4">
+          <RptKpi label="قيمة الأعمال" value={money(worksValue)} sub="إجمالي المستخلصات" color="#6B5CA5" />
+          <RptKpi label="التكلفة الفعلية" value={money(actualTotal)} color={AN_COLORS.actual} />
+          <RptKpi label="التكلفة المتوقعة" value={money(forecastTotal)} sub="الفعلي + المتوقع المستقبلي" />
+          <RptKpi label="الربح المتوقع" value={money(expectedProfit)} color={profitGood ? AN_COLORS.good : AN_COLORS.bad} />
+          <RptKpi label="هامش الربح المتوقع" value={rPct(margin)} color={profitGood ? AN_COLORS.good : AN_COLORS.bad} />
+        </div>
+        <div style={{ width: "100%", height: 300 }}>
+          <ResponsiveContainer>
+            <BarChart data={profitChart} margin={{ top: 8, right: 4, left: 4, bottom: 4 }}>
+              <CartesianGrid strokeDasharray="3 3" stroke="#E1DACB" vertical={false} />
+              <XAxis dataKey="name" reversed tick={AN_TICK} stroke="#9A9483" />
+              <YAxis orientation="right" tick={AN_TICK} stroke="#9A9483" tickFormatter={anCompact} />
+              <Tooltip formatter={(v) => money(v)} contentStyle={AN_TIP} cursor={{ fill: "#F6F3EA" }} />
+              <Bar dataKey="value" name="القيمة" radius={[5, 5, 0, 0]} maxBarSize={72}>
+                {profitChart.map((d, i) => <Cell key={i} fill={d.color} />)}
+              </Bar>
+            </BarChart>
+          </ResponsiveContainer>
+        </div>
+        {revenueBase > 0 && (
+          <div className="mt-4">
+            <div className="flex justify-between text-[12px] mb-1.5">
+              <span className="font-semibold text-[#1E2530]">استهلاك {contract > 0 ? "قيمة العقد" : "قيمة الأعمال"} بالتكلفة المتوقعة</span>
+              <span className="mono font-bold">{fmt((forecastTotal / revenueBase) * 100, 1)}٪</span>
+            </div>
+            <div className="h-3 rounded-full bg-[#F1EDE1] overflow-hidden flex">
+              <div className="h-full" style={{ width: `${Math.min(100, (actualTotal / revenueBase) * 100)}%`, backgroundColor: AN_COLORS.actual }} />
+              <div className="h-full" style={{ width: `${Math.max(0, Math.min(100 - (actualTotal / revenueBase) * 100, (expectedRest / revenueBase) * 100))}%`, backgroundColor: AN_COLORS.forecast }} />
+            </div>
+            <div className="flex gap-4 mt-1.5 text-[11px] text-[#9A9483]">
+              <span className="flex items-center gap-1"><span className="w-2 h-2 rounded-sm" style={{ backgroundColor: AN_COLORS.actual }} /> فعلي</span>
+              <span className="flex items-center gap-1"><span className="w-2 h-2 rounded-sm" style={{ backgroundColor: AN_COLORS.forecast }} /> متوقع مستقبلي</span>
+            </div>
+          </div>
+        )}
+      </AnCard>
     </div>
   );
 }
