@@ -1,12 +1,15 @@
 import React, { useState, useMemo, useEffect } from "react";
 import {
   BarChart, Bar, XAxis, YAxis, CartesianGrid, Tooltip, ResponsiveContainer, Cell,
+  PieChart as RePieChart, Pie,
 } from "recharts";
 import {
   Building2, LayoutGrid, Hammer, Receipt, FileStack, Wallet, Plus, X,
   TrendingUp, TrendingDown, ChevronDown, ChevronRight, Package, HardHat,
   Landmark, CircleDollarSign, CheckCircle2, Clock, Ruler, Users, Loader2,
   Trash2, Pencil, Printer, Banknote, Upload, ShieldCheck, LogOut,
+  LayoutDashboard, ClipboardList, ReceiptText, FileCheck2, HandCoins, Vault, BarChart3,
+  Gauge, Layers, FileSignature, Percent, Hourglass, FolderKanban, UserCircle2,
 } from "lucide-react";
 import { supabase } from "./supabaseClient";
 
@@ -502,14 +505,24 @@ function ContractingApp({ currentUsername, onLogout }) {
   }, [pWorkItems, pCosts, pExtracts, pCollections, pExpectedCosts]);
 
   const tabs = [
-    { key: "dashboard", label: "لوحة التحكم", icon: LayoutGrid },
-    { key: "items", label: "بنود الأعمال", icon: Ruler },
-    { key: "costs", label: "التكاليف", icon: Hammer },
-    { key: "extracts", label: "المستخلصات", icon: FileStack },
+    { key: "dashboard", label: "ملخص المشروع", icon: LayoutDashboard },
+    { key: "items", label: "الأعمال والمقايسة", icon: ClipboardList },
+    { key: "costs", label: "التكاليف الفعلية", icon: ReceiptText },
+    { key: "extracts", label: "المستخلصات والتحصيلات", icon: FileCheck2 },
     { key: "custody", label: "تصفية العهد", icon: Landmark },
-    { key: "treasury", label: "الخزينة", icon: Banknote },
-    { key: "budget", label: "المقايسة / Budget", icon: Wallet },
+    { key: "treasury", label: "الخزينة والسيولة", icon: Vault },
+    { key: "budget", label: "تحليل المقايسة", icon: BarChart3 },
   ];
+
+  const navGroups = [
+    { title: "نظرة عامة", keys: ["dashboard"] },
+    { title: "التخطيط والتنفيذ", keys: ["items", "budget", "costs"] },
+    { title: "المالية والتحصيل", keys: ["extracts", "treasury", "custody"] },
+  ];
+
+  // رصيد الخزينة الحالي (نفس معادلة تبويب الخزينة: رصيد البداية + الإيداعات − المصروفات)
+  const treasuryBalance = (Number(project?.treasury_opening_balance) || 0) +
+    pTreasuryEntries.reduce((sum, t) => sum + (t.type === "ايداع" ? t.amount : -t.amount), 0);
 
   return (
     <div dir="rtl" style={{ fontFamily: "'Cairo', sans-serif" }} className="w-full min-h-screen flex" >
@@ -550,34 +563,47 @@ function ContractingApp({ currentUsername, onLogout }) {
       )}
 
       {/* SIDEBAR */}
-      <aside className="blueprint-bg w-64 shrink-0 flex flex-col text-[#E7ECEF]" style={{ minHeight: "100vh" }}>
+      <aside className="blueprint-bg w-72 shrink-0 flex flex-col text-[#E7ECEF] sticky top-0 self-start h-screen overflow-y-auto border-l border-white/10">
+        {/* الشعار */}
         <div className="px-5 pt-6 pb-5 border-b border-white/10">
-          <div className="flex items-center gap-2 text-[#E8672C]">
-            <div className="w-8 h-8 rounded border border-[#E8672C]/60 flex items-center justify-center">
-              <Building2 size={16} strokeWidth={2.5} />
+          <div className="flex items-center gap-3">
+            <div className="w-10 h-10 rounded-xl bg-[#E8672C] flex items-center justify-center shadow-lg shadow-[#E8672C]/25">
+              <Building2 size={20} strokeWidth={2.4} className="text-white" />
             </div>
-            <span className="font-extrabold tracking-wide text-sm">دفتر المقاول</span>
+            <div className="min-w-0">
+              <div className="font-extrabold text-[15px] text-white leading-tight">دفتر المقاول</div>
+              <div className="text-[10px] text-white/45 mono tracking-wider mt-0.5">OMAR ERP · CONTRACTING</div>
+            </div>
           </div>
-          <p className="text-[10px] text-white/40 mt-2 mono tracking-wider">CONTRACTING LEDGER — REV.01</p>
         </div>
 
-        <div className="px-4 pt-4">
-          <div className="text-[11px] text-white/40 font-semibold mb-2 px-1">المشروعات</div>
-          <div className="space-y-1">
-            {projects.map((p) => (
-              <button
-                key={p.id}
-                onClick={() => { setActiveProjectId(p.id); setView("project"); }}
-                className={`w-full text-right px-3 py-2 rounded-lg text-sm transition flex items-center justify-between ${
-                  p.id === activeProjectId && view === "project"
-                    ? "bg-[#E8672C] text-white font-bold"
-                    : "text-white/70 hover:bg-white/5"
-                }`}
-              >
-                <span className="truncate">{p.name}</span>
-                {p.id === activeProjectId && view === "project" && <ChevronRight size={14} />}
-              </button>
-            ))}
+        {/* المشروعات */}
+        <div className="px-4 pt-5">
+          <div className="flex items-center justify-between px-1 mb-2">
+            <div className="text-[11px] text-white/45 font-bold tracking-wide flex items-center gap-1.5">
+              <FolderKanban size={12} /> المشروعات
+            </div>
+            <span className="mono text-[10px] text-white/50 bg-white/10 rounded-full px-2 py-0.5">{projects.length}</span>
+          </div>
+          <div className="space-y-1 max-h-48 overflow-y-auto pl-1">
+            {projects.map((p) => {
+              const on = p.id === activeProjectId && view === "project";
+              return (
+                <button
+                  key={p.id}
+                  onClick={() => { setActiveProjectId(p.id); setView("project"); }}
+                  className={`w-full text-right px-3 py-2 rounded-lg text-sm transition flex items-center justify-between gap-2 ${
+                    on ? "bg-[#E8672C] text-white font-bold shadow-md shadow-[#E8672C]/20" : "text-white/70 hover:bg-white/5 hover:text-white"
+                  }`}
+                >
+                  <span className="flex items-center gap-2 min-w-0">
+                    <span className={`w-1.5 h-1.5 rounded-full shrink-0 ${on ? "bg-white" : "bg-white/30"}`} />
+                    <span className="truncate">{p.name}</span>
+                  </span>
+                  {on && <ChevronRight size={14} className="shrink-0" />}
+                </button>
+              );
+            })}
           </div>
           <button
             onClick={() => setShowNewProject(true)}
@@ -587,54 +613,41 @@ function ContractingApp({ currentUsername, onLogout }) {
           </button>
         </div>
 
-        <div className="mt-6 px-4">
-          <div className="text-[11px] text-white/40 font-semibold mb-2 px-1">عام</div>
-          <button
-            onClick={() => setView("finance")}
-            className={`w-full text-right px-3 py-2.5 rounded-lg text-sm flex items-center gap-2.5 transition ${
-              view === "finance" ? "bg-white/10 text-white font-bold" : "text-white/60 hover:bg-white/5 hover:text-white/90"
-            }`}
-          >
-            <Users size={16} className={view === "finance" ? "text-[#E8672C]" : ""} />
-            حسابات السلف والتمويلات
-          </button>
-          <button
-            onClick={() => setView("users")}
-            className={`w-full mt-1 text-right px-3 py-2.5 rounded-lg text-sm flex items-center gap-2.5 transition ${
-              view === "users" ? "bg-white/10 text-white font-bold" : "text-white/60 hover:bg-white/5 hover:text-white/90"
-            }`}
-          >
-            <ShieldCheck size={16} className={view === "users" ? "text-[#E8672C]" : ""} />
-            إدارة المستخدمين
-          </button>
+        {/* أقسام المشروع الحالي */}
+        <nav className="mt-5 px-4 space-y-4">
+          {navGroups.map((g) => (
+            <div key={g.title}>
+              <div className="text-[11px] text-white/45 font-bold tracking-wide mb-1.5 px-1">{g.title}</div>
+              <div className="space-y-0.5">
+                {g.keys.map((k) => {
+                  const t = tabs.find((x) => x.key === k);
+                  return (
+                    <SidebarItem
+                      key={t.key}
+                      icon={t.icon}
+                      label={t.label}
+                      active={tab === t.key && view === "project"}
+                      onClick={() => { setTab(t.key); setView("project"); }}
+                    />
+                  );
+                })}
+              </div>
+            </div>
+          ))}
+        </nav>
+
+        {/* عام */}
+        <div className="mt-4 px-4 pt-4 border-t border-white/10 space-y-0.5">
+          <div className="text-[11px] text-white/45 font-bold tracking-wide mb-1.5 px-1">الحسابات العامة</div>
+          <SidebarItem icon={HandCoins} label="التمويلات والسلف" active={view === "finance"} onClick={() => setView("finance")} />
+          <SidebarItem icon={ShieldCheck} label="إدارة المستخدمين" active={view === "users"} onClick={() => setView("users")} />
         </div>
 
-        <div className="mt-6 px-4">
-          <div className="text-[11px] text-white/40 font-semibold mb-2 px-1">الأقسام</div>
-          <nav className="space-y-1">
-            {tabs.map((t) => {
-              const Icon = t.icon;
-              const active = tab === t.key && view === "project";
-              return (
-                <button
-                  key={t.key}
-                  onClick={() => { setTab(t.key); setView("project"); }}
-                  className={`w-full text-right px-3 py-2.5 rounded-lg text-sm flex items-center gap-2.5 transition ${
-                    active ? "bg-white/10 text-white font-bold" : "text-white/60 hover:bg-white/5 hover:text-white/90"
-                  }`}
-                >
-                  <Icon size={16} className={active ? "text-[#E8672C]" : ""} />
-                  {t.label}
-                </button>
-              );
-            })}
-          </nav>
-        </div>
-
+        {/* أسفل القائمة */}
         <div className="mt-auto p-4">
-          <div className="rounded-lg border border-white/10 p-3 text-[11px] text-white/40 leading-relaxed">
-            <div className="font-semibold text-white/60 mb-1">{project?.name}</div>
-            {project?.client} · {project?.location}
+          <div className="rounded-xl border border-white/10 bg-white/[0.03] p-3 text-[11px] text-white/45 leading-relaxed">
+            <div className="font-bold text-white/80 text-xs mb-1 truncate">{project?.name}</div>
+            <div className="truncate">{project?.client}{project?.client && project?.location ? " · " : ""}{project?.location}</div>
           </div>
           {project && view === "project" && (
             <button
@@ -644,12 +657,19 @@ function ContractingApp({ currentUsername, onLogout }) {
               <Trash2 size={12} /> حذف هذا المشروع
             </button>
           )}
-          <button
-            onClick={() => { if (window.confirm("متأكد إنك عايز تسجّل خروج؟")) onLogout(); }}
-            className="w-full mt-2 px-3 py-2 rounded-lg text-xs font-semibold text-white/70 border border-white/10 hover:bg-white/5 hover:text-white flex items-center justify-center gap-1.5 transition"
-          >
-            <LogOut size={13} /> تسجيل خروج
-          </button>
+          <div className="mt-2 flex items-center gap-2">
+            <div className="flex-1 min-w-0 flex items-center gap-2 rounded-lg bg-white/5 px-2.5 py-2">
+              <UserCircle2 size={16} className="text-white/60 shrink-0" />
+              <span className="text-[11px] text-white/70 truncate mono">{currentUsername}</span>
+            </div>
+            <button
+              onClick={() => { if (window.confirm("متأكد إنك عايز تسجّل خروج؟")) onLogout(); }}
+              title="تسجيل خروج"
+              className="px-3 py-2 rounded-lg text-xs font-semibold text-white/70 border border-white/10 hover:bg-white/5 hover:text-white flex items-center justify-center gap-1.5 transition"
+            >
+              <LogOut size={13} /> خروج
+            </button>
+          </div>
         </div>
       </aside>
 
@@ -687,6 +707,7 @@ function ContractingApp({ currentUsername, onLogout }) {
             </div>
           </div>
 
+          {tab !== "dashboard" && (<>
           <div className="grid grid-cols-5 gap-3 mt-5">
             <StatCard label="ميزانية بنود الأعمال" value={money(totals.budgetTotal)} icon={Wallet} color="#1E2530" />
             <StatCard
@@ -716,11 +737,14 @@ function ContractingApp({ currentUsername, onLogout }) {
               />
             </div>
           )}
+          </>)}
         </header>
 
         <div className="p-8">
           {tab === "dashboard" && (
             <Dashboard
+              contractValue={Number(project?.budget) || 0}
+              treasuryBalance={treasuryBalance}
               totals={totals}
               pWorkItems={pWorkItems}
               pCosts={pCosts}
@@ -837,9 +861,250 @@ function StatCard({ label, value, icon: Icon, color }) {
   );
 }
 
+/* ---------------------------- sidebar item ---------------------------- */
+
+function SidebarItem({ icon: Icon, label, active, onClick }) {
+  return (
+    <button
+      onClick={onClick}
+      className={`relative w-full text-right px-3 py-2.5 rounded-lg text-sm flex items-center gap-3 transition ${
+        active ? "bg-white/10 text-white font-bold" : "text-white/60 hover:bg-white/5 hover:text-white/95"
+      }`}
+    >
+      {active && <span className="absolute right-0 top-2 bottom-2 w-[3px] rounded-l bg-[#E8672C]" />}
+      <span className={`w-7 h-7 rounded-md flex items-center justify-center shrink-0 transition ${active ? "bg-[#E8672C] text-white" : "bg-white/5 text-white/60"}`}>
+        <Icon size={15} />
+      </span>
+      <span className="truncate">{label}</span>
+    </button>
+  );
+}
+
+/* ---------------------------- dashboard: KPIs ---------------------------- */
+
+function KpiCard({ label, value, sub, icon: Icon, color, tone }) {
+  return (
+    <div className="bg-white rounded-xl border border-[#E1DACB] p-4 relative overflow-hidden">
+      <span className="absolute top-0 right-0 bottom-0 w-1" style={{ backgroundColor: color }} />
+      <div className="flex items-center justify-between gap-2 mb-2">
+        <div className="text-[12px] font-semibold text-[#6B7280] truncate">{label}</div>
+        <div className="w-8 h-8 rounded-lg flex items-center justify-center shrink-0" style={{ backgroundColor: color + "18" }}>
+          <Icon size={16} style={{ color }} />
+        </div>
+      </div>
+      <div className="text-[19px] font-extrabold mono truncate" style={{ color: tone || "#1E2530" }}>{value}</div>
+      {sub && <div className="text-[11px] text-[#9A9483] mt-1 truncate">{sub}</div>}
+    </div>
+  );
+}
+
+function DashboardKpis({ contractValue, treasuryBalance, totals }) {
+  const forecastCost = totals.actualTotal + totals.expectedCostsTotal;
+  const expectedProfit = contractValue - forecastCost;
+  const margin = contractValue > 0 ? (expectedProfit / contractValue) * 100 : null;
+  const pctOfContract = (v) => (contractValue > 0 ? `${fmt((v / contractValue) * 100, 1)}٪ من قيمة العقد` : "—");
+  const collectedPct = totals.extractsTotal > 0 ? `${fmt((totals.collectedTotal / totals.extractsTotal) * 100, 1)}٪ من المستخلصات` : "لا توجد مستخلصات";
+  const good = "#3F7D63", bad = "#C1453B";
+
+  return (
+    <section>
+      <div className="flex items-center gap-2 mb-3">
+        <Gauge size={16} className="text-[#E8672C]" />
+        <h2 className="font-bold text-[#1E2530]">المؤشرات الرئيسية</h2>
+      </div>
+      <div className="grid grid-cols-2 lg:grid-cols-4 gap-3">
+        <KpiCard label="قيمة العقد" value={money(contractValue)} sub="إجمالي عقد المشروع" icon={FileSignature} color="#1E2530" />
+        <KpiCard label="قيمة الأعمال / المستخلصات" value={money(totals.extractsTotal)} sub={pctOfContract(totals.extractsTotal)} icon={FileCheck2} color="#E8672C" />
+        <KpiCard label="إجمالي التكلفة الفعلية" value={money(totals.actualTotal)} sub={pctOfContract(totals.actualTotal)} icon={ReceiptText}
+                 color={totals.actualTotal > totals.budgetTotal && totals.budgetTotal > 0 ? bad : "#6B5CA5"} />
+        <KpiCard label="التكلفة المتوقعة" value={money(totals.expectedCostsTotal)} sub="مصاريف لسه هتتصرف" icon={Hourglass} color="#D6A23C" />
+        <KpiCard label="الربح المتوقع" value={money(expectedProfit)} sub="قيمة العقد − (الفعلي + المتوقع)" icon={expectedProfit >= 0 ? TrendingUp : TrendingDown}
+                 color={expectedProfit >= 0 ? good : bad} tone={expectedProfit >= 0 ? good : bad} />
+        <KpiCard label="نسبة الربح المتوقعة" value={margin === null ? "—" : `${fmt(margin, 1)}٪`} sub="من قيمة العقد" icon={Percent}
+                 color={margin !== null && margin < 0 ? bad : good} tone={margin !== null && margin < 0 ? bad : good} />
+        <KpiCard label="إجمالي المحصّل" value={money(totals.collectedTotal)} sub={collectedPct} icon={CircleDollarSign} color={good} />
+        <KpiCard label="الرصيد بالخزينة" value={money(treasuryBalance)} sub="رصيد البداية + الإيداعات − المصروفات" icon={Vault}
+                 color={treasuryBalance >= 0 ? "#1E2530" : bad} tone={treasuryBalance >= 0 ? undefined : bad} />
+      </div>
+    </section>
+  );
+}
+
+/* ------------------- dashboard: Budget vs Actual vs Forecast ------------------- */
+
+function BudgetActualForecast({ totals, pWorkItems, pCosts, pExpectedCosts }) {
+  const budget = totals.budgetTotal;
+  const actual = totals.actualTotal;
+  const expected = totals.expectedCostsTotal;
+  const forecast = actual + expected;
+  const max = Math.max(budget, forecast, 1);
+  const w = (v) => `${Math.min(100, (v / max) * 100)}%`;
+  const pct = (v) => (budget > 0 ? `${fmt((v / budget) * 100, 1)}٪ من الميزانية` : "—");
+
+  const remaining = budget - actual;
+  const forecastVar = budget - forecast;
+
+  let status = { label: "لا توجد ميزانية بنود بعد", color: "#9A9483" };
+  if (budget > 0) {
+    if (forecast > budget) status = { label: "تجاوز متوقع للميزانية", color: "#C1453B" };
+    else if (forecast > budget * 0.9) status = { label: "قريب من حد الميزانية", color: "#D6A23C" };
+    else status = { label: "ضمن الميزانية", color: "#3F7D63" };
+  }
+
+  const rows = pWorkItems.map((wi) => {
+    const a = pCosts.filter((c) => c.workItemId === wi.id).reduce((s, c) => s + c.qty * c.price, 0);
+    const e = pExpectedCosts.filter((x) => x.workItemId === wi.id).reduce((s, x) => s + x.amount, 0);
+    const b = wi.qty * wi.price;
+    return { id: wi.id, name: wi.name, budget: b, actual: a, forecast: a + e };
+  });
+  const ua = pCosts.filter((c) => !c.workItemId).reduce((s, c) => s + c.qty * c.price, 0);
+  const ue = pExpectedCosts.filter((x) => !x.workItemId).reduce((s, x) => s + x.amount, 0);
+  if (ua > 0 || ue > 0) rows.push({ id: "_none", name: "غير مرتبط ببند", budget: 0, actual: ua, forecast: ua + ue });
+
+  return (
+    <section className="bg-white rounded-xl border border-[#E1DACB] p-5 h-full">
+      <div className="flex items-start justify-between gap-3 mb-5">
+        <div>
+          <h2 className="font-bold text-[#1E2530] flex items-center gap-2"><Gauge size={16} className="text-[#E8672C]" /> الميزانية × الفعلي × المتوقع</h2>
+          <p className="text-[12px] text-[#9A9483] mt-1">المتوقع عند الإنجاز = التكلفة الفعلية + المصاريف المتوقعة المستقبلية</p>
+        </div>
+        <span className="text-[11px] font-bold rounded-full px-3 py-1 shrink-0" style={{ color: status.color, backgroundColor: status.color + "18" }}>{status.label}</span>
+      </div>
+
+      <div className="space-y-4">
+        <div>
+          <div className="flex justify-between text-sm mb-1.5"><span className="font-semibold text-[#1E2530]">الميزانية (المقايسة)</span><span className="mono font-bold">{money(budget)}</span></div>
+          <div className="h-3 rounded-full bg-[#F1EDE1] overflow-hidden"><div className="h-full rounded-full bg-[#1E2530]" style={{ width: w(budget) }} /></div>
+        </div>
+        <div>
+          <div className="flex justify-between text-sm mb-1.5"><span className="font-semibold text-[#1E2530]">الفعلي حتى الآن <span className="text-[11px] text-[#9A9483] font-normal">· {pct(actual)}</span></span><span className="mono font-bold text-[#E8672C]">{money(actual)}</span></div>
+          <div className="h-3 rounded-full bg-[#F1EDE1] overflow-hidden"><div className="h-full rounded-full bg-[#E8672C]" style={{ width: w(actual) }} /></div>
+        </div>
+        <div>
+          <div className="flex justify-between text-sm mb-1.5"><span className="font-semibold text-[#1E2530]">المتوقع عند الإنجاز <span className="text-[11px] text-[#9A9483] font-normal">· {pct(forecast)}</span></span><span className="mono font-bold" style={{ color: forecast > budget && budget > 0 ? "#C1453B" : "#1E2530" }}>{money(forecast)}</span></div>
+          <div className="h-3 rounded-full bg-[#F1EDE1] overflow-hidden flex" style={{ width: "100%" }}>
+            <div className="h-full bg-[#E8672C]" style={{ width: w(actual) }} />
+            <div className="h-full bg-[#D6A23C]" style={{ width: w(expected) }} />
+          </div>
+          <div className="flex gap-4 mt-1.5 text-[11px] text-[#9A9483]">
+            <span className="flex items-center gap-1"><span className="w-2 h-2 rounded-sm bg-[#E8672C]" /> فعلي</span>
+            <span className="flex items-center gap-1"><span className="w-2 h-2 rounded-sm bg-[#D6A23C]" /> متوقع مستقبلي ({money(expected)})</span>
+          </div>
+        </div>
+      </div>
+
+      <div className="grid grid-cols-3 gap-3 mt-5">
+        <div className="rounded-lg bg-[#FAF8F2] border border-[#EFEBDF] p-3">
+          <div className="text-[11px] text-[#9A9483] mb-1">المتبقي من الميزانية</div>
+          <div className={`text-sm font-bold mono ${remaining >= 0 ? "text-[#3F7D63]" : "text-[#C1453B]"}`}>{money(remaining)}</div>
+        </div>
+        <div className="rounded-lg bg-[#FAF8F2] border border-[#EFEBDF] p-3">
+          <div className="text-[11px] text-[#9A9483] mb-1">{forecastVar >= 0 ? "وفر متوقع" : "تجاوز متوقع"}</div>
+          <div className={`text-sm font-bold mono ${forecastVar >= 0 ? "text-[#3F7D63]" : "text-[#C1453B]"}`}>{money(Math.abs(forecastVar))}</div>
+        </div>
+        <div className="rounded-lg bg-[#FAF8F2] border border-[#EFEBDF] p-3">
+          <div className="text-[11px] text-[#9A9483] mb-1">نسبة الصرف</div>
+          <div className="text-sm font-bold mono text-[#1E2530]">{budget > 0 ? `${fmt((actual / budget) * 100, 1)}٪` : "—"}</div>
+        </div>
+      </div>
+
+      {rows.length > 0 && (
+        <div className="mt-5 border border-[#EFEBDF] rounded-lg overflow-hidden">
+          <div className="max-h-64 overflow-auto">
+            <table className="w-full text-[12px]">
+              <thead className="bg-[#F6F3EA] text-[#6B7280] sticky top-0">
+                <tr>
+                  <th className="text-right py-2 px-3 font-semibold">بند العمل</th>
+                  <th className="text-right py-2 px-3 font-semibold">الميزانية</th>
+                  <th className="text-right py-2 px-3 font-semibold">الفعلي</th>
+                  <th className="text-right py-2 px-3 font-semibold">المتوقع</th>
+                  <th className="text-right py-2 px-3 font-semibold">الانحراف</th>
+                </tr>
+              </thead>
+              <tbody className="divide-y divide-[#EFEBDF]">
+                {rows.map((r) => {
+                  const v = r.budget - r.forecast;
+                  return (
+                    <tr key={r.id}>
+                      <td className="py-2 px-3 font-semibold text-[#1E2530] max-w-[160px] truncate">{r.name}</td>
+                      <td className="py-2 px-3 mono">{fmt(r.budget)}</td>
+                      <td className="py-2 px-3 mono text-[#E8672C]">{fmt(r.actual)}</td>
+                      <td className="py-2 px-3 mono">{fmt(r.forecast)}</td>
+                      <td className={`py-2 px-3 mono font-bold ${r.budget === 0 ? "text-[#9A9483]" : v >= 0 ? "text-[#3F7D63]" : "text-[#C1453B]"}`}>{r.budget === 0 ? "—" : (v >= 0 ? "+" : "−") + fmt(Math.abs(v))}</td>
+                    </tr>
+                  );
+                })}
+              </tbody>
+            </table>
+          </div>
+        </div>
+      )}
+    </section>
+  );
+}
+
+/* ---------------------- dashboard: توزيع التكاليف حسب النوع ---------------------- */
+
+function CostDistribution({ pCosts }) {
+  const data = COST_TYPES.map((t) => ({
+    key: t.key, name: t.label, color: t.color, icon: t.icon,
+    value: pCosts.filter((c) => c.type === t.key).reduce((s, c) => s + c.qty * c.price, 0),
+  }));
+  const known = data.reduce((s, d) => s + d.value, 0);
+  const other = pCosts.reduce((s, c) => s + c.qty * c.price, 0) - known;
+  if (other > 0.5) data.push({ key: "_other", name: "أنواع أخرى", color: "#9A9483", icon: Receipt, value: other });
+  const total = data.reduce((s, d) => s + d.value, 0);
+  const pie = data.filter((d) => d.value > 0);
+
+  return (
+    <section className="bg-white rounded-xl border border-[#E1DACB] p-5 h-full">
+      <h2 className="font-bold text-[#1E2530] flex items-center gap-2"><Layers size={16} className="text-[#E8672C]" /> توزيع التكاليف حسب النوع</h2>
+      <p className="text-[12px] text-[#9A9483] mt-1 mb-3">من إجمالي التكاليف الفعلية المسجّلة</p>
+
+      {total <= 0 ? (
+        <div className="text-sm text-[#9A9483] py-10 text-center">لا توجد تكاليف مسجّلة بعد.</div>
+      ) : (
+        <div className="relative" style={{ width: "100%", height: 200 }}>
+          <ResponsiveContainer>
+            <RePieChart>
+              <Pie data={pie} dataKey="value" nameKey="name" innerRadius={58} outerRadius={88} paddingAngle={2} stroke="none">
+                {pie.map((d) => <Cell key={d.key} fill={d.color} />)}
+              </Pie>
+              <Tooltip formatter={(v) => money(v)} contentStyle={{ fontFamily: "Cairo", fontSize: 12, borderRadius: 8, border: "1px solid #E1DACB" }} />
+            </RePieChart>
+          </ResponsiveContainer>
+          <div className="absolute inset-0 flex flex-col items-center justify-center pointer-events-none">
+            <div className="text-[10px] text-[#9A9483]">الإجمالي</div>
+            <div className="text-sm font-extrabold mono text-[#1E2530]">{fmt(total)}</div>
+          </div>
+        </div>
+      )}
+
+      <div className="mt-3 space-y-2.5">
+        {data.map((d) => {
+          const Icon = d.icon;
+          const p = total > 0 ? (d.value / total) * 100 : 0;
+          return (
+            <div key={d.key}>
+              <div className="flex items-center justify-between text-[13px] mb-1">
+                <span className="flex items-center gap-2 font-semibold text-[#1E2530]">
+                  <span className="w-6 h-6 rounded-md flex items-center justify-center" style={{ backgroundColor: d.color + "18" }}><Icon size={13} style={{ color: d.color }} /></span>
+                  {d.name}
+                </span>
+                <span className="mono text-[12px]"><b>{money(d.value)}</b> <span className="text-[#9A9483]">· {fmt(p, 1)}٪</span></span>
+              </div>
+              <div className="h-1.5 rounded-full bg-[#F1EDE1] overflow-hidden"><div className="h-full rounded-full" style={{ width: `${p}%`, backgroundColor: d.color }} /></div>
+            </div>
+          );
+        })}
+      </div>
+    </section>
+  );
+}
+
 /* -------------------------------- dashboard -------------------------------- */
 
-function Dashboard({ totals, pWorkItems, pCosts, pExtracts, collections, pExpectedCosts, activeProjectId, onAddExpectedCost, onUpdateExpectedCost, onDeleteExpectedCost }) {
+function Dashboard({ contractValue, treasuryBalance, totals, pWorkItems, pCosts, pExtracts, collections, pExpectedCosts, activeProjectId, onAddExpectedCost, onUpdateExpectedCost, onDeleteExpectedCost }) {
   const chartData = pWorkItems.map((w) => {
     const actual = pCosts.filter((c) => c.workItemId === w.id).reduce((s, c) => s + c.qty * c.price, 0);
     return { name: w.name.length > 14 ? w.name.slice(0, 14) + "…" : w.name, الميزانية: w.qty * w.price, الفعلي: actual };
@@ -888,6 +1153,17 @@ function Dashboard({ totals, pWorkItems, pCosts, pExtracts, collections, pExpect
 
   return (
     <div className="space-y-6">
+      <DashboardKpis contractValue={contractValue} treasuryBalance={treasuryBalance} totals={totals} />
+
+      <div className="grid grid-cols-1 xl:grid-cols-5 gap-6">
+        <div className="xl:col-span-3">
+          <BudgetActualForecast totals={totals} pWorkItems={pWorkItems} pCosts={pCosts} pExpectedCosts={pExpectedCosts} />
+        </div>
+        <div className="xl:col-span-2">
+          <CostDistribution pCosts={pCosts} />
+        </div>
+      </div>
+
       <section className="bg-white rounded-xl border border-[#E1DACB] p-5">
         <div className="flex items-center justify-between mb-4">
           <h2 className="font-bold text-[#1E2530]">الميزانية مقابل الفعلي — حسب بند العمل</h2>
@@ -1887,7 +2163,7 @@ function BudgetTab({ pWorkItems, pCosts }) {
 
   return (
     <div className="space-y-5">
-      <h2 className="font-bold text-[#1E2530] text-lg">المقايسة — مقارنة الفعلي بالميزانية</h2>
+      <h2 className="font-bold text-[#1E2530] text-lg">تحليل المقايسة — مقارنة الفعلي بالميزانية</h2>
 
       <div className="bg-white rounded-xl border border-[#E1DACB] overflow-hidden">
         <table className="w-full text-sm">
@@ -2187,7 +2463,7 @@ function FinanceAccountsModule({ financePersons, financeTransactions, onAddPerso
     <div className="space-y-5">
       <div className="flex items-center justify-between">
         <div>
-          <h2 className="font-bold text-[#1E2530] text-xl">حسابات السلف والتمويلات</h2>
+          <h2 className="font-bold text-[#1E2530] text-xl">التمويلات والسلف</h2>
           <p className="text-[12px] text-[#9A9483] mt-1">حساب مستقل لكل شخص/جهة — غير مرتبط بمشروع معين</p>
         </div>
         <button onClick={() => setShowAddPerson((o) => !o)} className="px-3 py-2 rounded-lg bg-[#1E2530] text-white text-sm font-semibold flex items-center gap-1.5 hover:bg-[#2b3543] transition">
