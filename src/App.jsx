@@ -573,8 +573,8 @@ function ContractingApp({ currentUsername, onLogout }) {
               <Building2 size={20} strokeWidth={2.4} className="text-white" />
             </div>
             <div className="min-w-0">
-              <div className="font-extrabold text-[15px] text-white leading-tight">دفتر المقاول</div>
-              <div className="text-[10px] text-white/45 mono tracking-wider mt-0.5">OMAR ERP · CONTRACTING</div>
+              <div className="font-extrabold text-[15px] text-white leading-tight tracking-wide" dir="ltr">CostLine</div>
+              <div className="text-[10px] text-white/45 mono tracking-wider mt-0.5">CONSTRUCTION ERP</div>
             </div>
           </div>
         </div>
@@ -903,9 +903,9 @@ function ReportShell({ title, notice, s, children }) {
     <div id="report-print-area" dir="rtl" className="bg-white rounded-xl border border-[#E1DACB] p-8 space-y-6">
       <div className="flex items-center justify-between border-b-[3px] border-[#E8672C] pb-4">
         <div className="flex items-center gap-3">
-          <div className="w-10 h-10 rounded-xl bg-[#E8672C] text-white flex items-center justify-center font-extrabold text-lg">O</div>
+          <div className="w-10 h-10 rounded-xl bg-[#E8672C] text-white flex items-center justify-center font-extrabold text-lg">C</div>
           <div>
-            <div className="font-extrabold text-lg text-[#1E2530] leading-tight">Omar ERP</div>
+            <div className="font-extrabold text-lg text-[#1E2530] leading-tight">CostLine</div>
             <div className="text-[10px] text-[#9A9483] mono tracking-wider">CONTRACTING · MANAGEMENT REPORT</div>
           </div>
         </div>
@@ -923,7 +923,7 @@ function ReportShell({ title, notice, s, children }) {
       {children}
 
       <div className="flex justify-between text-[10px] text-[#9A9483] border-t border-[#E1DACB] pt-3">
-        <span>Omar ERP — نظام إدارة المقاولات</span>
+        <span>CostLine — نظام إدارة المقاولات</span>
         <span>تقرير سري للإدارة — للاستخدام الداخلي</span>
       </div>
     </div>
@@ -3132,8 +3132,8 @@ function ExtractsTab({ pExtracts, collections, onAddExtract, onAddCollection, on
 <body>
   <div class="header">
     <div class="brand">
-      <div class="brand-badge">O</div>
-      <div class="brand-name">Omar ERP</div>
+      <div class="brand-badge">C</div>
+      <div class="brand-name">CostLine</div>
     </div>
     <div class="doc-title">
       <h1>مستخلص رقم <span class="num">${extract.number}</span></h1>
@@ -3159,7 +3159,7 @@ function ExtractsTab({ pExtracts, collections, onAddExtract, onAddCollection, on
   </table>
 
   <div class="footer">
-    <span>Omar ERP — نظام إدارة المقاولات</span>
+    <span>CostLine — نظام إدارة المقاولات</span>
     <span>تم إصدار هذا المستند بتاريخ ${new Date().toLocaleDateString("en-GB")}</span>
   </div>
 </body>
