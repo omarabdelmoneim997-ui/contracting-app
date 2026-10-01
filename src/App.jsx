@@ -4563,6 +4563,8 @@ function LoginScreen({ onSuccess }) {
 export default function App() {
   const [authenticated, setAuthenticated] = useState(false);
   const [currentUsername, setCurrentUsername] = useState("");
+  // اسم تبويب المتصفح — يُضبط من هنا حتى لو index.html لسه بالاسم القديم
+  useEffect(() => { document.title = "CostLine"; }, []);
   if (!authenticated) {
     return <LoginScreen onSuccess={(username) => { setCurrentUsername(username); setAuthenticated(true); }} />;
   }
