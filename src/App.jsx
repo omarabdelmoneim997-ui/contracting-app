@@ -569,11 +569,9 @@ function ContractingApp({ currentUsername, onLogout }) {
         {/* الشعار */}
         <div className="px-5 pt-6 pb-5 border-b border-white/10">
           <div className="flex items-center gap-3">
-            <div className="w-10 h-10 rounded-xl bg-[#E8672C] flex items-center justify-center shadow-lg shadow-[#E8672C]/25">
-              <Building2 size={20} strokeWidth={2.4} className="text-white" />
-            </div>
+            <CostLineMark size={42} />
             <div className="min-w-0">
-              <div className="font-extrabold text-[15px] text-white leading-tight tracking-wide" dir="ltr">CostLine</div>
+              <div className="font-extrabold text-[15px] text-white leading-tight tracking-wide" dir="ltr">Cost<span className="text-[#E8672C]">Line</span></div>
               <div className="text-[10px] text-white/45 mono tracking-wider mt-0.5">CONSTRUCTION ERP</div>
             </div>
           </div>
@@ -903,9 +901,9 @@ function ReportShell({ title, notice, s, children }) {
     <div id="report-print-area" dir="rtl" className="bg-white rounded-xl border border-[#E1DACB] p-8 space-y-6">
       <div className="flex items-center justify-between border-b-[3px] border-[#E8672C] pb-4">
         <div className="flex items-center gap-3">
-          <div className="w-10 h-10 rounded-xl bg-[#E8672C] text-white flex items-center justify-center font-extrabold text-lg">C</div>
+          <CostLineMark size={40} />
           <div>
-            <div className="font-extrabold text-lg text-[#1E2530] leading-tight">CostLine</div>
+            <div className="font-extrabold text-lg text-[#1E2530] leading-tight" dir="ltr">Cost<span className="text-[#E8672C]">Line</span></div>
             <div className="text-[10px] text-[#9A9483] mono tracking-wider">CONTRACTING · MANAGEMENT REPORT</div>
           </div>
         </div>
@@ -2022,6 +2020,26 @@ function AppFooter({ variant = "app" }) {
   );
 }
 
+/* ------------------------------- شعار CostLine ------------------------------- */
+const COSTLINE_MARK_SVG = '<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 48 48"><defs><linearGradient id="g" x1="0" y1="0" x2="1" y2="1"><stop offset="0" stop-color="#F58A4B"/><stop offset="1" stop-color="#D9531C"/></linearGradient></defs><rect width="48" height="48" rx="11" fill="url(#g)"/><path d="M30.5 16.5 A12 12 0 1 0 30.5 33.5" fill="none" stroke="#fff" stroke-width="4.6" stroke-linecap="round"/><polyline points="23.5,30.5 29,25 33,28 39.5,18.5" fill="none" stroke="#14212C" stroke-width="3.2" stroke-linecap="round" stroke-linejoin="round"/><circle cx="39.5" cy="18.5" r="2.7" fill="#14212C"/></svg>';
+
+function CostLineMark({ size = 40, className = "" }) {
+  return (
+    <svg width={size} height={size} viewBox="0 0 48 48" className={className} role="img" aria-label="CostLine" style={{ display: "block", flexShrink: 0 }}>
+      <defs>
+        <linearGradient id="cl-grad" x1="0" y1="0" x2="1" y2="1">
+          <stop offset="0" stopColor="#F58A4B" />
+          <stop offset="1" stopColor="#D9531C" />
+        </linearGradient>
+      </defs>
+      <rect width="48" height="48" rx="11" fill="url(#cl-grad)" />
+      <path d="M30.5 16.5 A12 12 0 1 0 30.5 33.5" fill="none" stroke="#fff" strokeWidth="4.6" strokeLinecap="round" />
+      <polyline points="23.5,30.5 29,25 33,28 39.5,18.5" fill="none" stroke="#14212C" strokeWidth="3.2" strokeLinecap="round" strokeLinejoin="round" />
+      <circle cx="39.5" cy="18.5" r="2.7" fill="#14212C" />
+    </svg>
+  );
+}
+
 /* ------------------------------- stat card ------------------------------- */
 
 function StatCard({ label, value, icon: Icon, color }) {
@@ -3132,8 +3150,8 @@ function ExtractsTab({ pExtracts, collections, onAddExtract, onAddCollection, on
 <body>
   <div class="header">
     <div class="brand">
-      <div class="brand-badge">C</div>
-      <div class="brand-name">CostLine</div>
+      <div class="brand-badge" style="background:none;padding:0;width:42px;height:42px;display:block">${COSTLINE_MARK_SVG}</div>
+      <div class="brand-name">Cost<span style="color:#E8672C">Line</span></div>
     </div>
     <div class="doc-title">
       <h1>مستخلص رقم <span class="num">${extract.number}</span></h1>
@@ -4515,6 +4533,10 @@ function LoginScreen({ onSuccess }) {
       </div>
 
       <form onSubmit={submit} className="lh-card">
+        <div style={{ display: "flex", alignItems: "center", gap: 12, marginBottom: 22 }}>
+          <CostLineMark size={44} />
+          <span style={{ fontSize: 22, fontWeight: 800, letterSpacing: 0.4, color: "#fff" }}>Cost<span style={{ color: "#E8672C" }}>Line</span></span>
+        </div>
         <div className="lh-eyebrow">MEMBER ACCESS</div>
         <h1>Welcome back.</h1>
         <p className="lh-sub">Sign in to continue your journey</p>
@@ -4564,7 +4586,15 @@ export default function App() {
   const [authenticated, setAuthenticated] = useState(false);
   const [currentUsername, setCurrentUsername] = useState("");
   // اسم تبويب المتصفح — يُضبط من هنا حتى لو index.html لسه بالاسم القديم
-  useEffect(() => { document.title = "CostLine"; }, []);
+  useEffect(() => {
+    document.title = "CostLine";
+    try {
+      let link = document.querySelector("link[rel~='icon']");
+      if (!link) { link = document.createElement("link"); link.rel = "icon"; document.head.appendChild(link); }
+      link.type = "image/svg+xml";
+      link.href = "data:image/svg+xml," + encodeURIComponent(COSTLINE_MARK_SVG);
+    } catch (e) { /* ignore */ }
+  }, []);
   if (!authenticated) {
     return <LoginScreen onSuccess={(username) => { setCurrentUsername(username); setAuthenticated(true); }} />;
   }
