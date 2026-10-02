@@ -4560,7 +4560,7 @@ function LoginScreen({ onSuccess }) {
       <form onSubmit={submit} className="lh-card">
         <div style={{ display: "flex", alignItems: "center", gap: 12, marginBottom: 22 }}>
           <CostLineMark size={44} />
-          <span style={{ fontSize: 22, fontWeight: 800, letterSpacing: 0.4, color: "#fff" }}>Cost<span style={{ color: "#f0c85a" }>Line</span></span>
+          <span style={{ fontSize: 22, fontWeight: 800, letterSpacing: 0.4, color: "#fff" }}>Cost<span style={{ color: "#f0c85a" }}>Line</span></span>
         </div>
         <div className="lh-eyebrow">MEMBER ACCESS</div>
         <h1>Welcome back.</h1>
