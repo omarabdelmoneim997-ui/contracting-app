@@ -9,7 +9,7 @@ import {
   Landmark, CircleDollarSign, CheckCircle2, Clock, Ruler, Users, Loader2,
   Trash2, Pencil, Printer, Banknote, Upload, ShieldCheck, LogOut,
   LayoutDashboard, ClipboardList, ReceiptText, FileCheck2, HandCoins, Vault, BarChart3,
-  Gauge, Layers, FileSignature, Percent, Hourglass, FolderKanban, UserCircle2,
+  Gauge, Layers, FileSignature, Percent, Hourglass, FolderKanban, UserCircle2, Palette, RotateCcw,
 } from "lucide-react";
 import { supabase } from "./supabaseClient";
 
@@ -151,6 +151,156 @@ function parseCostExcelFile(file, pWorkItems) {
         };
       });
     })
+  );
+}
+
+/* ------------------------------ إعدادات المظهر ------------------------------ */
+const THEME_KEY = "cl-theme-v1";
+const THEME_DEFAULT = { bg: "#050505", card: "", text: "", accent: "#f0c85a", font: "ibm" };
+const THEME_FONTS = {
+  ibm: { label: "IBM Plex Sans Arabic", q: "IBM+Plex+Sans+Arabic:wght@400;500;600;700", css: "'IBM Plex Sans Arabic'" },
+  cairo: { label: "Cairo", q: "Cairo:wght@400;500;600;700;800", css: "'Cairo'" },
+  tajawal: { label: "Tajawal", q: "Tajawal:wght@400;500;700;800", css: "'Tajawal'" },
+  almarai: { label: "Almarai", q: "Almarai:wght@400;700;800", css: "'Almarai'" },
+  kufi: { label: "Noto Kufi Arabic", q: "Noto+Kufi+Arabic:wght@400;500;600;700", css: "'Noto Kufi Arabic'" },
+  readex: { label: "Readex Pro", q: "Readex+Pro:wght@400;500;600;700", css: "'Readex Pro'" },
+  alex: { label: "Alexandria", q: "Alexandria:wght@400;500;600;700", css: "'Alexandria'" },
+  naskh: { label: "Noto Naskh Arabic (نسخ)", q: "Noto+Naskh+Arabic:wght@400;500;600;700", css: "'Noto Naskh Arabic'" },
+  system: { label: "خط النظام", q: "", css: "system-ui" },
+};
+const THEME_PRESETS = [
+  { l: "داكن", bg: "#050505" },
+  { l: "داكن فاتح", bg: "#1b1c22" },
+  { l: "رمادي", bg: "#2c2e38" },
+  { l: "فاتح", bg: "#f3f1ec" },
+];
+
+const clampN = (n, a = 0, b = 100) => Math.min(b, Math.max(a, n));
+function hexToHsl(hex) {
+  const h = hex.replace("#", "");
+  const r = parseInt(h.slice(0, 2), 16) / 255, g = parseInt(h.slice(2, 4), 16) / 255, b = parseInt(h.slice(4, 6), 16) / 255;
+  const mx = Math.max(r, g, b), mn = Math.min(r, g, b), d = mx - mn, L = (mx + mn) / 2;
+  let H = 0, S = 0;
+  if (d) {
+    S = d / (1 - Math.abs(2 * L - 1));
+    if (mx === r) H = ((g - b) / d) % 6; else if (mx === g) H = (b - r) / d + 2; else H = (r - g) / d + 4;
+    H *= 60; if (H < 0) H += 360;
+  }
+  return [H, S * 100, L * 100];
+}
+function hslToHex(h, s, l) {
+  s /= 100; l /= 100;
+  const k = (n) => (n + h / 30) % 12, a = s * Math.min(l, 1 - l);
+  const f = (n) => Math.round((l - a * Math.max(-1, Math.min(k(n) - 3, Math.min(9 - k(n), 1)))) * 255).toString(16).padStart(2, "0");
+  return "#" + f(0) + f(8) + f(4);
+}
+
+function buildTheme(t) {
+  const [h, s0, l] = hexToHsl(t.bg);
+  const dark = l < 55;
+  const s = Math.min(s0, dark ? 30 : 25);
+  const c = (d) => hslToHex(h, s, clampN(l + d));
+  const P = dark
+    ? { card: c(4.5), input: c(1), sub: c(6.5), inset: c(1.5), line: c(13.5), sep: c(8), chip: c(9), hover: c(17), ink: c(17), inkH: c(24), side: c(2) }
+    : { card: c(7), input: c(7), sub: c(3.5), inset: c(-1.5), line: c(-10), sep: c(-5), chip: c(-6), hover: c(-13), ink: "#1E2530", inkH: "#2b3543", side: "#14161c" };
+  if (t.card) { P.card = t.card; P.input = t.card; }
+  const text = t.text || (dark ? "#eeeeee" : "#1E2530");
+  const muted = dark ? hslToHex(240, 6, Math.min(80, 56 + l * 0.5)) : "#8a8574";
+  const soft = dark ? hslToHex(240, 6, Math.min(88, 66 + l * 0.5)) : "#6B7280";
+  const [ah, as, al] = hexToHsl(t.accent);
+  const accText = dark ? t.accent : hslToHex(ah, as, Math.min(al, 36));
+  const accHover = hslToHex(ah, as, clampN(al - 7));
+  const [r, g, b] = [1, 3, 5].map((i) => parseInt(t.accent.slice(i, i + 2), 16));
+  const onAcc = (0.299 * r + 0.587 * g + 0.114 * b) / 255 > 0.6 ? "#1a1405" : "#ffffff";
+  const f = THEME_FONTS[t.font] || THEME_FONTS.ibm;
+  const css = `${f.q ? `@import url('https://fonts.googleapis.com/css2?family=${f.q}&display=swap');` : ""}
+:root{color-scheme:${dark ? "dark" : "light"};--cl-bg:${t.bg};--cl-card:${P.card};--cl-input:${P.input};--cl-sub:${P.sub};--cl-inset:${P.inset};--cl-line:${P.line};--cl-sep:${P.sep};--cl-chip:${P.chip};--cl-hover:${P.hover};--cl-text:${text};--cl-muted:${muted};--cl-soft:${soft};--cl-ink:${P.ink};--cl-ink-hover:${P.inkH};--cl-side:${P.side};--cl-accent:${accText};--cl-accent-bg:${t.accent};--cl-accent-hover:${accHover};--cl-accent-rgb:${r} ${g} ${b};--cl-on-accent:${onAcc};--cl-red:${dark ? "#ff6b6b" : "#C1453B"};--cl-green:${dark ? "#5fd0a0" : "#3F7D63"};--cl-font:${f.css},'IBM Plex Sans Arabic','Cairo',system-ui,sans-serif;}
+@media print{:root{color-scheme:light;--cl-bg:#F6F3EA;--cl-card:#ffffff;--cl-input:#ffffff;--cl-sub:#FAF8F2;--cl-inset:#F6F3EA;--cl-line:#E1DACB;--cl-sep:#EFEBDF;--cl-chip:#F1EDE1;--cl-hover:#D8D3C7;--cl-text:#1E2530;--cl-muted:#9A9483;--cl-soft:#6B7280;--cl-ink:#1E2530;--cl-ink-hover:#2b3543;--cl-side:#14212C;--cl-accent:#E8672C;--cl-accent-bg:#E8672C;--cl-accent-hover:#C8511E;--cl-accent-rgb:232 103 44;--cl-on-accent:#ffffff;--cl-red:#C1453B;--cl-green:#3F7D63;}}`;
+  return { css, card: P.card, text };
+}
+
+function ThemeSettings() {
+  const [t, setT] = useState(() => {
+    try { return { ...THEME_DEFAULT, ...JSON.parse(localStorage.getItem(THEME_KEY) || "{}") }; } catch (e) { return { ...THEME_DEFAULT }; }
+  });
+  const [open, setOpen] = useState(false);
+  const set = (patch) => setT((p) => {
+    const n = { ...p, ...patch };
+    try { localStorage.setItem(THEME_KEY, JSON.stringify(n)); } catch (e) { /* ignore */ }
+    return n;
+  });
+  const reset = () => { try { localStorage.removeItem(THEME_KEY); } catch (e) { /* ignore */ } setT({ ...THEME_DEFAULT }); };
+  const { css, card, text } = useMemo(() => buildTheme(t), [t]);
+  const [bh, bs, bl] = hexToHsl(t.bg);
+  const f = THEME_FONTS[t.font] || THEME_FONTS.ibm;
+  const lbl = "text-[11px] font-semibold text-[color:var(--cl-muted)] mb-2";
+
+  const pick = (label, value, onChange, onReset) => (
+    <label className="flex items-center justify-between gap-2 py-1.5">
+      <span className="text-[12px] text-[color:var(--cl-text)]">{label}</span>
+      <span className="flex items-center gap-2">
+        {onReset && <button type="button" onClick={(e) => { e.preventDefault(); onReset(); }} className="text-[10px] text-[color:var(--cl-accent)] hover:underline">تلقائي</button>}
+        <span className="mono text-[10px] text-[color:var(--cl-muted)]">{value}</span>
+        <input type="color" value={value} onChange={(e) => onChange(e.target.value)} className="w-8 h-6 p-0 border-0 rounded cursor-pointer bg-transparent" />
+      </span>
+    </label>
+  );
+
+  return (
+    <>
+      <style>{css}</style>
+      <button type="button" onClick={() => setOpen((o) => !o)} title="مظهر البرنامج"
+        className="no-print fixed bottom-14 left-4 z-[60] w-11 h-11 rounded-full flex items-center justify-center shadow-lg shadow-black/40 bg-[color:var(--cl-accent-bg)] text-[color:var(--cl-on-accent)] hover:brightness-110 transition">
+        <Palette size={20} />
+      </button>
+      {open && (
+        <div dir="rtl" className="no-print fixed bottom-28 left-4 z-[60] w-80 max-h-[75vh] overflow-y-auto rounded-xl border border-[color:var(--cl-line)] bg-[color:var(--cl-card)] text-[color:var(--cl-text)] shadow-2xl shadow-black/50 p-4">
+          <div className="flex items-center justify-between mb-3">
+            <div className="font-bold text-sm flex items-center gap-2"><Palette size={16} className="text-[color:var(--cl-accent)]" /> مظهر البرنامج</div>
+            <div className="flex items-center gap-1">
+              <button type="button" onClick={reset} title="رجوع للأصل" className="p-1.5 rounded-lg text-[color:var(--cl-muted)] hover:bg-[color:var(--cl-line)] hover:text-[color:var(--cl-text)]"><RotateCcw size={15} /></button>
+              <button type="button" onClick={() => setOpen(false)} className="p-1.5 rounded-lg text-[color:var(--cl-muted)] hover:bg-[color:var(--cl-line)] hover:text-[color:var(--cl-text)]"><X size={15} /></button>
+            </div>
+          </div>
+
+          <div className={lbl}>أنماط جاهزة</div>
+          <div className="grid grid-cols-4 gap-2 mb-4">
+            {THEME_PRESETS.map((p) => {
+              const on = t.bg.toLowerCase() === p.bg;
+              return (
+                <button key={p.bg} type="button" onClick={() => set({ bg: p.bg, card: "", text: "" })}
+                  className={`flex flex-col items-center gap-1.5 py-2 rounded-lg border text-[11px] transition ${on ? "border-[color:var(--cl-accent-bg)]" : "border-[color:var(--cl-line)] hover:bg-[color:var(--cl-sub)]"}`}>
+                  <span className="w-6 h-6 rounded-full border border-white/20" style={{ background: p.bg }} />
+                  {p.l}
+                </button>
+              );
+            })}
+          </div>
+
+          <div className="flex items-center justify-between">
+            <div className={lbl}>درجة تفتيح الخلفية</div>
+            <div className="mono text-[11px] text-[color:var(--cl-muted)] mb-2">{Math.round(bl)}%</div>
+          </div>
+          <input type="range" min="1" max="97" value={Math.round(bl)} onChange={(e) => set({ bg: hslToHex(bh, Math.min(bs, 30), +e.target.value), card: "", text: "" })} className="w-full mb-4 accent-[color:var(--cl-accent-bg)]" />
+
+          <div className={lbl}>الألوان (يدويًا)</div>
+          <div className="mb-4 divide-y divide-[color:var(--cl-sep)]">
+            {pick("الخلفية", t.bg, (v) => set({ bg: v }))}
+            {pick("الكروت والجداول", t.card || card, (v) => set({ card: v }), t.card ? () => set({ card: "" }) : null)}
+            {pick("لون النص", t.text || text, (v) => set({ text: v }), t.text ? () => set({ text: "" }) : null)}
+            {pick("لون التمييز (الأزرار)", t.accent, (v) => set({ accent: v }))}
+          </div>
+
+          <div className={lbl}>نوع الخط</div>
+          <select value={t.font} onChange={(e) => set({ font: e.target.value })} className="w-full px-3 py-2 rounded-lg border border-[color:var(--cl-line)] text-sm outline-none">
+            {Object.entries(THEME_FONTS).map(([k, v]) => <option key={k} value={k}>{v.label}</option>)}
+          </select>
+          <div className="mt-2 px-3 py-2 rounded-lg bg-[color:var(--cl-sub)] border border-[color:var(--cl-sep)] text-sm" style={{ fontFamily: `${f.css}, sans-serif` }}>
+            تجربة الخط — إجمالي المستخلصات 1,250,000 ج.م
+          </div>
+        </div>
+      )}
+    </>
   );
 }
 
@@ -526,7 +676,7 @@ function ContractingApp({ currentUsername, onLogout }) {
     pTreasuryEntries.reduce((sum, t) => sum + (t.type === "ايداع" ? t.amount : -t.amount), 0);
 
   return (
-    <div dir="rtl" style={{ fontFamily: "'IBM Plex Sans Arabic', 'Cairo', sans-serif", color: "var(--cl-text)" }} className="w-full min-h-screen flex flex-col" >
+    <div dir="rtl" style={{ fontFamily: "var(--cl-font)", color: "var(--cl-text)" }} className="w-full min-h-screen flex flex-col" >
       <style>{`
         @import url('https://fonts.googleapis.com/css2?family=IBM+Plex+Sans+Arabic:wght@400;500;600;700&family=IBM+Plex+Mono:wght@400;500;600&display=swap');
         :root {
@@ -536,6 +686,8 @@ function ContractingApp({ currentUsername, onLogout }) {
           --cl-text:#eeeeee; --cl-muted:#8b8b95; --cl-soft:#a3a3ad;
           --cl-ink:#2a2a31; --cl-ink-hover:#34343c;
           --cl-accent:#f0c85a; --cl-red:#ff6b6b; --cl-green:#5fd0a0;
+          --cl-side:#0a0a0c; --cl-accent-bg:#f0c85a; --cl-accent-hover:#e3b53f; --cl-accent-rgb:240 200 90; --cl-on-accent:#1a1405;
+          --cl-font:'IBM Plex Sans Arabic','Cairo',system-ui,sans-serif;
         }
         @media print {
           :root {
@@ -545,16 +697,17 @@ function ContractingApp({ currentUsername, onLogout }) {
             --cl-text:#1E2530; --cl-muted:#9A9483; --cl-soft:#6B7280;
             --cl-ink:#1E2530; --cl-ink-hover:#2b3543;
             --cl-accent:#E8672C; --cl-red:#C1453B; --cl-green:#3F7D63;
+            --cl-side:#14212C; --cl-accent-bg:#E8672C; --cl-accent-hover:#C8511E; --cl-accent-rgb:232 103 44; --cl-on-accent:#ffffff;
           }
         }
         body { background: var(--cl-bg); -webkit-font-smoothing: antialiased; text-rendering: optimizeLegibility; }
         .mono { font-family: 'IBM Plex Mono', monospace; font-variant-numeric: tabular-nums; }
         .tracking-wide:not(.mono):not([dir="ltr"]), .tracking-wider:not(.mono):not([dir="ltr"]) { letter-spacing: 0; }
-        :where(input:not([type=checkbox]):not([type=radio]), select, textarea) { background-color: var(--cl-input); color: var(--cl-text); }
+        :where(input:not([type=checkbox]):not([type=radio]):not([type=range]):not([type=color]), select, textarea) { background-color: var(--cl-input); color: var(--cl-text); }
         ::placeholder { color: var(--cl-muted); opacity: 1; }
-        select option { background: #111114; color: #eee; }
+        select option { background: var(--cl-card); color: var(--cl-text); }
         .blueprint-bg {
-          background-color: #0a0a0c;
+          background-color: var(--cl-side, #0a0a0c);
           background-image:
             linear-gradient(rgba(255,255,255,0.025) 1px, transparent 1px),
             linear-gradient(90deg, rgba(255,255,255,0.025) 1px, transparent 1px);
@@ -569,6 +722,7 @@ function ContractingApp({ currentUsername, onLogout }) {
         ::-webkit-scrollbar { width: 8px; height: 8px; }
         ::-webkit-scrollbar-thumb { background: #2a2a31; border-radius: 4px; }
       `}</style>
+      <ThemeSettings />
 
       {loading && (
         <div className="fixed inset-0 bg-[color:var(--cl-inset)] flex items-center justify-center z-50 gap-2 text-[color:var(--cl-text)]">
@@ -616,7 +770,7 @@ function ContractingApp({ currentUsername, onLogout }) {
                   key={p.id}
                   onClick={() => { setActiveProjectId(p.id); setView("project"); }}
                   className={`w-full text-right px-3 py-2 rounded-lg text-sm transition flex items-center justify-between gap-2 ${
-                    on ? "bg-[#f0c85a] text-[#1a1405] font-bold shadow-md shadow-[#f0c85a]/20" : "text-white/70 hover:bg-white/5 hover:text-white"
+                    on ? "bg-[color:var(--cl-accent-bg)] text-[color:var(--cl-on-accent)] font-bold shadow-md shadow-[color:rgb(var(--cl-accent-rgb)/0.2)]" : "text-white/70 hover:bg-white/5 hover:text-white"
                   }`}
                 >
                   <span className="flex items-center gap-2 min-w-0">
@@ -630,7 +784,7 @@ function ContractingApp({ currentUsername, onLogout }) {
           </div>
           <button
             onClick={() => setShowNewProject(true)}
-            className="w-full mt-2 px-3 py-2 rounded-lg text-xs font-semibold text-white/60 border border-dashed border-white/15 hover:border-[#f0c85a]/60 hover:text-[color:var(--cl-accent)] flex items-center justify-center gap-1 transition"
+            className="w-full mt-2 px-3 py-2 rounded-lg text-xs font-semibold text-white/60 border border-dashed border-white/15 hover:border-[color:rgb(var(--cl-accent-rgb)/0.6)] hover:text-[color:var(--cl-accent)] flex items-center justify-center gap-1 transition"
           >
             <Plus size={13} /> مشروع جديد
           </button>
@@ -922,7 +1076,7 @@ function ReportShell({ title, notice, s, children }) {
   const period = !s.from && !s.to ? "كل الفترات" : `${s.from || "البداية"}  ←  ${s.to || "اليوم"}`;
   return (
     <div id="report-print-area" dir="rtl" className="bg-[color:var(--cl-card)] rounded-xl border border-[color:var(--cl-line)] p-8 space-y-6">
-      <div className="flex items-center justify-between border-b-[3px] border-[#f0c85a] pb-4">
+      <div className="flex items-center justify-between border-b-[3px] border-[color:var(--cl-accent-bg)] pb-4">
         <div className="flex items-center gap-3">
           <CostLineMark size={40} />
           <div>
@@ -965,7 +1119,7 @@ function RptSection({ title, hint, children }) {
   return (
     <section className="space-y-2">
       <div>
-        <h3 className="font-bold text-[color:var(--cl-text)] text-sm border-r-4 border-[#f0c85a] pr-2">{title}</h3>
+        <h3 className="font-bold text-[color:var(--cl-text)] text-sm border-r-4 border-[color:var(--cl-accent-bg)] pr-2">{title}</h3>
         {hint && <p className="text-[11px] text-[color:var(--cl-muted)] mt-1 pr-3">{hint}</p>}
       </div>
       {children}
@@ -1542,7 +1696,7 @@ function ReportsCenter({ projects, workItems, costs, extracts, collections, trea
             <button onClick={() => setReportKey(null)} className="px-3 py-2 rounded-lg border border-[color:var(--cl-line)] bg-[color:var(--cl-card)] text-sm font-semibold text-[color:var(--cl-text)] hover:bg-[color:var(--cl-inset)] flex items-center gap-1.5 transition">
               <ChevronRight size={15} /> كل التقارير
             </button>
-            <button onClick={() => window.print()} className="px-3 py-2 rounded-lg bg-[#f0c85a] text-[#1a1405] text-sm font-semibold flex items-center gap-1.5 hover:bg-[#e3b53f] transition">
+            <button onClick={() => window.print()} className="px-3 py-2 rounded-lg bg-[color:var(--cl-accent-bg)] text-[color:var(--cl-on-accent)] text-sm font-semibold flex items-center gap-1.5 hover:bg-[color:var(--cl-accent-hover)] transition">
               <Printer size={15} /> طباعة / PDF
             </button>
           </div>
@@ -1577,8 +1731,8 @@ function ReportsCenter({ projects, workItems, costs, extracts, collections, trea
           {REPORT_LIST.map((r) => {
             const Icon = r.icon;
             return (
-              <button key={r.key} onClick={() => setReportKey(r.key)} className="text-right bg-[color:var(--cl-card)] rounded-xl border border-[color:var(--cl-line)] p-5 flex items-start gap-4 hover:border-[#f0c85a] hover:shadow-md transition">
-                <div className="w-11 h-11 rounded-xl bg-[#f0c85a]/10 flex items-center justify-center shrink-0"><Icon size={20} className="text-[color:var(--cl-accent)]" /></div>
+              <button key={r.key} onClick={() => setReportKey(r.key)} className="text-right bg-[color:var(--cl-card)] rounded-xl border border-[color:var(--cl-line)] p-5 flex items-start gap-4 hover:border-[color:var(--cl-accent-bg)] hover:shadow-md transition">
+                <div className="w-11 h-11 rounded-xl bg-[color:rgb(var(--cl-accent-rgb)/0.1)] flex items-center justify-center shrink-0"><Icon size={20} className="text-[color:var(--cl-accent)]" /></div>
                 <div className="min-w-0">
                   <div className="font-bold text-[color:var(--cl-text)]">{r.title}</div>
                   <div className="text-[12px] text-[color:var(--cl-muted)] mt-1 leading-relaxed">{r.desc}</div>
@@ -1604,8 +1758,8 @@ function ReportsCenter({ projects, workItems, costs, extracts, collections, trea
 // قراءة فقط من بيانات المشروع المحمّلة أصلًا — لا كتابة على القاعدة ولا تغيير في الـ Schema.
 
 const AN_COLORS = { budget: "#9AA3B2", actual: "#E8672C", forecast: "#D6A23C", good: "#3F7D63", bad: "#C1453B", extract: "#9AA3B2", collect: "#3F7D63" };
-const AN_TIP = { fontFamily: "IBM Plex Sans Arabic", fontSize: 12, borderRadius: 8, border: "1px solid #26262c", backgroundColor: "#111114", color: "#eee", direction: "rtl", textAlign: "right" };
-const AN_TICK = { fontSize: 11, fontFamily: "IBM Plex Sans Arabic", fill: "#8b8b95" };
+const AN_TIP = { fontFamily: "inherit", fontSize: 12, borderRadius: 8, border: "1px solid #26262c", backgroundColor: "#111114", color: "#eee", direction: "rtl", textAlign: "right" };
+const AN_TICK = { fontSize: 11, fontFamily: "inherit", fill: "#8b8b95" };
 const anCompact = (v) => {
   const a = Math.abs(v);
   if (a >= 1e6) return (v / 1e6).toFixed(a >= 1e7 ? 0 : 1) + "M";
@@ -1777,7 +1931,7 @@ function AnalyticsTab({ project, pWorkItems, pCosts, pExtracts, pCollections, pE
                   <XAxis type="number" reversed tick={AN_TICK} stroke="#9A9483" tickFormatter={anCompact} />
                   <YAxis type="category" dataKey="name" orientation="right" width={130} tick={AN_TICK} stroke="#9A9483" tickFormatter={(v) => anShort(v)} />
                   <Tooltip formatter={(v) => money(v)} contentStyle={AN_TIP} cursor={{ fill: "rgba(255,255,255,0.05)" }} />
-                  <Legend wrapperStyle={{ fontFamily: "IBM Plex Sans Arabic", fontSize: 12 }} />
+                  <Legend wrapperStyle={{ fontFamily: "inherit", fontSize: 12 }} />
                   <Bar dataKey="الميزانية" fill={AN_COLORS.budget} radius={3} />
                   <Bar dataKey="الفعلي" fill={AN_COLORS.actual} radius={3} />
                   <Bar dataKey="المتوقع" fill={AN_COLORS.forecast} radius={3}>
@@ -1891,7 +2045,7 @@ function AnalyticsTab({ project, pWorkItems, pCosts, pExtracts, pCollections, pE
                     <XAxis dataKey="label" reversed tick={AN_TICK} stroke="#9A9483" />
                     <YAxis orientation="right" tick={AN_TICK} stroke="#9A9483" tickFormatter={anCompact} />
                     <Tooltip formatter={(v) => money(v)} contentStyle={AN_TIP} cursor={{ fill: "rgba(255,255,255,0.05)" }} />
-                    <Legend wrapperStyle={{ fontFamily: "IBM Plex Sans Arabic", fontSize: 12 }} />
+                    <Legend wrapperStyle={{ fontFamily: "inherit", fontSize: 12 }} />
                     <Bar dataKey="التكاليف الفعلية" fill={AN_COLORS.actual} radius={[3, 3, 0, 0]} />
                     <Bar dataKey="المستخلصات" fill={AN_COLORS.extract} radius={[3, 3, 0, 0]} />
                     <Bar dataKey="التحصيلات" fill={AN_COLORS.collect} radius={[3, 3, 0, 0]} />
@@ -1902,7 +2056,7 @@ function AnalyticsTab({ project, pWorkItems, pCosts, pExtracts, pCollections, pE
                     <XAxis dataKey="label" reversed tick={AN_TICK} stroke="#9A9483" />
                     <YAxis orientation="right" tick={AN_TICK} stroke="#9A9483" tickFormatter={anCompact} />
                     <Tooltip formatter={(v) => money(v)} contentStyle={AN_TIP} />
-                    <Legend wrapperStyle={{ fontFamily: "IBM Plex Sans Arabic", fontSize: 12 }} />
+                    <Legend wrapperStyle={{ fontFamily: "inherit", fontSize: 12 }} />
                     <Line type="monotone" dataKey="التكاليف الفعلية" stroke={AN_COLORS.actual} strokeWidth={2.5} dot={{ r: 3 }} />
                     <Line type="monotone" dataKey="المستخلصات" stroke={AN_COLORS.extract} strokeWidth={2.5} dot={{ r: 3 }} />
                     <Line type="monotone" dataKey="التحصيلات" stroke={AN_COLORS.collect} strokeWidth={2.5} dot={{ r: 3 }} />
@@ -1942,7 +2096,7 @@ function AnalyticsTab({ project, pWorkItems, pCosts, pExtracts, pCollections, pE
                   <XAxis type="number" reversed tick={AN_TICK} stroke="#9A9483" tickFormatter={anCompact} />
                   <YAxis type="category" dataKey="name" orientation="right" width={130} tick={AN_TICK} stroke="#9A9483" tickFormatter={(v) => anShort(v)} />
                   <Tooltip formatter={(v) => money(v)} contentStyle={AN_TIP} cursor={{ fill: "rgba(255,255,255,0.05)" }} />
-                  <Legend wrapperStyle={{ fontFamily: "IBM Plex Sans Arabic", fontSize: 12 }} />
+                  <Legend wrapperStyle={{ fontFamily: "inherit", fontSize: 12 }} />
                   <Bar dataKey="تجاوز فعلي" stackId="over" fill={AN_COLORS.bad} />
                   <Bar dataKey="تجاوز متوقع إضافي" stackId="over" fill={AN_COLORS.forecast} />
                 </BarChart>
@@ -2036,8 +2190,8 @@ function AppFooter({ variant = "app" }) {
   const stamp = `${WD[now.getDay()]}, ${now.getDate()} ${MO[now.getMonth()]} ${now.getFullYear()}, ${p2(h12)}:${p2(now.getMinutes())}:${p2(now.getSeconds())} ${h24 < 12 ? "am" : "pm"}`;
 
   return (
-    <footer dir="ltr" className={`no-print w-full shrink-0${login ? "" : " blueprint-bg"} flex items-center justify-end gap-4 px-6 sticky bottom-0 z-40`} style={{ height: 48, backgroundColor: login ? "transparent" : "#0a0a0c", borderTop: login ? "1px solid #1a1a1f" : "1px solid rgba(255,255,255,0.10)", fontFamily: login ? "'IBM Plex Sans Arabic', system-ui, -apple-system, 'Segoe UI', sans-serif" : "'IBM Plex Sans Arabic', 'Cairo', sans-serif" }}>
-      <span className="mono text-[13px] font-semibold rounded-lg px-4 py-1 border" style={login ? { color: "#f0c85a", backgroundColor: "#111114", borderColor: "#26262c" } : { color: "#f0c85a", backgroundColor: "rgba(255,255,255,0.05)", borderColor: "rgba(255,255,255,0.12)" }}>{stamp}</span>
+    <footer dir="ltr" className={`no-print w-full shrink-0${login ? "" : " blueprint-bg"} flex items-center justify-end gap-4 px-6 sticky bottom-0 z-40`} style={{ height: 48, backgroundColor: login ? "transparent" : "var(--cl-side)", borderTop: login ? "1px solid #1a1a1f" : "1px solid rgba(255,255,255,0.10)", fontFamily: login ? "'IBM Plex Sans Arabic', system-ui, -apple-system, 'Segoe UI', sans-serif" : "'IBM Plex Sans Arabic', 'Cairo', sans-serif" }}>
+      <span className="mono text-[13px] font-semibold rounded-lg px-4 py-1 border" style={login ? { color: "#f0c85a", backgroundColor: "#111114", borderColor: "#26262c" } : { color: "var(--cl-accent-bg)", backgroundColor: "rgba(255,255,255,0.05)", borderColor: "rgba(255,255,255,0.12)" }}>{stamp}</span>
       <span className="text-[14px]" style={{ color: login ? "#8b8b95" : "rgba(255,255,255,0.45)" }}>{APP_VERSION}</span>
     </footer>
   );
@@ -2089,8 +2243,8 @@ function SidebarItem({ icon: Icon, label, active, onClick }) {
         active ? "bg-white/10 text-white font-bold" : "text-white/60 hover:bg-white/5 hover:text-white/95"
       }`}
     >
-      {active && <span className="absolute right-0 top-2 bottom-2 w-[3px] rounded-l bg-[#f0c85a]" />}
-      <span className={`w-7 h-7 rounded-md flex items-center justify-center shrink-0 transition ${active ? "bg-[#f0c85a] text-[#1a1405]" : "bg-white/5 text-white/60"}`}>
+      {active && <span className="absolute right-0 top-2 bottom-2 w-[3px] rounded-l bg-[color:var(--cl-accent-bg)]" />}
+      <span className={`w-7 h-7 rounded-md flex items-center justify-center shrink-0 transition ${active ? "bg-[color:var(--cl-accent-bg)] text-[color:var(--cl-on-accent)]" : "bg-white/5 text-white/60"}`}>
         <Icon size={15} />
       </span>
       <span className="truncate">{label}</span>
@@ -2196,16 +2350,16 @@ function BudgetActualForecast({ totals, pWorkItems, pCosts, pExpectedCosts }) {
         </div>
         <div>
           <div className="flex justify-between text-sm mb-1.5"><span className="font-semibold text-[color:var(--cl-text)]">الفعلي حتى الآن <span className="text-[11px] text-[color:var(--cl-muted)] font-normal">· {pct(actual)}</span></span><span className="mono font-bold text-[color:var(--cl-accent)]">{money(actual)}</span></div>
-          <div className="h-3 rounded-full bg-[color:var(--cl-chip)] overflow-hidden"><div className="h-full rounded-full bg-[#f0c85a]" style={{ width: w(actual) }} /></div>
+          <div className="h-3 rounded-full bg-[color:var(--cl-chip)] overflow-hidden"><div className="h-full rounded-full bg-[color:var(--cl-accent-bg)]" style={{ width: w(actual) }} /></div>
         </div>
         <div>
           <div className="flex justify-between text-sm mb-1.5"><span className="font-semibold text-[color:var(--cl-text)]">المتوقع عند الإنجاز <span className="text-[11px] text-[color:var(--cl-muted)] font-normal">· {pct(forecast)}</span></span><span className="mono font-bold" style={{ color: forecast > budget && budget > 0 ? "#ff6b6b" : "#eeeeee" }}>{money(forecast)}</span></div>
           <div className="h-3 rounded-full bg-[color:var(--cl-chip)] overflow-hidden flex" style={{ width: "100%" }}>
-            <div className="h-full bg-[#f0c85a]" style={{ width: w(actual) }} />
+            <div className="h-full bg-[color:var(--cl-accent-bg)]" style={{ width: w(actual) }} />
             <div className="h-full bg-[#D6A23C]" style={{ width: w(expected) }} />
           </div>
           <div className="flex gap-4 mt-1.5 text-[11px] text-[color:var(--cl-muted)]">
-            <span className="flex items-center gap-1"><span className="w-2 h-2 rounded-sm bg-[#f0c85a]" /> فعلي</span>
+            <span className="flex items-center gap-1"><span className="w-2 h-2 rounded-sm bg-[color:var(--cl-accent-bg)]" /> فعلي</span>
             <span className="flex items-center gap-1"><span className="w-2 h-2 rounded-sm bg-[#D6A23C]" /> متوقع مستقبلي ({money(expected)})</span>
           </div>
         </div>
@@ -2288,7 +2442,7 @@ function CostDistribution({ pCosts }) {
               <Pie data={pie} dataKey="value" nameKey="name" innerRadius={58} outerRadius={88} paddingAngle={2} stroke="none">
                 {pie.map((d) => <Cell key={d.key} fill={d.color} />)}
               </Pie>
-              <Tooltip formatter={(v) => money(v)} contentStyle={{ fontFamily: "IBM Plex Sans Arabic", fontSize: 12, borderRadius: 8, border: "1px solid #26262c", backgroundColor: "#111114", color: "#eee" }} />
+              <Tooltip formatter={(v) => money(v)} contentStyle={{ fontFamily: "inherit", fontSize: 12, borderRadius: 8, border: "1px solid #26262c", backgroundColor: "#111114", color: "#eee" }} />
             </RePieChart>
           </ResponsiveContainer>
           <div className="absolute inset-0 flex flex-col items-center justify-center pointer-events-none">
@@ -2394,9 +2548,9 @@ function Dashboard({ contractValue, treasuryBalance, totals, pWorkItems, pCosts,
           <ResponsiveContainer>
             <BarChart data={chartData} barGap={4}>
               <CartesianGrid strokeDasharray="3 3" stroke="#26262c" />
-              <XAxis dataKey="name" tick={{ fontSize: 11, fontFamily: "IBM Plex Sans Arabic" }} stroke="#9A9483" />
+              <XAxis dataKey="name" tick={{ fontSize: 11, fontFamily: "inherit" }} stroke="#9A9483" />
               <YAxis tick={{ fontSize: 10 }} stroke="#9A9483" tickFormatter={(v) => (v / 1000) + "k"} />
-              <Tooltip formatter={(v) => money(v)} contentStyle={{ fontFamily: "IBM Plex Sans Arabic", fontSize: 12, borderRadius: 8, border: "1px solid #26262c", backgroundColor: "#111114", color: "#eee" }} />
+              <Tooltip formatter={(v) => money(v)} contentStyle={{ fontFamily: "inherit", fontSize: 12, borderRadius: 8, border: "1px solid #26262c", backgroundColor: "#111114", color: "#eee" }} />
               <Bar dataKey="الميزانية" fill="#9AA3B2" radius={[4, 4, 0, 0]} />
               <Bar dataKey="الفعلي" radius={[4, 4, 0, 0]}>
                 {chartData.map((d, i) => (
@@ -2421,7 +2575,7 @@ function Dashboard({ contractValue, treasuryBalance, totals, pWorkItems, pCosts,
 
         {open && (
           <div className="bg-[color:var(--cl-sub)] rounded-lg border border-[color:var(--cl-line)] p-4 grid grid-cols-4 gap-3 mb-4">
-            {editId && <div className="col-span-4 text-xs font-semibold text-[color:var(--cl-accent)] bg-[#f0c85a]/10 rounded-md px-3 py-1.5">جاري تعديل مصروف موجود</div>}
+            {editId && <div className="col-span-4 text-xs font-semibold text-[color:var(--cl-accent)] bg-[color:rgb(var(--cl-accent-rgb)/0.1)] rounded-md px-3 py-1.5">جاري تعديل مصروف موجود</div>}
             <div className="col-span-2">
               <Field label="الوصف" value={form.desc} onChange={(v) => setForm((f) => ({ ...f, desc: v }))} placeholder="مثال: باقي أعمال الدهانات" />
             </div>
@@ -2438,7 +2592,7 @@ function Dashboard({ contractValue, treasuryBalance, totals, pWorkItems, pCosts,
             </div>
             <div className="col-span-4 flex justify-end gap-2">
               {editId && <button onClick={cancelForm} className="px-4 py-2 rounded-lg bg-[color:var(--cl-line)] text-[color:var(--cl-text)] text-sm font-semibold hover:bg-[color:var(--cl-hover)] transition">إلغاء</button>}
-              <button onClick={submit} className="px-4 py-2 rounded-lg bg-[#f0c85a] text-[#1a1405] text-sm font-semibold hover:bg-[#e3b53f] transition">{editId ? "حفظ التعديل" : "حفظ"}</button>
+              <button onClick={submit} className="px-4 py-2 rounded-lg bg-[color:var(--cl-accent-bg)] text-[color:var(--cl-on-accent)] text-sm font-semibold hover:bg-[color:var(--cl-accent-hover)] transition">{editId ? "حفظ التعديل" : "حفظ"}</button>
             </div>
           </div>
         )}
@@ -2548,7 +2702,7 @@ function WorkItemsTab({ pWorkItems, pCosts, activeProjectId, onAddWorkItem, onUp
             <Field label="اسم / كود بند العمل" value={form.name} onChange={(v) => setForm({ name: v })} placeholder="مثال: أعمال الحفر والردم" />
           </div>
           <div className="flex justify-end mt-3">
-            <button onClick={submit} className="px-4 py-2 rounded-lg bg-[#f0c85a] text-[#1a1405] text-sm font-semibold hover:bg-[#e3b53f] transition">حفظ البند</button>
+            <button onClick={submit} className="px-4 py-2 rounded-lg bg-[color:var(--cl-accent-bg)] text-[color:var(--cl-on-accent)] text-sm font-semibold hover:bg-[color:var(--cl-accent-hover)] transition">حفظ البند</button>
           </div>
         </div>
       )}
@@ -2570,7 +2724,7 @@ function WorkItemsTab({ pWorkItems, pCosts, activeProjectId, onAddWorkItem, onUp
                 return (
                   <tr key={w.id} className="bg-[color:var(--cl-sub)]">
                     <td className="py-2 px-2">
-                      <input value={editForm.name} onChange={(e) => setEditForm({ name: e.target.value })} className="w-full border border-[color:var(--cl-line)] rounded-md px-2 py-1.5 text-sm outline-none focus:border-[#f0c85a]" />
+                      <input value={editForm.name} onChange={(e) => setEditForm({ name: e.target.value })} className="w-full border border-[color:var(--cl-line)] rounded-md px-2 py-1.5 text-sm outline-none focus:border-[color:var(--cl-accent-bg)]" />
                     </td>
                     <td className="py-3 px-4 mono text-[color:var(--cl-muted)]">{money(actual)}</td>
                     <td className="py-2 px-2">
@@ -2919,7 +3073,7 @@ function CostsTab({ pCosts, pWorkItems, activeProjectId, onAddCost, onAddCostsBu
       {open && (
         <div className="bg-[color:var(--cl-card)] rounded-xl border border-[color:var(--cl-line)] p-4 grid grid-cols-3 gap-3">
           {editId && (
-            <div className="col-span-3 text-xs font-semibold text-[color:var(--cl-accent)] bg-[#f0c85a]/10 rounded-md px-3 py-1.5">جاري تعديل تكلفة موجودة</div>
+            <div className="col-span-3 text-xs font-semibold text-[color:var(--cl-accent)] bg-[color:rgb(var(--cl-accent-rgb)/0.1)] rounded-md px-3 py-1.5">جاري تعديل تكلفة موجودة</div>
           )}
           <SelectField label="نوع التكلفة" value={form.type} onChange={(v) => setForm((f) => ({ ...f, type: v }))} options={COST_TYPES.map((t) => ({ value: t.key, label: t.label }))} />
           <SelectField
@@ -2959,7 +3113,7 @@ function CostsTab({ pCosts, pWorkItems, activeProjectId, onAddCost, onAddCostsBu
           <Field label="سعر الوحدة / القيمة" value={form.price} onChange={(v) => setForm((f) => ({ ...f, price: v }))} type="number" />
           <div className="col-span-3 flex justify-end gap-2">
             {editId && <button onClick={cancelForm} className="px-4 py-2 rounded-lg bg-[color:var(--cl-line)] text-[color:var(--cl-text)] text-sm font-semibold hover:bg-[color:var(--cl-hover)] transition">إلغاء</button>}
-            <button onClick={submit} className="px-4 py-2 rounded-lg bg-[#f0c85a] text-[#1a1405] text-sm font-semibold hover:bg-[#e3b53f] transition">{editId ? "حفظ التعديل" : "حفظ التكلفة"}</button>
+            <button onClick={submit} className="px-4 py-2 rounded-lg bg-[color:var(--cl-accent-bg)] text-[color:var(--cl-on-accent)] text-sm font-semibold hover:bg-[color:var(--cl-accent-hover)] transition">{editId ? "حفظ التعديل" : "حفظ التكلفة"}</button>
           </div>
         </div>
       )}
@@ -3272,7 +3426,7 @@ function ExtractsTab({ pExtracts, collections, onAddExtract, onAddCollection, on
       {open && (
         <div className="bg-[color:var(--cl-card)] rounded-xl border border-[color:var(--cl-line)] p-4 grid grid-cols-4 gap-3">
           {editId && (
-            <div className="col-span-4 text-xs font-semibold text-[color:var(--cl-accent)] bg-[#f0c85a]/10 rounded-md px-3 py-1.5">جاري تعديل مستخلص موجود</div>
+            <div className="col-span-4 text-xs font-semibold text-[color:var(--cl-accent)] bg-[color:rgb(var(--cl-accent-rgb)/0.1)] rounded-md px-3 py-1.5">جاري تعديل مستخلص موجود</div>
           )}
           <Field label="رقم المستخلص" value={form.number} onChange={(v) => setForm((f) => ({ ...f, number: v }))} type="number" />
           <Field label="التاريخ" value={form.date} onChange={(v) => setForm((f) => ({ ...f, date: v }))} type="date" />
@@ -3280,7 +3434,7 @@ function ExtractsTab({ pExtracts, collections, onAddExtract, onAddCollection, on
           <Field label="قيمة المستخلص" value={form.amount} onChange={(v) => setForm((f) => ({ ...f, amount: v }))} type="number" />
           <div className="col-span-4 flex justify-end gap-2">
             {editId && <button onClick={cancelForm} className="px-4 py-2 rounded-lg bg-[color:var(--cl-line)] text-[color:var(--cl-text)] text-sm font-semibold hover:bg-[color:var(--cl-hover)] transition">إلغاء</button>}
-            <button onClick={submit} className="px-4 py-2 rounded-lg bg-[#f0c85a] text-[#1a1405] text-sm font-semibold hover:bg-[#e3b53f] transition">{editId ? "حفظ التعديل" : "حفظ المستخلص"}</button>
+            <button onClick={submit} className="px-4 py-2 rounded-lg bg-[color:var(--cl-accent-bg)] text-[color:var(--cl-on-accent)] text-sm font-semibold hover:bg-[color:var(--cl-accent-hover)] transition">{editId ? "حفظ التعديل" : "حفظ المستخلص"}</button>
           </div>
         </div>
       )}
@@ -3298,7 +3452,7 @@ function ExtractsTab({ pExtracts, collections, onAddExtract, onAddCollection, on
             <div key={e.id} className="bg-[color:var(--cl-card)] rounded-xl border border-[color:var(--cl-line)] overflow-hidden group">
               <div className="w-full flex items-center justify-between px-5 py-4 hover:bg-[color:var(--cl-sub)] transition">
                 <button onClick={() => setExpanded(isOpen ? null : e.id)} className="flex items-center gap-4 flex-1 text-right">
-                  <div className="w-10 h-10 rounded-lg bg-[#f0c85a]/10 flex items-center justify-center text-[color:var(--cl-accent)] font-extrabold mono text-sm">#{e.number}</div>
+                  <div className="w-10 h-10 rounded-lg bg-[color:rgb(var(--cl-accent-rgb)/0.1)] flex items-center justify-center text-[color:var(--cl-accent)] font-extrabold mono text-sm">#{e.number}</div>
                   <div className="text-right">
                     <div className="font-bold text-[color:var(--cl-text)]">مستخلص رقم {e.number}</div>
                     <div className="text-[11px] text-[color:var(--cl-muted)] mono">{e.date} · نسبة إنجاز {e.percentage}%</div>
@@ -3526,7 +3680,7 @@ function TreasuryTab({ pTreasuryEntries, openingBalance, activeProjectId, onAddE
                 type="number"
                 value={openingInput}
                 onChange={(e) => setOpeningInput(e.target.value)}
-                className="border border-[color:var(--cl-line)] rounded-md px-2 py-1.5 text-sm outline-none focus:border-[#f0c85a] w-40 mono"
+                className="border border-[color:var(--cl-line)] rounded-md px-2 py-1.5 text-sm outline-none focus:border-[color:var(--cl-accent-bg)] w-40 mono"
               />
               <button onClick={saveOpening} className="px-3 py-1.5 rounded-md bg-[#3F7D63] text-white text-xs font-semibold hover:bg-[#356A54] transition">حفظ</button>
               <button onClick={() => { setEditingOpening(false); setOpeningInput(String(openingBalance || 0)); }} className="px-3 py-1.5 rounded-md bg-[color:var(--cl-line)] text-[color:var(--cl-text)] text-xs font-semibold hover:bg-[color:var(--cl-hover)] transition">إلغاء</button>
@@ -3547,7 +3701,7 @@ function TreasuryTab({ pTreasuryEntries, openingBalance, activeProjectId, onAddE
       {open && (
         <div className="bg-[color:var(--cl-card)] rounded-xl border border-[color:var(--cl-line)] p-4 grid grid-cols-4 gap-3">
           {editId && (
-            <div className="col-span-4 text-xs font-semibold text-[color:var(--cl-accent)] bg-[#f0c85a]/10 rounded-md px-3 py-1.5">جاري تعديل حركة موجودة</div>
+            <div className="col-span-4 text-xs font-semibold text-[color:var(--cl-accent)] bg-[color:rgb(var(--cl-accent-rgb)/0.1)] rounded-md px-3 py-1.5">جاري تعديل حركة موجودة</div>
           )}
           <Field label="التاريخ" value={form.date} onChange={(v) => setForm((f) => ({ ...f, date: v }))} type="date" />
           <SelectField label="نوع الحركة" value={form.type} onChange={(v) => setForm((f) => ({ ...f, type: v }))} options={[{ value: "ايداع", label: "إيداع" }, { value: "صرف", label: "صرف" }]} />
@@ -3555,7 +3709,7 @@ function TreasuryTab({ pTreasuryEntries, openingBalance, activeProjectId, onAddE
           <Field label="ملاحظة (اختياري)" value={form.note} onChange={(v) => setForm((f) => ({ ...f, note: v }))} placeholder="مثال: تحويل من الحساب الرئيسي" />
           <div className="col-span-4 flex justify-end gap-2">
             {editId && <button onClick={cancelForm} className="px-4 py-2 rounded-lg bg-[color:var(--cl-line)] text-[color:var(--cl-text)] text-sm font-semibold hover:bg-[color:var(--cl-hover)] transition">إلغاء</button>}
-            <button onClick={submit} className="px-4 py-2 rounded-lg bg-[#f0c85a] text-[#1a1405] text-sm font-semibold hover:bg-[#e3b53f] transition">{editId ? "حفظ التعديل" : "حفظ الحركة"}</button>
+            <button onClick={submit} className="px-4 py-2 rounded-lg bg-[color:var(--cl-accent-bg)] text-[color:var(--cl-on-accent)] text-sm font-semibold hover:bg-[color:var(--cl-accent-hover)] transition">{editId ? "حفظ التعديل" : "حفظ الحركة"}</button>
           </div>
         </div>
       )}
@@ -3709,7 +3863,7 @@ function FinanceAccountsModule({ financePersons, financeTransactions, onAddPerso
           <Field label="الاسم" value={newPersonName} onChange={setNewPersonName} placeholder="اسم الشخص أو الجهة" />
           <Field label="ملاحظة (اختياري)" value={newPersonNote} onChange={setNewPersonNote} placeholder="مثال: صديق، مصدر تمويل خارجي" />
           <div className="flex items-end">
-            <button onClick={addPerson} className="px-4 py-2 rounded-lg bg-[#f0c85a] text-[#1a1405] text-sm font-semibold hover:bg-[#e3b53f] transition">حفظ</button>
+            <button onClick={addPerson} className="px-4 py-2 rounded-lg bg-[color:var(--cl-accent-bg)] text-[color:var(--cl-on-accent)] text-sm font-semibold hover:bg-[color:var(--cl-accent-hover)] transition">حفظ</button>
           </div>
         </div>
       )}
@@ -3818,7 +3972,7 @@ function PersonLedger({ person, transactions, onBack, onAddTransaction, onUpdate
       {open && (
         <div className="bg-[color:var(--cl-card)] rounded-xl border border-[color:var(--cl-line)] p-4 grid grid-cols-4 gap-3">
           {editId && (
-            <div className="col-span-4 text-xs font-semibold text-[color:var(--cl-accent)] bg-[#f0c85a]/10 rounded-md px-3 py-1.5">جاري تعديل حركة موجودة</div>
+            <div className="col-span-4 text-xs font-semibold text-[color:var(--cl-accent)] bg-[color:rgb(var(--cl-accent-rgb)/0.1)] rounded-md px-3 py-1.5">جاري تعديل حركة موجودة</div>
           )}
           <Field label="التاريخ" value={form.date} onChange={(v) => setForm((f) => ({ ...f, date: v }))} type="date" />
           <SelectField label="نوع الحركة" value={form.type} onChange={(v) => setForm((f) => ({ ...f, type: v }))} options={FINANCE_TX_TYPES.map((t) => ({ value: t.key, label: t.key }))} />
@@ -3826,7 +3980,7 @@ function PersonLedger({ person, transactions, onBack, onAddTransaction, onUpdate
           <Field label="البيان (اختياري)" value={form.note} onChange={(v) => setForm((f) => ({ ...f, note: v }))} placeholder="وصف الحركة" />
           <div className="col-span-4 flex justify-end gap-2">
             {editId && <button onClick={cancelForm} className="px-4 py-2 rounded-lg bg-[color:var(--cl-line)] text-[color:var(--cl-text)] text-sm font-semibold hover:bg-[color:var(--cl-hover)] transition">إلغاء</button>}
-            <button onClick={submit} className="px-4 py-2 rounded-lg bg-[#f0c85a] text-[#1a1405] text-sm font-semibold hover:bg-[#e3b53f] transition">{editId ? "حفظ التعديل" : "حفظ الحركة"}</button>
+            <button onClick={submit} className="px-4 py-2 rounded-lg bg-[color:var(--cl-accent-bg)] text-[color:var(--cl-on-accent)] text-sm font-semibold hover:bg-[color:var(--cl-accent-hover)] transition">{editId ? "حفظ التعديل" : "حفظ الحركة"}</button>
           </div>
         </div>
       )}
@@ -3966,9 +4120,9 @@ function CustodyTab({
               value={newCategory}
               onChange={(e) => setNewCategory(e.target.value)}
               placeholder="اسم تصنيف جديد، مثال: مصروفات موقع"
-              className="flex-1 border border-[color:var(--cl-line)] rounded-lg px-3 py-2 text-sm outline-none focus:border-[#f0c85a] transition"
+              className="flex-1 border border-[color:var(--cl-line)] rounded-lg px-3 py-2 text-sm outline-none focus:border-[color:var(--cl-accent-bg)] transition"
             />
-            <button onClick={addCategory} className="px-4 py-2 rounded-lg bg-[#f0c85a] text-[#1a1405] text-sm font-semibold hover:bg-[#e3b53f] transition">إضافة</button>
+            <button onClick={addCategory} className="px-4 py-2 rounded-lg bg-[color:var(--cl-accent-bg)] text-[color:var(--cl-on-accent)] text-sm font-semibold hover:bg-[color:var(--cl-accent-hover)] transition">إضافة</button>
           </div>
         </div>
       )}
@@ -3981,7 +4135,7 @@ function CustodyTab({
           <Field label="ملاحظات (اختياري)" value={form.notes} onChange={(v) => setForm((f) => ({ ...f, notes: v }))} placeholder="سبب العهدة" />
           <div className="col-span-4 flex justify-end gap-2">
             <button onClick={() => { resetForm(); setOpen(false); }} className="px-4 py-2 rounded-lg bg-[color:var(--cl-line)] text-[color:var(--cl-text)] text-sm font-semibold hover:bg-[color:var(--cl-hover)] transition">إلغاء</button>
-            <button onClick={submitCustody} className="px-4 py-2 rounded-lg bg-[#f0c85a] text-[#1a1405] text-sm font-semibold hover:bg-[#e3b53f] transition">حفظ العهدة</button>
+            <button onClick={submitCustody} className="px-4 py-2 rounded-lg bg-[color:var(--cl-accent-bg)] text-[color:var(--cl-on-accent)] text-sm font-semibold hover:bg-[color:var(--cl-accent-hover)] transition">حفظ العهدة</button>
           </div>
         </div>
       )}
@@ -4145,7 +4299,7 @@ function CustodySettlement({ custody, lines, pWorkItems, custodyCategories, acti
       {open && !isLocked && (
         <div className="bg-[color:var(--cl-card)] rounded-xl border border-[color:var(--cl-line)] p-4 grid grid-cols-3 gap-3">
           {editId && (
-            <div className="col-span-3 text-xs font-semibold text-[color:var(--cl-accent)] bg-[#f0c85a]/10 rounded-md px-3 py-1.5">جاري تعديل بند موجود</div>
+            <div className="col-span-3 text-xs font-semibold text-[color:var(--cl-accent)] bg-[color:rgb(var(--cl-accent-rgb)/0.1)] rounded-md px-3 py-1.5">جاري تعديل بند موجود</div>
           )}
           <SelectField
             label="بند العمل (اختياري)"
@@ -4173,7 +4327,7 @@ function CustodySettlement({ custody, lines, pWorkItems, custodyCategories, acti
           <Field label="المبلغ" value={form.amount} onChange={(v) => setForm((f) => ({ ...f, amount: v }))} type="number" />
           <div className="col-span-3 flex justify-end gap-2">
             {editId && <button onClick={cancelForm} className="px-4 py-2 rounded-lg bg-[color:var(--cl-line)] text-[color:var(--cl-text)] text-sm font-semibold hover:bg-[color:var(--cl-hover)] transition">إلغاء</button>}
-            <button onClick={submitLine} className="px-4 py-2 rounded-lg bg-[#f0c85a] text-[#1a1405] text-sm font-semibold hover:bg-[#e3b53f] transition">{editId ? "حفظ التعديل" : "إضافة البند"}</button>
+            <button onClick={submitLine} className="px-4 py-2 rounded-lg bg-[color:var(--cl-accent-bg)] text-[color:var(--cl-on-accent)] text-sm font-semibold hover:bg-[color:var(--cl-accent-hover)] transition">{editId ? "حفظ التعديل" : "إضافة البند"}</button>
           </div>
         </div>
       )}
@@ -4236,7 +4390,7 @@ function NewProjectModal({ onClose, onCreate }) {
 
   return (
     <div className="fixed inset-0 bg-black/40 flex items-center justify-center z-50" dir="rtl">
-      <div className="bg-[color:var(--cl-card)] rounded-xl w-full max-w-md p-6 relative" style={{ fontFamily: "'IBM Plex Sans Arabic', 'Cairo', sans-serif" }}>
+      <div className="bg-[color:var(--cl-card)] rounded-xl w-full max-w-md p-6 relative" style={{ fontFamily: "var(--cl-font)" }}>
         <button onClick={onClose} className="absolute left-4 top-4 text-[color:var(--cl-muted)] hover:text-[color:var(--cl-text)]"><X size={18} /></button>
         <h3 className="font-bold text-lg text-[color:var(--cl-text)] mb-4">مشروع جديد</h3>
         <div className="space-y-3">
@@ -4245,7 +4399,7 @@ function NewProjectModal({ onClose, onCreate }) {
           <Field label="الموقع" value={form.location} onChange={(v) => setForm((f) => ({ ...f, location: v }))} />
           <Field label="قيمة العقد" value={form.budget} onChange={(v) => setForm((f) => ({ ...f, budget: v }))} type="number" />
         </div>
-        <button onClick={submit} className="w-full mt-5 py-2.5 rounded-lg bg-[#f0c85a] text-[#1a1405] font-semibold hover:bg-[#e3b53f] transition">إنشاء المشروع</button>
+        <button onClick={submit} className="w-full mt-5 py-2.5 rounded-lg bg-[color:var(--cl-accent-bg)] text-[color:var(--cl-on-accent)] font-semibold hover:bg-[color:var(--cl-accent-hover)] transition">إنشاء المشروع</button>
       </div>
     </div>
   );
@@ -4262,7 +4416,7 @@ function Field({ label, value, onChange, type = "text", placeholder = "", small 
         value={value}
         placeholder={placeholder}
         onChange={(e) => onChange(e.target.value)}
-        className={`w-full border border-[color:var(--cl-line)] rounded-lg px-3 ${small ? "py-1.5 text-xs" : "py-2 text-sm"} outline-none focus:border-[#f0c85a] transition bg-[color:var(--cl-card)]`}
+        className={`w-full border border-[color:var(--cl-line)] rounded-lg px-3 ${small ? "py-1.5 text-xs" : "py-2 text-sm"} outline-none focus:border-[color:var(--cl-accent-bg)] transition bg-[color:var(--cl-card)]`}
       />
     </div>
   );
@@ -4275,7 +4429,7 @@ function SelectField({ label, value, onChange, options, small }) {
       <select
         value={value}
         onChange={(e) => onChange(e.target.value)}
-        className={`w-full border border-[color:var(--cl-line)] rounded-lg px-3 ${small ? "py-1.5 text-xs" : "py-2 text-sm"} outline-none focus:border-[#f0c85a] transition bg-[color:var(--cl-card)]`}
+        className={`w-full border border-[color:var(--cl-line)] rounded-lg px-3 ${small ? "py-1.5 text-xs" : "py-2 text-sm"} outline-none focus:border-[color:var(--cl-accent-bg)] transition bg-[color:var(--cl-card)]`}
       >
         {options.map((o) => (
           <option key={o.value} value={o.value}>{o.label}</option>
@@ -4417,7 +4571,7 @@ function UsersManagementModule({ currentUsername }) {
           <Field label="كلمة المرور" value={newPassword} onChange={setNewPassword} type="password" />
           <div className="col-span-2 flex justify-end gap-2">
             <button onClick={() => setShowAdd(false)} className="px-4 py-2 rounded-lg bg-[color:var(--cl-line)] text-[color:var(--cl-text)] text-sm font-semibold hover:bg-[color:var(--cl-hover)] transition">إلغاء</button>
-            <button onClick={addUser} className="px-4 py-2 rounded-lg bg-[#f0c85a] text-[#1a1405] text-sm font-semibold hover:bg-[#e3b53f] transition">حفظ</button>
+            <button onClick={addUser} className="px-4 py-2 rounded-lg bg-[color:var(--cl-accent-bg)] text-[color:var(--cl-on-accent)] text-sm font-semibold hover:bg-[color:var(--cl-accent-hover)] transition">حفظ</button>
           </div>
         </div>
       )}
@@ -4450,7 +4604,7 @@ function UsersManagementModule({ currentUsername }) {
                         <Field label="كلمة مرور جديدة (اختياري)" value={editNewPassword} onChange={setEditNewPassword} type="password" placeholder="سيبها فاضية لو مش عايز تغيّرها" />
                         <div className="col-span-2 flex justify-end gap-2">
                           <button onClick={() => setEditUsername(null)} className="px-4 py-2 rounded-lg bg-[color:var(--cl-line)] text-[color:var(--cl-text)] text-sm font-semibold hover:bg-[color:var(--cl-hover)] transition">إلغاء</button>
-                          <button onClick={saveEdit} className="px-4 py-2 rounded-lg bg-[#f0c85a] text-[#1a1405] text-sm font-semibold hover:bg-[#e3b53f] transition">حفظ التعديل</button>
+                          <button onClick={saveEdit} className="px-4 py-2 rounded-lg bg-[color:var(--cl-accent-bg)] text-[color:var(--cl-on-accent)] text-sm font-semibold hover:bg-[color:var(--cl-accent-hover)] transition">حفظ التعديل</button>
                         </div>
                       </div>
                     </td>
