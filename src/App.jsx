@@ -886,7 +886,7 @@ function ContractingApp({ currentUsername, onLogout }) {
           </div>
         ) : (
           <>
-        <header className="px-8 pt-7 pb-5 border-b border-[color:var(--cl-line)] bg-[#050505]/80 sticky top-0 backdrop-blur z-10">
+        <header className="px-8 pt-7 pb-5 border-b border-[color:var(--cl-line)] bg-[color:color-mix(in_srgb,var(--cl-bg)_80%,transparent)] sticky top-0 backdrop-blur z-10">
           <div className="flex items-start justify-between">
             <div>
               <div className="text-[11px] mono text-[color:var(--cl-muted)] mb-1">
