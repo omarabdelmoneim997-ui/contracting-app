@@ -4478,9 +4478,51 @@ const stToday = () => new Date().toISOString().slice(0, 10);
 const stEsc = (v) => String(v ?? "").replace(/[&<>"']/g, (c) => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;", "'": "&#39;" }[c]));
 const stMoney = (n) => stRound(n).toLocaleString("en-US", { minimumFractionDigits: 0, maximumFractionDigits: 2 });
 
+// نسبة الإنجاز: سابقة (ثابتة من المستخلص اللي قبله) + حالية (بتتكتب) = إجمالي التنفيذ (تلقائي)
+// الحالية لو سابتها فاضية = المتبقي لحد 100٪ (يعني البند الجديد بيتحسب 100٪)
+// مستخلصات قديمة اتحفظت قبل الميزة دي: بتتقري بنفس قيمتها القديمة (pct أو 100٪) بدون سابق
+const stNorm = (s) => String(s || "").trim().replace(/\s+/g, " ");
+const stQ3 = (n) => Math.round((Number(n) || 0) * 1000) / 1000;
+const stLegacyPrev = (i) => Number(i.prevPct) || 0;
+const stLegacyCur = (i) => {
+  const v = i.curPct !== undefined ? i.curPct : i.pct;
+  return v === "" || v == null ? Math.max(0, stRound(100 - stLegacyPrev(i))) : Number(v) || 0;
+};
+// الكميات هي الأساس: إجمالي الكمية المنفذة (تراكمي، بتكتبه) − الكمية السابقة (ثابتة) = الكمية الحالية
+// مستخلصات اتحفظت بالنسب (قبل كده) بتتحول لكميات = كمية البند × النسبة
+function stQtys(i) {
+  const q = Number(i.qty) || 0;
+  if (i.totalQty !== undefined) {
+    const p = Number(i.prevQty) || 0;
+    const t = Number(i.totalQty) || 0;
+    return { prev: p, cur: stQ3(t - p), total: t };
+  }
+  const prev = stQ3((q * stLegacyPrev(i)) / 100);
+  const cur = stQ3((q * stLegacyCur(i)) / 100);
+  return { prev, cur, total: stQ3(prev + cur) };
+}
+const stPrevQty = (i) => stQtys(i).prev;
+const stCurQty = (i) => stQtys(i).cur;
+const stTotalQty = (i) => stQtys(i).total;
+// النسب بتتحسب تلقائي من الكميات (٪ من كمية البند)
+const stPctOf = (n, i) => { const q = Number(i.qty) || 0; return q ? stRound((n / q) * 100) : 0; };
+const stPrev = (i) => stPctOf(stPrevQty(i), i);
+const stCur = (i) => stPctOf(stCurQty(i), i);
+const stTotalPct = (i) => stPctOf(stTotalQty(i), i);
+const stPrice = (i) => Number(i.price) || 0;
+const stFull = (i) => (Number(i.qty) || 0) * stPrice(i);
+const stLine = (i) => stRound(stCurQty(i) * stPrice(i)); // قيمة الحالي = الكمية الحالية × السعر
+const stTotalValue = (i) => stRound(stTotalQty(i) * stPrice(i)); // إجمالي القيمة التراكمية
+const stQty = (n) => stQ3(n).toLocaleString("en-US", { maximumFractionDigits: 3 });
+
 // الحساب: كل صف يتحسب على إجمالي البنود (subtotal) أو على الإجمالي بعد الصفوف اللي قبله (running)
 function calcStatement(items, adjustments) {
-  const subtotal = stRound(items.reduce((s, i) => s + (Number(i.qty) || 0) * (Number(i.price) || 0), 0));
+  const full = stRound(items.reduce((s, i) => s + stFull(i), 0));
+  const subtotal = stRound(items.reduce((s, i) => s + stLine(i), 0));
+  const prevValue = items.reduce((s, i) => s + stPrevQty(i) * stPrice(i), 0);
+  const progress = full ? (subtotal / full) * 100 : 0; // الحالي
+  const prevProgress = full ? (prevValue / full) * 100 : 0; // السابق
+  const totalProgress = prevProgress + progress; // إجمالي نسبة التنفيذ (مرجّحة بالقيمة)
   let running = subtotal;
   const adjAmounts = adjustments.map((a) => {
     const base = a.base === "running" ? running : subtotal;
@@ -4488,22 +4530,51 @@ function calcStatement(items, adjustments) {
     running = stRound(running + (a.effect === "add" ? amount : -amount));
     return amount;
   });
-  return { subtotal, adjAmounts, net: running };
+  return { subtotal, adjAmounts, net: running, full, progress, prevProgress, totalProgress, prevValue: stRound(prevValue), totalValue: stRound(prevValue + subtotal) };
 }
 
-function printStatement(s, cfg, projectName) {
+// الحساب مع الطرف لحد مستخلص معين:
+// prevNet  = صافي المستخلصات السابقة (المعتمدة فقط)
+// prevPaid = اللي اتصرف للطرف قبل المستخلص ده (دفعات على مستخلصات سابقة + دفعات عامة بتاريخ لحد تاريخه)
+// paidHere = دفعات اتسجلت على المستخلص ده نفسه
+const stAccount = ({ id, partyName, date, number }, statements, payments) => {
+  const name = String(partyName || "").trim();
+  const none = { prevNet: 0, prevPaid: 0, paidHere: 0 };
+  if (!name) return none;
+  const numOf = (n) => parseInt(n, 10) || 0;
+  const curNum = parseInt(number, 10);
+  const before = (s) => s.date < date || (s.date === date && (isNaN(curNum) || numOf(s.number) < curNum));
+  const same = statements.filter((s) => s.partyName === name && s.id !== id);
+  const laterIds = new Set(same.filter((s) => !before(s)).map((s) => s.id));
+  const prevNet = stRound(same.filter((s) => before(s) && s.status === "معتمد").reduce((a, s) => a + s.netTotal, 0));
+  const mine = payments.filter((p) => p.partyName === name);
+  const prevPaid = stRound(mine.filter((p) => p.statementId !== id || !id).filter((p) => !laterIds.has(p.statementId) && (p.statementId ? true : p.date <= date)).reduce((a, p) => a + p.amount, 0));
+  const paidHere = id ? stRound(mine.filter((p) => p.statementId === id).reduce((a, p) => a + p.amount, 0)) : 0;
+  return { prevNet, prevPaid, paidHere };
+};
+const stDueNow = (net, a) => stRound(net + a.prevNet - a.prevPaid - a.paidHere);
+const stHasAcct = (a) => !!(a.prevNet || a.prevPaid || a.paidHere);
+
+function printStatement(s, cfg, projectName, acct = { prevNet: 0, prevPaid: 0, paidHere: 0 }) {
   const calc = calcStatement(s.items, s.adjustments);
-  const itemRows = s.items.map((it, i) => `<tr><td>${i + 1}</td><td>${stEsc(it.desc)}</td><td>${stEsc(it.unit)}</td><td>${stMoney(it.qty)}</td><td>${stMoney(it.price)}</td><td>${stMoney((Number(it.qty) || 0) * (Number(it.price) || 0))}</td></tr>`).join("");
-  const adjRows = s.adjustments.map((a, i) => `<tr><td colspan="5">${stEsc(a.name)} ${a.kind === "percent" ? `(${stEsc(a.value)}٪ ${a.base === "running" ? "من الإجمالي بعد السابق" : "من إجمالي الأعمال"})` : ""}</td><td>${a.effect === "add" ? "+" : "−"} ${stMoney(calc.adjAmounts[i])}</td></tr>`).join("");
+  const hasAcct = stHasAcct(acct);
+  const acctRows = hasAcct
+    ? `<tr><td colspan="12">(+) صافي المستخلصات السابقة المعتمدة</td><td>${stMoney(acct.prevNet)}</td></tr>
+<tr><td colspan="12">(−) السابق صرفه</td><td>${stMoney(acct.prevPaid)}</td></tr>
+${acct.paidHere ? `<tr><td colspan="12">(−) مدفوع على هذا المستخلص</td><td>${stMoney(acct.paidHere)}</td></tr>` : ""}
+<tr class="net"><td colspan="12">المستحق صرفه الآن</td><td>${stMoney(stDueNow(calc.net, acct))} ج.م</td></tr>`
+    : "";
+  const itemRows = s.items.map((it, i) => `<tr><td>${i + 1}</td><td>${stEsc(it.desc)}</td><td>${stEsc(it.unit)}</td><td>${stMoney(it.qty)}</td><td>${stMoney(it.price)}</td><td>${stQty(stPrevQty(it))}</td><td>${stQty(stTotalQty(it))}</td><td>${stQty(stCurQty(it))}</td><td>${stMoney(stPrev(it))}٪</td><td>${stMoney(stCur(it))}٪</td><td>${stMoney(stTotalPct(it))}٪</td><td>${stMoney(stTotalValue(it))}</td><td>${stMoney(stLine(it))}</td></tr>`).join("");
+  const adjRows = s.adjustments.map((a, i) => `<tr><td colspan="12">${stEsc(a.name)} ${a.kind === "percent" ? `(${stEsc(a.value)}٪ ${a.base === "running" ? "من الإجمالي بعد السابق" : "من إجمالي الأعمال"})` : ""}</td><td>${a.effect === "add" ? "+" : "−"} ${stMoney(calc.adjAmounts[i])}</td></tr>`).join("");
   const html = `<!doctype html><html dir="rtl" lang="ar"><head><meta charset="utf-8"><title>مستخلص ${stEsc(s.number || "")}</title>
 <style>
 body{font-family:'IBM Plex Sans Arabic','Cairo',Tahoma,sans-serif;color:#1E2530;padding:14mm;font-size:13px}
 h1{font-size:20px;margin:0 0 4px} .meta{display:grid;grid-template-columns:repeat(2,1fr);gap:6px 24px;margin:14px 0 18px}
 .meta div span{color:#6B7280} table{width:100%;border-collapse:collapse;margin-top:8px}
-th,td{border:1px solid #cfc8b8;padding:7px 9px;text-align:right} th{background:#f1ede1}
+th,td{border:1px solid #cfc8b8;padding:5px 6px;text-align:right;font-size:11px} th{background:#f1ede1}
 .net td{font-weight:700;background:#f6f3ea;font-size:15px} .sign{display:grid;grid-template-columns:repeat(3,1fr);gap:20px;margin-top:48px;text-align:center}
 .sign div{border-top:1px solid #999;padding-top:6px;color:#555}
-@media print{@page{size:A4;margin:0}}
+@media print{@page{size:A4 landscape;margin:0}}
 </style></head><body>
 <h1>مستخلص ${stEsc(cfg.partyLabel)} ${s.number ? "رقم " + stEsc(s.number) : ""}</h1>
 <div class="meta">
@@ -4512,12 +4583,14 @@ th,td{border:1px solid #cfc8b8;padding:7px 9px;text-align:right} th{background:#
 ${projectName ? `<div><span>المشروع: </span>${stEsc(projectName)}</div>` : ""}
 ${s.status ? `<div><span>الحالة: </span>${stEsc(s.status)}</div>` : ""}
 </div>
-<table><thead><tr><th>#</th><th>البيان</th><th>الوحدة</th><th>الكمية</th><th>السعر</th><th>الإجمالي</th></tr></thead><tbody>
+<table><thead><tr><th>#</th><th>البيان</th><th>الوحدة</th><th>كمية البند</th><th>السعر</th><th>كمية سابقة</th><th>إجمالي الكمية المنفذة</th><th>كمية حالية</th><th>السابق ٪</th><th>الحالي ٪</th><th>إجمالي التنفيذ ٪</th><th>إجمالي القيمة</th><th>قيمة الأعمال الحالية</th></tr></thead><tbody>
 ${itemRows}
-<tr><td colspan="5"><b>إجمالي الأعمال</b></td><td><b>${stMoney(calc.subtotal)}</b></td></tr>
+<tr><td colspan="11"><b>الإجمالي (السابق ${stMoney(calc.prevValue)} + الحالي ${stMoney(calc.subtotal)})</b></td><td><b>${stMoney(calc.totalValue)}</b></td><td><b>${stMoney(calc.subtotal)}</b></td></tr>
 ${adjRows}
-<tr class="net"><td colspan="5">صافي المستحق</td><td>${stMoney(calc.net)} ج.م</td></tr>
+<tr class="net"><td colspan="12">${hasAcct ? "صافي هذا المستخلص" : "صافي المستحق"}</td><td>${stMoney(calc.net)} ج.م</td></tr>
+${acctRows}
 </tbody></table>
+<p><b>نسبة التنفيذ الإجمالية:</b> ${stMoney(calc.totalProgress)}٪ (السابق ${stMoney(calc.prevProgress)}٪ + الحالي ${stMoney(calc.progress)}٪)</p>
 ${s.notes ? `<p><b>ملاحظات:</b> ${stEsc(s.notes)}</p>` : ""}
 <div class="sign"><div>المهندس المختص</div><div>المراجعة / الحسابات</div><div>الاعتماد</div></div>
 </body></html>`;
@@ -4529,18 +4602,56 @@ ${s.notes ? `<p><b>ملاحظات:</b> ${stEsc(s.notes)}</p>` : ""}
 
 const stCellInput = "w-full border border-[color:var(--cl-line)] rounded-md px-2 py-1.5 text-sm outline-none focus:border-[color:var(--cl-accent-bg)] bg-[color:var(--cl-card)] text-[color:var(--cl-text)]";
 
-function StatementForm({ cfg, initial, parties, projects, existing, onCancel, onSave }) {
+function StatementForm({ cfg, initial, parties, projects, existing, payments, onCancel, onSave }) {
   const [partyName, setPartyName] = useState(initial?.partyName || "");
   const [date, setDate] = useState(initial?.date || stToday());
   const [number, setNumber] = useState(initial?.number || "");
   const [projectId, setProjectId] = useState(initial?.projectId || "");
   const [status, setStatus] = useState(initial?.status || "مسودة");
   const [notes, setNotes] = useState(initial?.notes || "");
-  const [items, setItems] = useState(initial?.items?.length ? initial.items : [{ id: stUid("si_"), desc: "", unit: "", qty: "", price: "" }]);
+  const [items, setItems] = useState(
+    initial?.items?.length
+      ? initial.items.map((i) => {
+          const q = stQtys(i);
+          return { id: i.id, desc: i.desc, unit: i.unit, qty: i.qty, price: i.price, totalIn: String(q.total), prevManual: String(q.prev), prevSource: i.prevSource === "auto" ? "auto" : "manual" };
+        })
+      : [{ id: stUid("si_"), desc: "", unit: "", qty: "", price: "", totalIn: "", prevManual: "0" }]
+  );
   const [adjustments, setAdjustments] = useState(initial?.adjustments || []);
   const [err, setErr] = useState("");
 
-  const calc = useMemo(() => calcStatement(items, adjustments), [items, adjustments]);
+  // السابق: آخر إجمالي كمية منفذة لنفس البند (بنفس الوصف) في مستخلصات سابقة لنفس الطرف
+  const prevMap = useMemo(() => {
+    const name = partyName.trim();
+    if (!name) return {};
+    const numOf = (n) => parseInt(n, 10) || 0;
+    const curNum = parseInt(number, 10);
+    const earlier = existing
+      .filter((s) => s.partyName === name && s.id !== initial?.id && (s.date < date || (s.date === date && (isNaN(curNum) || numOf(s.number) < curNum))))
+      .sort((a, b) => (a.date || "").localeCompare(b.date || "") || numOf(a.number) - numOf(b.number));
+    const map = {};
+    earlier.forEach((s) => s.items.forEach((it) => { const k = stNorm(it.desc); if (k) map[k] = stTotalQty(it); }));
+    return map;
+  }, [existing, partyName, date, number, initial?.id]);
+
+  const rows = useMemo(
+    () => items.map((it) => {
+      const k = stNorm(it.desc);
+      const matched = it.prevSource !== "manual" && !!k && prevMap[k] !== undefined;
+      const q = Number(it.qty) || 0;
+      // إجمالي الكمية لو سابته فاضي = كمية البند كلها (يعني البند اتنفذ بالكامل)
+      const total = it.totalIn === "" || it.totalIn == null ? q : Number(it.totalIn) || 0;
+      return { ...it, prevQty: matched ? prevMap[k] : Number(it.prevManual) || 0, totalQty: total, _matched: matched };
+    }),
+    [items, prevMap]
+  );
+
+  const calc = useMemo(() => calcStatement(rows, adjustments), [rows, adjustments]);
+
+  // الحساب مع الطرف (تلقائي)
+  const acct = useMemo(() => stAccount({ id: initial?.id, partyName, date, number }, existing, payments), [initial?.id, partyName, date, number, existing, payments]);
+  const hasAcct = stHasAcct(acct);
+  const dueNow = stDueNow(calc.net, acct);
 
   const setItem = (id, patch) => setItems((p) => p.map((i) => (i.id === id ? { ...i, ...patch } : i)));
   const setAdj = (id, patch) => setAdjustments((p) => p.map((a) => (a.id === id ? { ...a, ...patch } : a)));
@@ -4552,11 +4663,17 @@ function StatementForm({ cfg, initial, parties, projects, existing, onCancel, on
 
   const submit = () => {
     const name = partyName.trim();
-    const cleanItems = items.filter((i) => i.desc.trim() || Number(i.qty) || Number(i.price));
+    const cleanItems = rows.filter((i) => i.desc.trim() || Number(i.qty) || Number(i.price));
     if (!name) return setErr(`اكتب اسم ${cfg.partyLabel}.`);
     if (!date) return setErr("اختار التاريخ.");
     if (cleanItems.length === 0) return setErr("لازم بند واحد على الأقل.");
     if (cleanItems.some((i) => !i.desc.trim())) return setErr("كل بند محتاج وصف.");
+    const badPrev = cleanItems.find((i) => stPrevQty(i) < 0);
+    if (badPrev) return setErr(`البند "${badPrev.desc}": الكمية السابقة لازم تكون صفر أو أكتر.`);
+    const less = cleanItems.find((i) => stCurQty(i) < 0);
+    if (less) return setErr(`البند "${less.desc}": إجمالي الكمية المنفذة (${stQty(stTotalQty(less))}) أقل من السابق (${stQty(stPrevQty(less))}).`);
+    const over = cleanItems.find((i) => stTotalQty(i) > (Number(i.qty) || 0) + 0.0005);
+    if (over) return setErr(`البند "${over.desc}": إجمالي الكمية المنفذة (${stQty(stTotalQty(over))}) أكبر من كمية البند (${stQty(Number(over.qty) || 0)}).`);
     let num = number.trim();
     if (!num) {
       const nums = existing.filter((s) => s.partyName === name && s.id !== initial?.id).map((s) => parseInt(s.number, 10)).filter((n) => !isNaN(n));
@@ -4566,7 +4683,11 @@ function StatementForm({ cfg, initial, parties, projects, existing, onCancel, on
     onSave({
       id: initial?.id || stUid("st_"), kind: initial?.kind || cfg.kind, partyName: name, date, number: num,
       projectId: projectId || null, status, notes: notes.trim(),
-      items: cleanItems.map((i) => ({ ...i, qty: Number(i.qty) || 0, price: Number(i.price) || 0 })),
+      items: cleanItems.map((i) => ({
+        id: i.id, desc: i.desc.trim(), unit: i.unit, qty: Number(i.qty) || 0, price: Number(i.price) || 0,
+        prevQty: stPrevQty(i), totalQty: stTotalQty(i), curQty: stCurQty(i),
+        prevPct: stPrev(i), curPct: stCur(i), totalPct: stTotalPct(i), prevSource: i._matched ? "auto" : "manual",
+      })),
       adjustments: adjustments.filter((a) => a.name.trim()).map((a) => ({ ...a, value: Number(a.value) || 0 })),
       subtotal: c.subtotal, netTotal: c.net,
     });
@@ -4596,41 +4717,77 @@ function StatementForm({ cfg, initial, parties, projects, existing, onCancel, on
       <div className="bg-[color:var(--cl-card)] rounded-xl border border-[color:var(--cl-line)] overflow-hidden">
         <div className="px-4 py-3 flex items-center justify-between border-b border-[color:var(--cl-sep)]">
           <div className="font-bold text-sm text-[color:var(--cl-text)]">البنود</div>
-          <button onClick={() => setItems((p) => [...p, { id: stUid("si_"), desc: "", unit: "", qty: "", price: "" }])} className="px-3 py-1.5 rounded-lg bg-[color:var(--cl-ink)] text-white text-xs font-semibold flex items-center gap-1 hover:bg-[color:var(--cl-ink-hover)]"><Plus size={13} /> بند</button>
+          <button onClick={() => setItems((p) => [...p, { id: stUid("si_"), desc: "", unit: "", qty: "", price: "", totalIn: "", prevManual: "0" }])} className="px-3 py-1.5 rounded-lg bg-[color:var(--cl-ink)] text-white text-xs font-semibold flex items-center gap-1 hover:bg-[color:var(--cl-ink-hover)]"><Plus size={13} /> بند</button>
         </div>
-        <table className="w-full text-sm">
+        <div className="overflow-x-auto">
+        <table className="w-full text-sm" style={{ minWidth: 1320 }}>
           <thead>
             <tr className="bg-[color:var(--cl-inset)] text-[color:var(--cl-soft)] text-[12px]">
               <th className="text-right py-2 px-3 w-10">#</th>
               <th className="text-right py-2 px-3">البيان</th>
               <th className="text-right py-2 px-3 w-24">الوحدة</th>
-              <th className="text-right py-2 px-3 w-28">الكمية</th>
-              <th className="text-right py-2 px-3 w-32">السعر</th>
-              <th className="text-right py-2 px-3 w-36">الإجمالي</th>
+              <th className="text-right py-2 px-3 w-28">كمية البند</th>
+              <th className="text-right py-2 px-3 w-28">السعر</th>
+              <th className="text-right py-2 px-3 w-24">كمية سابقة</th>
+              <th className="text-right py-2 px-3 w-32">إجمالي الكمية المنفذة</th>
+              <th className="text-right py-2 px-3 w-24">كمية حالية</th>
+              <th className="text-right py-2 px-3 w-20">سابق ٪</th>
+              <th className="text-right py-2 px-3 w-20">حالي ٪</th>
+              <th className="text-right py-2 px-3 w-24">إجمالي التنفيذ ٪</th>
+              <th className="text-right py-2 px-3 w-32">إجمالي القيمة</th>
+              <th className="text-right py-2 px-3 w-36">قيمة الأعمال الحالية</th>
               <th className="w-10" />
             </tr>
           </thead>
           <tbody className="divide-y divide-[color:var(--cl-sep)]">
-            {items.map((it, i) => (
-              <tr key={it.id}>
-                <td className="py-2 px-3 mono text-[color:var(--cl-muted)]">{i + 1}</td>
-                <td className="py-2 px-3"><input className={stCellInput} value={it.desc} onChange={(e) => setItem(it.id, { desc: e.target.value })} placeholder="وصف البند" /></td>
-                <td className="py-2 px-3"><input className={stCellInput} value={it.unit} onChange={(e) => setItem(it.id, { unit: e.target.value })} placeholder="م² / طن" /></td>
-                <td className="py-2 px-3"><input type="number" className={stCellInput + " mono"} value={it.qty} onChange={(e) => setItem(it.id, { qty: e.target.value })} /></td>
-                <td className="py-2 px-3"><input type="number" className={stCellInput + " mono"} value={it.price} onChange={(e) => setItem(it.id, { price: e.target.value })} /></td>
-                <td className="py-2 px-3 mono font-semibold text-[color:var(--cl-text)]">{stMoney((Number(it.qty) || 0) * (Number(it.price) || 0))}</td>
-                <td className="py-2 px-2"><button onClick={() => setItems((p) => (p.length > 1 ? p.filter((x) => x.id !== it.id) : p))} className="p-1.5 rounded-md text-[color:var(--cl-red)] hover:bg-[#C1453B]/10"><Trash2 size={14} /></button></td>
-              </tr>
-            ))}
+            {rows.map((it, i) => {
+              const over = stTotalQty(it) > (Number(it.qty) || 0) + 0.0005;
+              const neg = stCurQty(it) < 0;
+              return (
+                <tr key={it.id}>
+                  <td className="py-2 px-3 mono text-[color:var(--cl-muted)]">{i + 1}</td>
+                  <td className="py-2 px-3"><input className={stCellInput} value={it.desc} onChange={(e) => setItem(it.id, { desc: e.target.value })} placeholder="وصف البند" /></td>
+                  <td className="py-2 px-3"><input className={stCellInput} value={it.unit} onChange={(e) => setItem(it.id, { unit: e.target.value })} placeholder="م² / طن" /></td>
+                  <td className="py-2 px-3"><input type="number" className={stCellInput + " mono"} value={it.qty} onChange={(e) => setItem(it.id, { qty: e.target.value })} /></td>
+                  <td className="py-2 px-3"><input type="number" className={stCellInput + " mono"} value={it.price} onChange={(e) => setItem(it.id, { price: e.target.value })} /></td>
+                  <td className="py-2 px-3">
+                    {it._matched ? (
+                      <div title="من المستخلص السابق — ثابتة" className="mono text-sm px-2 py-1.5 rounded-md bg-[color:var(--cl-chip)] text-[color:var(--cl-soft)] border border-[color:var(--cl-sep)]">{stQty(it.prevQty)}</div>
+                    ) : (
+                      <input type="number" min="0" title="مفيش مستخلص سابق للبند ده — اكتب لو فيه كمية اتنفذت قبل كده" className={stCellInput + " mono"} value={it.prevManual ?? ""} onChange={(e) => setItem(it.id, { prevManual: e.target.value })} />
+                    )}
+                  </td>
+                  <td className="py-2 px-3">
+                    <input type="number" min={stPrevQty(it)} max={Number(it.qty) || undefined} className={stCellInput + " mono font-bold" + (over || neg ? " !border-[color:var(--cl-red)]" : "")} value={it.totalIn ?? ""} placeholder={String(Number(it.qty) || "")} onChange={(e) => setItem(it.id, { totalIn: e.target.value })} />
+                  </td>
+                  <td className={`py-2 px-3 mono font-semibold ${neg ? "text-[color:var(--cl-red)]" : "text-[color:var(--cl-text)]"}`}>{stQty(stCurQty(it))}</td>
+                  <td className="py-2 px-3 mono text-[color:var(--cl-soft)]">{stMoney(stPrev(it))}٪</td>
+                  <td className="py-2 px-3 mono text-[color:var(--cl-soft)]">{stMoney(stCur(it))}٪</td>
+                  <td className={`py-2 px-3 mono font-bold ${over ? "text-[color:var(--cl-red)]" : "text-[color:var(--cl-text)]"}`}>{stMoney(stTotalPct(it))}٪</td>
+                  <td className="py-2 px-3 mono text-[color:var(--cl-soft)]">{stMoney(stTotalValue(it))}</td>
+                  <td className="py-2 px-3 mono font-semibold text-[color:var(--cl-text)]">{stMoney(stLine(it))}</td>
+                  <td className="py-2 px-2"><button onClick={() => setItems((p) => (p.length > 1 ? p.filter((x) => x.id !== it.id) : p))} className="p-1.5 rounded-md text-[color:var(--cl-red)] hover:bg-[#C1453B]/10"><Trash2 size={14} /></button></td>
+                </tr>
+              );
+            })}
           </tbody>
           <tfoot>
             <tr className="bg-[color:var(--cl-inset)]">
-              <td colSpan={5} className="py-2.5 px-3 font-bold text-[color:var(--cl-soft)]">إجمالي الأعمال</td>
+              <td colSpan={11} className="py-2.5 px-3 font-bold text-[color:var(--cl-soft)]">
+                الإجمالي (السابق {stMoney(calc.prevValue)} + الحالي {stMoney(calc.subtotal)})
+                {calc.full > 0 && (
+                  <span className="font-normal text-[11px] text-[color:var(--cl-muted)] mr-2">
+                    — نسبة التنفيذ الإجمالية <b className="mono text-[color:var(--cl-text)]">{stMoney(calc.totalProgress)}٪</b> (سابق {stMoney(calc.prevProgress)}٪ + حالي {stMoney(calc.progress)}٪)
+                  </span>
+                )}
+              </td>
+              <td className="py-2.5 px-3 mono font-bold text-[color:var(--cl-soft)]">{stMoney(calc.totalValue)}</td>
               <td className="py-2.5 px-3 mono font-bold text-[color:var(--cl-text)]">{stMoney(calc.subtotal)}</td>
               <td />
             </tr>
           </tfoot>
         </table>
+        </div>
       </div>
 
       {/* الخصومات والإضافات */}
@@ -4692,10 +4849,38 @@ function StatementForm({ cfg, initial, parties, projects, existing, onCancel, on
         )}
       </div>
 
+      {hasAcct && (
+        <div className="bg-[color:var(--cl-card)] rounded-xl border border-[color:var(--cl-line)] overflow-hidden">
+          <div className="px-4 py-3 border-b border-[color:var(--cl-sep)]">
+            <div className="font-bold text-sm text-[color:var(--cl-text)]">الحساب مع {cfg.partyLabel} (تلقائي)</div>
+            <div className="text-[11px] text-[color:var(--cl-muted)]">بيتحسب من المستخلصات المعتمدة والدفعات المسجّلة لنفس الاسم — الدفعات بتتسجل من "كشف حساب {cfg.partyPlural}"</div>
+          </div>
+          <table className="w-full text-sm">
+            <tbody className="divide-y divide-[color:var(--cl-sep)]">
+              <tr><td className="py-2.5 px-4 text-[color:var(--cl-soft)]">صافي هذا المستخلص</td><td className="py-2.5 px-4 mono w-48">{stMoney(calc.net)}</td></tr>
+              <tr><td className="py-2.5 px-4 text-[color:var(--cl-soft)]">(+) صافي المستخلصات السابقة المعتمدة</td><td className="py-2.5 px-4 mono">{stMoney(acct.prevNet)}</td></tr>
+              <tr><td className="py-2.5 px-4 text-[color:var(--cl-soft)]">(−) السابق صرفه</td><td className="py-2.5 px-4 mono text-[color:var(--cl-red)]">{stMoney(acct.prevPaid)}</td></tr>
+              {acct.paidHere > 0 && (
+                <tr><td className="py-2.5 px-4 text-[color:var(--cl-soft)]">(−) مدفوع على هذا المستخلص</td><td className="py-2.5 px-4 mono text-[color:var(--cl-red)]">{stMoney(acct.paidHere)}</td></tr>
+              )}
+              <tr className="bg-[color:var(--cl-inset)]"><td className="py-2.5 px-4 font-bold text-[color:var(--cl-text)]">المستحق صرفه الآن</td><td className="py-2.5 px-4 mono font-bold text-[color:var(--cl-text)]">{stMoney(dueNow)} ج.م</td></tr>
+            </tbody>
+          </table>
+        </div>
+      )}
+
       <div className="bg-[color:var(--cl-ink)] rounded-xl p-5 text-white flex items-center justify-between">
-        <div>
-          <div className="text-[11px] text-white/50 mb-1">صافي المستحق</div>
-          <div className="font-bold mono text-2xl">{stMoney(calc.net)} ج.م</div>
+        <div className="flex items-center gap-8">
+          <div>
+            <div className="text-[11px] text-white/50 mb-1">{hasAcct ? "صافي هذا المستخلص" : "صافي المستحق"}</div>
+            <div className="font-bold mono text-2xl">{stMoney(calc.net)} ج.م</div>
+          </div>
+          {hasAcct && (
+            <div className="border-r border-white/15 pr-8">
+              <div className="text-[11px] text-white/50 mb-1">المستحق صرفه الآن</div>
+              <div className={`font-bold mono text-2xl ${dueNow > 0 ? "text-[#E8AA6C]" : "text-white"}`}>{stMoney(dueNow)} ج.م</div>
+            </div>
+          )}
         </div>
         <div className="flex items-center gap-3">
           {err && <span className="text-sm text-[#F0918A]">{err}</span>}
@@ -4748,7 +4933,7 @@ function StatementsModule({ kind, statements, payments, projects, dbError, onSav
   if (mode === "form") {
     return (
       <StatementForm
-        cfg={cfg} initial={editing} parties={parties} projects={projects} existing={list}
+        cfg={cfg} initial={editing} parties={parties} projects={projects} existing={list} payments={pays}
         onCancel={() => { setMode("list"); setEditing(null); }}
         onSave={async (st) => { const ok = await onSave(st); if (ok !== false) { setMode("list"); setEditing(null); } }}
       />
@@ -4825,7 +5010,7 @@ function StatementsModule({ kind, statements, payments, projects, dbError, onSav
                   <td className="py-3 px-4"><span className={`text-[11px] px-2 py-0.5 rounded-full ${s.status === "معتمد" ? "bg-[color:var(--cl-green)]/15 text-[color:var(--cl-green)]" : "bg-[color:var(--cl-chip)] text-[color:var(--cl-soft)]"}`}>{s.status || "—"}</span></td>
                   <td className="py-3 px-4">
                     <div className="flex items-center gap-1 opacity-0 group-hover:opacity-100 transition">
-                      <button title="طباعة" onClick={() => printStatement(s, cfg, projName(s.projectId))} className="p-1.5 rounded-md text-[color:var(--cl-soft)] hover:bg-[color:var(--cl-line)]"><Printer size={14} /></button>
+                      <button title="طباعة" onClick={() => printStatement(s, cfg, projName(s.projectId), stAccount(s, list, pays))} className="p-1.5 rounded-md text-[color:var(--cl-soft)] hover:bg-[color:var(--cl-line)]"><Printer size={14} /></button>
                       <button title="تعديل" onClick={() => { setEditing(s); setMode("form"); }} className="p-1.5 rounded-md text-[color:var(--cl-soft)] hover:bg-[color:var(--cl-line)]"><Pencil size={14} /></button>
                       <button title="حذف" onClick={() => onDelete(s.id)} className="p-1.5 rounded-md text-[color:var(--cl-red)] hover:bg-[#C1453B]/10"><Trash2 size={14} /></button>
                     </div>
