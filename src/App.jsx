@@ -318,7 +318,10 @@ function ContractingApp({ currentUsername, onLogout }) {
   const [custodies, setCustodies] = useState([]);
   const [custodyCategories, setCustodyCategories] = useState([]);
   const [expectedCosts, setExpectedCosts] = useState([]);
-  const [view, setView] = useState("project"); // 'project' | 'finance'
+  const [statements, setStatements] = useState([]);
+  const [statementPayments, setStatementPayments] = useState([]);
+  const [statementsDbError, setStatementsDbError] = useState(null);
+  const [view, setView] = useState("project"); // 'project' | 'finance' | 'reports' | 'users' | 'contractor_statements' | 'supplier_statements'
   const [loading, setLoading] = useState(true);
   const [dbError, setDbError] = useState(null);
 
@@ -384,6 +387,52 @@ function ContractingApp({ currentUsername, onLogout }) {
     }
     loadAll();
   }, []);
+
+  useEffect(() => {
+    async function loadStatements() {
+      const [stRes, spRes] = await Promise.all([
+        supabase.from("party_statements").select("*").order("statement_date", { ascending: false }),
+        supabase.from("party_payments").select("*").order("payment_date"),
+      ]);
+      const err = stRes.error || spRes.error;
+      if (err) { setStatementsDbError(err.message); return; }
+      setStatementsDbError(null);
+      setStatements((stRes.data || []).map((s) => ({ id: s.id, kind: s.kind, partyName: s.party_name, date: s.statement_date, number: s.number || "", projectId: s.project_id || null, status: s.status || "", notes: s.notes || "", items: s.items || [], adjustments: s.adjustments || [], subtotal: Number(s.subtotal), netTotal: Number(s.net_total) })));
+      setStatementPayments((spRes.data || []).map((p) => ({ id: p.id, kind: p.kind, partyName: p.party_name, date: p.payment_date, amount: Number(p.amount), method: p.method || "", note: p.note || "", statementId: p.statement_id || null })));
+    }
+    loadStatements();
+  }, []);
+
+  async function saveStatement(st) {
+    const row = { id: st.id, kind: st.kind, party_name: st.partyName, statement_date: st.date, number: st.number, project_id: st.projectId || null, status: st.status, notes: st.notes || null, items: st.items, adjustments: st.adjustments, subtotal: st.subtotal, net_total: st.netTotal };
+    const { error } = await supabase.from("party_statements").upsert([row]);
+    if (error) { alert("حصل خطأ أثناء حفظ المستخلص: " + error.message); return false; }
+    setStatements((prev) => (prev.some((x) => x.id === st.id) ? prev.map((x) => (x.id === st.id ? st : x)) : [st, ...prev]));
+    return true;
+  }
+
+  async function deleteStatement(id) {
+    if (!window.confirm("متأكد إنك عايز تمسح المستخلص ده؟")) return;
+    const { error } = await supabase.from("party_statements").delete().eq("id", id);
+    if (error) { alert("حصل خطأ أثناء حذف المستخلص: " + error.message); return; }
+    // الدفعات المرتبطة بالمستخلص تفضل كدفعات عامة على الطرف
+    await supabase.from("party_payments").update({ statement_id: null }).eq("statement_id", id);
+    setStatements((prev) => prev.filter((x) => x.id !== id));
+    setStatementPayments((prev) => prev.map((p) => (p.statementId === id ? { ...p, statementId: null } : p)));
+  }
+
+  async function addStatementPayment(p) {
+    const { error } = await supabase.from("party_payments").insert([{ id: p.id, kind: p.kind, party_name: p.partyName, payment_date: p.date, amount: p.amount, method: p.method || null, note: p.note || null, statement_id: p.statementId || null }]);
+    if (error) { alert("حصل خطأ أثناء تسجيل الدفعة: " + error.message); return; }
+    setStatementPayments((prev) => [...prev, p]);
+  }
+
+  async function deleteStatementPayment(id) {
+    if (!window.confirm("متأكد إنك عايز تمسح الدفعة دي؟")) return;
+    const { error } = await supabase.from("party_payments").delete().eq("id", id);
+    if (error) { alert("حصل خطأ أثناء حذف الدفعة: " + error.message); return; }
+    setStatementPayments((prev) => prev.filter((p) => p.id !== id));
+  }
 
   async function addProject(p) {
     const { error } = await supabase.from("projects").insert([{ id: p.id, name: p.name, client: p.client, location: p.location, budget: p.budget, status: p.status }]);
@@ -813,6 +862,13 @@ function ContractingApp({ currentUsername, onLogout }) {
           ))}
         </nav>
 
+        {/* المستخلصات: مقاولين وموردين */}
+        <div className="mt-4 px-4 pt-4 border-t border-white/10 space-y-0.5">
+          <div className="text-[11px] text-white/45 font-bold tracking-wide mb-1.5 px-1">المستخلصات</div>
+          <SidebarItem icon={HardHat} label="مستخلصات المقاولين" active={view === "contractor_statements"} onClick={() => setView("contractor_statements")} />
+          <SidebarItem icon={Package} label="مستخلصات الموردين" active={view === "supplier_statements"} onClick={() => setView("supplier_statements")} />
+        </div>
+
         {/* عام */}
         <div className="mt-4 px-4 pt-4 border-t border-white/10 space-y-0.5">
           <div className="text-[11px] text-white/45 font-bold tracking-wide mb-1.5 px-1">الحسابات العامة</div>
@@ -883,6 +939,20 @@ function ContractingApp({ currentUsername, onLogout }) {
         ) : view === "users" ? (
           <div className="p-8">
             <UsersManagementModule currentUsername={currentUsername} />
+          </div>
+        ) : view === "contractor_statements" || view === "supplier_statements" ? (
+          <div className="p-8">
+            <StatementsModule
+              kind={view === "contractor_statements" ? "contractor" : "supplier"}
+              statements={statements}
+              payments={statementPayments}
+              projects={projects}
+              dbError={statementsDbError}
+              onSave={saveStatement}
+              onDelete={deleteStatement}
+              onAddPayment={addStatementPayment}
+              onDeletePayment={deleteStatementPayment}
+            />
           </div>
         ) : (
           <>
@@ -4379,6 +4449,478 @@ function CustodySettlement({ custody, lines, pWorkItems, custodyCategories, acti
 }
 
 /* -------------------------------- new project ------------------------------- */
+
+/* ======================= مستخلصات المقاولين والموردين =======================
+   موديول مستقل: مفيش عقد إلزامي، ولا قيود تلقائية، ولا كميات ثابتة.
+   كل مستخلص = بنود حرة + صفوف خصومات/إضافات ديناميكية → صافي.
+   الجداول: party_statements و party_payments (راجع ملف SQL).
+*/
+
+const ST_KINDS = {
+  contractor: { title: "مستخلصات المقاولين", partyLabel: "المقاول", partyPlural: "المقاولين", icon: HardHat },
+  supplier: { title: "مستخلصات الموردين", partyLabel: "المورد", partyPlural: "الموردين", icon: Package },
+};
+
+// قائمة جاهزة للاختيار السريع — القيم قابلة للتعديل في كل مستخلص (راجع النسب مع المحاسب القانوني)
+const ST_ADJ_PRESETS = [
+  { name: "ضمان أعمال", kind: "percent", value: 5, effect: "deduct", base: "subtotal" },
+  { name: "ضريبة قيمة مضافة", kind: "percent", value: 14, effect: "add", base: "subtotal" },
+  { name: "ضريبة خصم وإضافة", kind: "percent", value: 1, effect: "deduct", base: "subtotal" },
+  { name: "دفعة مقدمة (استهلاك)", kind: "amount", value: 0, effect: "deduct", base: "subtotal" },
+  { name: "غرامة تأخير", kind: "amount", value: 0, effect: "deduct", base: "subtotal" },
+  { name: "خصم مواد صرفتها الشركة", kind: "amount", value: 0, effect: "deduct", base: "subtotal" },
+  { name: "دمغة / رسوم", kind: "percent", value: 0, effect: "deduct", base: "subtotal" },
+];
+
+const stRound = (n) => Math.round((Number(n) || 0) * 100) / 100;
+const stUid = (p) => p + Math.random().toString(36).slice(2, 8) + Date.now().toString(36).slice(-3);
+const stToday = () => new Date().toISOString().slice(0, 10);
+const stEsc = (v) => String(v ?? "").replace(/[&<>"']/g, (c) => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;", "'": "&#39;" }[c]));
+const stMoney = (n) => stRound(n).toLocaleString("en-US", { minimumFractionDigits: 0, maximumFractionDigits: 2 });
+
+// الحساب: كل صف يتحسب على إجمالي البنود (subtotal) أو على الإجمالي بعد الصفوف اللي قبله (running)
+function calcStatement(items, adjustments) {
+  const subtotal = stRound(items.reduce((s, i) => s + (Number(i.qty) || 0) * (Number(i.price) || 0), 0));
+  let running = subtotal;
+  const adjAmounts = adjustments.map((a) => {
+    const base = a.base === "running" ? running : subtotal;
+    const amount = stRound(a.kind === "percent" ? (base * (Number(a.value) || 0)) / 100 : Number(a.value) || 0);
+    running = stRound(running + (a.effect === "add" ? amount : -amount));
+    return amount;
+  });
+  return { subtotal, adjAmounts, net: running };
+}
+
+function printStatement(s, cfg, projectName) {
+  const calc = calcStatement(s.items, s.adjustments);
+  const itemRows = s.items.map((it, i) => `<tr><td>${i + 1}</td><td>${stEsc(it.desc)}</td><td>${stEsc(it.unit)}</td><td>${stMoney(it.qty)}</td><td>${stMoney(it.price)}</td><td>${stMoney((Number(it.qty) || 0) * (Number(it.price) || 0))}</td></tr>`).join("");
+  const adjRows = s.adjustments.map((a, i) => `<tr><td colspan="5">${stEsc(a.name)} ${a.kind === "percent" ? `(${stEsc(a.value)}٪ ${a.base === "running" ? "من الإجمالي بعد السابق" : "من إجمالي الأعمال"})` : ""}</td><td>${a.effect === "add" ? "+" : "−"} ${stMoney(calc.adjAmounts[i])}</td></tr>`).join("");
+  const html = `<!doctype html><html dir="rtl" lang="ar"><head><meta charset="utf-8"><title>مستخلص ${stEsc(s.number || "")}</title>
+<style>
+body{font-family:'IBM Plex Sans Arabic','Cairo',Tahoma,sans-serif;color:#1E2530;padding:14mm;font-size:13px}
+h1{font-size:20px;margin:0 0 4px} .meta{display:grid;grid-template-columns:repeat(2,1fr);gap:6px 24px;margin:14px 0 18px}
+.meta div span{color:#6B7280} table{width:100%;border-collapse:collapse;margin-top:8px}
+th,td{border:1px solid #cfc8b8;padding:7px 9px;text-align:right} th{background:#f1ede1}
+.net td{font-weight:700;background:#f6f3ea;font-size:15px} .sign{display:grid;grid-template-columns:repeat(3,1fr);gap:20px;margin-top:48px;text-align:center}
+.sign div{border-top:1px solid #999;padding-top:6px;color:#555}
+@media print{@page{size:A4;margin:0}}
+</style></head><body>
+<h1>مستخلص ${stEsc(cfg.partyLabel)} ${s.number ? "رقم " + stEsc(s.number) : ""}</h1>
+<div class="meta">
+<div><span>${stEsc(cfg.partyLabel)}: </span><b>${stEsc(s.partyName)}</b></div>
+<div><span>التاريخ: </span>${stEsc(s.date)}</div>
+${projectName ? `<div><span>المشروع: </span>${stEsc(projectName)}</div>` : ""}
+${s.status ? `<div><span>الحالة: </span>${stEsc(s.status)}</div>` : ""}
+</div>
+<table><thead><tr><th>#</th><th>البيان</th><th>الوحدة</th><th>الكمية</th><th>السعر</th><th>الإجمالي</th></tr></thead><tbody>
+${itemRows}
+<tr><td colspan="5"><b>إجمالي الأعمال</b></td><td><b>${stMoney(calc.subtotal)}</b></td></tr>
+${adjRows}
+<tr class="net"><td colspan="5">صافي المستحق</td><td>${stMoney(calc.net)} ج.م</td></tr>
+</tbody></table>
+${s.notes ? `<p><b>ملاحظات:</b> ${stEsc(s.notes)}</p>` : ""}
+<div class="sign"><div>المهندس المختص</div><div>المراجعة / الحسابات</div><div>الاعتماد</div></div>
+</body></html>`;
+  const w = window.open("", "_blank", "width=900,height=1000");
+  if (!w) { alert("المتصفح منع فتح نافذة الطباعة. اسمح بالنوافذ المنبثقة لهذا الموقع وحاول تاني."); return; }
+  w.document.open(); w.document.write(html); w.document.close();
+  w.onload = () => { w.focus(); w.print(); };
+}
+
+const stCellInput = "w-full border border-[color:var(--cl-line)] rounded-md px-2 py-1.5 text-sm outline-none focus:border-[color:var(--cl-accent-bg)] bg-[color:var(--cl-card)] text-[color:var(--cl-text)]";
+
+function StatementForm({ cfg, initial, parties, projects, existing, onCancel, onSave }) {
+  const [partyName, setPartyName] = useState(initial?.partyName || "");
+  const [date, setDate] = useState(initial?.date || stToday());
+  const [number, setNumber] = useState(initial?.number || "");
+  const [projectId, setProjectId] = useState(initial?.projectId || "");
+  const [status, setStatus] = useState(initial?.status || "مسودة");
+  const [notes, setNotes] = useState(initial?.notes || "");
+  const [items, setItems] = useState(initial?.items?.length ? initial.items : [{ id: stUid("si_"), desc: "", unit: "", qty: "", price: "" }]);
+  const [adjustments, setAdjustments] = useState(initial?.adjustments || []);
+  const [err, setErr] = useState("");
+
+  const calc = useMemo(() => calcStatement(items, adjustments), [items, adjustments]);
+
+  const setItem = (id, patch) => setItems((p) => p.map((i) => (i.id === id ? { ...i, ...patch } : i)));
+  const setAdj = (id, patch) => setAdjustments((p) => p.map((a) => (a.id === id ? { ...a, ...patch } : a)));
+  const addPreset = (idx) => {
+    if (idx === "") return;
+    const pr = idx === "custom" ? { name: "", kind: "amount", value: 0, effect: "deduct", base: "subtotal" } : ST_ADJ_PRESETS[Number(idx)];
+    setAdjustments((p) => [...p, { id: stUid("sa_"), ...pr }]);
+  };
+
+  const submit = () => {
+    const name = partyName.trim();
+    const cleanItems = items.filter((i) => i.desc.trim() || Number(i.qty) || Number(i.price));
+    if (!name) return setErr(`اكتب اسم ${cfg.partyLabel}.`);
+    if (!date) return setErr("اختار التاريخ.");
+    if (cleanItems.length === 0) return setErr("لازم بند واحد على الأقل.");
+    if (cleanItems.some((i) => !i.desc.trim())) return setErr("كل بند محتاج وصف.");
+    let num = number.trim();
+    if (!num) {
+      const nums = existing.filter((s) => s.partyName === name && s.id !== initial?.id).map((s) => parseInt(s.number, 10)).filter((n) => !isNaN(n));
+      num = String((nums.length ? Math.max(...nums) : 0) + 1);
+    }
+    const c = calcStatement(cleanItems, adjustments);
+    onSave({
+      id: initial?.id || stUid("st_"), kind: initial?.kind || cfg.kind, partyName: name, date, number: num,
+      projectId: projectId || null, status, notes: notes.trim(),
+      items: cleanItems.map((i) => ({ ...i, qty: Number(i.qty) || 0, price: Number(i.price) || 0 })),
+      adjustments: adjustments.filter((a) => a.name.trim()).map((a) => ({ ...a, value: Number(a.value) || 0 })),
+      subtotal: c.subtotal, netTotal: c.net,
+    });
+  };
+
+  return (
+    <div className="space-y-5">
+      <div className="flex items-center justify-between">
+        <h2 className="font-bold text-xl text-[color:var(--cl-text)]">{initial ? "تعديل مستخلص" : "مستخلص جديد"} — {cfg.partyLabel}</h2>
+        <button onClick={onCancel} className="px-3 py-2 rounded-lg border border-[color:var(--cl-line)] text-sm text-[color:var(--cl-soft)] hover:bg-[color:var(--cl-sub)]">رجوع</button>
+      </div>
+
+      <div className="bg-[color:var(--cl-card)] rounded-xl border border-[color:var(--cl-line)] p-4 grid grid-cols-4 gap-3">
+        <div>
+          <label className="block text-[11px] font-semibold text-[color:var(--cl-soft)] mb-1">اسم {cfg.partyLabel} *</label>
+          <input list="st-parties" value={partyName} onChange={(e) => setPartyName(e.target.value)} placeholder="اكتب أو اختار من السابقين" className="w-full border border-[color:var(--cl-line)] rounded-lg px-3 py-2 text-sm outline-none focus:border-[color:var(--cl-accent-bg)] bg-[color:var(--cl-card)]" />
+          <datalist id="st-parties">{parties.map((p) => <option key={p} value={p} />)}</datalist>
+        </div>
+        <Field label="التاريخ *" type="date" value={date} onChange={setDate} />
+        <Field label="رقم المستخلص (اختياري — تلقائي)" value={number} onChange={setNumber} placeholder="تلقائي" />
+        <SelectField label="الحالة" value={status} onChange={setStatus} options={[{ value: "مسودة", label: "مسودة" }, { value: "معتمد", label: "معتمد" }]} />
+        <SelectField label="المشروع (اختياري)" value={projectId} onChange={setProjectId} options={[{ value: "", label: "— بدون مشروع —" }, ...projects.map((p) => ({ value: p.id, label: p.name }))]} />
+        <div className="col-span-3"><Field label="ملاحظات (اختياري)" value={notes} onChange={setNotes} /></div>
+      </div>
+
+      {/* البنود */}
+      <div className="bg-[color:var(--cl-card)] rounded-xl border border-[color:var(--cl-line)] overflow-hidden">
+        <div className="px-4 py-3 flex items-center justify-between border-b border-[color:var(--cl-sep)]">
+          <div className="font-bold text-sm text-[color:var(--cl-text)]">البنود</div>
+          <button onClick={() => setItems((p) => [...p, { id: stUid("si_"), desc: "", unit: "", qty: "", price: "" }])} className="px-3 py-1.5 rounded-lg bg-[color:var(--cl-ink)] text-white text-xs font-semibold flex items-center gap-1 hover:bg-[color:var(--cl-ink-hover)]"><Plus size={13} /> بند</button>
+        </div>
+        <table className="w-full text-sm">
+          <thead>
+            <tr className="bg-[color:var(--cl-inset)] text-[color:var(--cl-soft)] text-[12px]">
+              <th className="text-right py-2 px-3 w-10">#</th>
+              <th className="text-right py-2 px-3">البيان</th>
+              <th className="text-right py-2 px-3 w-24">الوحدة</th>
+              <th className="text-right py-2 px-3 w-28">الكمية</th>
+              <th className="text-right py-2 px-3 w-32">السعر</th>
+              <th className="text-right py-2 px-3 w-36">الإجمالي</th>
+              <th className="w-10" />
+            </tr>
+          </thead>
+          <tbody className="divide-y divide-[color:var(--cl-sep)]">
+            {items.map((it, i) => (
+              <tr key={it.id}>
+                <td className="py-2 px-3 mono text-[color:var(--cl-muted)]">{i + 1}</td>
+                <td className="py-2 px-3"><input className={stCellInput} value={it.desc} onChange={(e) => setItem(it.id, { desc: e.target.value })} placeholder="وصف البند" /></td>
+                <td className="py-2 px-3"><input className={stCellInput} value={it.unit} onChange={(e) => setItem(it.id, { unit: e.target.value })} placeholder="م² / طن" /></td>
+                <td className="py-2 px-3"><input type="number" className={stCellInput + " mono"} value={it.qty} onChange={(e) => setItem(it.id, { qty: e.target.value })} /></td>
+                <td className="py-2 px-3"><input type="number" className={stCellInput + " mono"} value={it.price} onChange={(e) => setItem(it.id, { price: e.target.value })} /></td>
+                <td className="py-2 px-3 mono font-semibold text-[color:var(--cl-text)]">{stMoney((Number(it.qty) || 0) * (Number(it.price) || 0))}</td>
+                <td className="py-2 px-2"><button onClick={() => setItems((p) => (p.length > 1 ? p.filter((x) => x.id !== it.id) : p))} className="p-1.5 rounded-md text-[color:var(--cl-red)] hover:bg-[#C1453B]/10"><Trash2 size={14} /></button></td>
+              </tr>
+            ))}
+          </tbody>
+          <tfoot>
+            <tr className="bg-[color:var(--cl-inset)]">
+              <td colSpan={5} className="py-2.5 px-3 font-bold text-[color:var(--cl-soft)]">إجمالي الأعمال</td>
+              <td className="py-2.5 px-3 mono font-bold text-[color:var(--cl-text)]">{stMoney(calc.subtotal)}</td>
+              <td />
+            </tr>
+          </tfoot>
+        </table>
+      </div>
+
+      {/* الخصومات والإضافات */}
+      <div className="bg-[color:var(--cl-card)] rounded-xl border border-[color:var(--cl-line)] overflow-hidden">
+        <div className="px-4 py-3 flex items-center justify-between border-b border-[color:var(--cl-sep)]">
+          <div>
+            <div className="font-bold text-sm text-[color:var(--cl-text)]">الخصومات والإضافات (اختياري)</div>
+            <div className="text-[11px] text-[color:var(--cl-muted)]">أضف اللي محتاجه بس — كل صف نسبة أو مبلغ، وبيتحسب بالترتيب</div>
+          </div>
+          <select value="" onChange={(e) => addPreset(e.target.value)} className="border border-[color:var(--cl-line)] rounded-lg px-3 py-1.5 text-xs bg-[color:var(--cl-card)] text-[color:var(--cl-text)]">
+            <option value="">+ إضافة خصم / إضافة…</option>
+            {ST_ADJ_PRESETS.map((p, i) => <option key={p.name} value={i}>{p.name}</option>)}
+            <option value="custom">بند جديد بدون قالب</option>
+          </select>
+        </div>
+        {adjustments.length === 0 ? (
+          <div className="py-6 text-center text-sm text-[color:var(--cl-muted)]">مفيش خصومات أو إضافات — الصافي = إجمالي الأعمال.</div>
+        ) : (
+          <table className="w-full text-sm">
+            <thead>
+              <tr className="bg-[color:var(--cl-inset)] text-[color:var(--cl-soft)] text-[12px]">
+                <th className="text-right py-2 px-3">الاسم</th>
+                <th className="text-right py-2 px-3 w-28">النوع</th>
+                <th className="text-right py-2 px-3 w-28">القيمة</th>
+                <th className="text-right py-2 px-3 w-28">الأثر</th>
+                <th className="text-right py-2 px-3 w-44">تُحسب على</th>
+                <th className="text-right py-2 px-3 w-32">المبلغ</th>
+                <th className="w-10" />
+              </tr>
+            </thead>
+            <tbody className="divide-y divide-[color:var(--cl-sep)]">
+              {adjustments.map((a, i) => (
+                <tr key={a.id}>
+                  <td className="py-2 px-3"><input className={stCellInput} value={a.name} onChange={(e) => setAdj(a.id, { name: e.target.value })} placeholder="اسم الخصم/الإضافة" /></td>
+                  <td className="py-2 px-3">
+                    <select className={stCellInput} value={a.kind} onChange={(e) => setAdj(a.id, { kind: e.target.value })}>
+                      <option value="percent">نسبة ٪</option><option value="amount">مبلغ</option>
+                    </select>
+                  </td>
+                  <td className="py-2 px-3"><input type="number" className={stCellInput + " mono"} value={a.value} onChange={(e) => setAdj(a.id, { value: e.target.value })} /></td>
+                  <td className="py-2 px-3">
+                    <select className={stCellInput} value={a.effect} onChange={(e) => setAdj(a.id, { effect: e.target.value })}>
+                      <option value="deduct">خصم (−)</option><option value="add">إضافة (+)</option>
+                    </select>
+                  </td>
+                  <td className="py-2 px-3">
+                    {a.kind === "percent" ? (
+                      <select className={stCellInput} value={a.base} onChange={(e) => setAdj(a.id, { base: e.target.value })}>
+                        <option value="subtotal">إجمالي الأعمال</option><option value="running">الإجمالي بعد الصفوف السابقة</option>
+                      </select>
+                    ) : <span className="text-[color:var(--cl-muted)] text-xs">—</span>}
+                  </td>
+                  <td className={`py-2 px-3 mono font-semibold ${a.effect === "add" ? "text-[color:var(--cl-green)]" : "text-[color:var(--cl-red)]"}`}>{a.effect === "add" ? "+" : "−"} {stMoney(calc.adjAmounts[i])}</td>
+                  <td className="py-2 px-2"><button onClick={() => setAdjustments((p) => p.filter((x) => x.id !== a.id))} className="p-1.5 rounded-md text-[color:var(--cl-red)] hover:bg-[#C1453B]/10"><Trash2 size={14} /></button></td>
+                </tr>
+              ))}
+            </tbody>
+          </table>
+        )}
+      </div>
+
+      <div className="bg-[color:var(--cl-ink)] rounded-xl p-5 text-white flex items-center justify-between">
+        <div>
+          <div className="text-[11px] text-white/50 mb-1">صافي المستحق</div>
+          <div className="font-bold mono text-2xl">{stMoney(calc.net)} ج.م</div>
+        </div>
+        <div className="flex items-center gap-3">
+          {err && <span className="text-sm text-[#F0918A]">{err}</span>}
+          <button onClick={onCancel} className="px-4 py-2 rounded-lg border border-white/20 text-sm hover:bg-white/10">إلغاء</button>
+          <button onClick={submit} className="px-5 py-2 rounded-lg bg-[color:var(--cl-accent-bg)] text-[color:var(--cl-on-accent)] text-sm font-bold hover:bg-[color:var(--cl-accent-hover)]">حفظ المستخلص</button>
+        </div>
+      </div>
+    </div>
+  );
+}
+
+function StatementsModule({ kind, statements, payments, projects, dbError, onSave, onDelete, onAddPayment, onDeletePayment }) {
+  const cfg = { ...ST_KINDS[kind], kind };
+  const Icon = cfg.icon;
+  const [mode, setMode] = useState("list"); // list | form | parties
+  const [editing, setEditing] = useState(null);
+  const [search, setSearch] = useState("");
+  const [openParty, setOpenParty] = useState(null);
+  const [payForm, setPayForm] = useState({ date: stToday(), amount: "", method: "تحويل بنكي", note: "", statementId: "" });
+
+  useEffect(() => { setMode("list"); setEditing(null); setOpenParty(null); setSearch(""); }, [kind]);
+
+  const list = useMemo(() => statements.filter((s) => s.kind === kind), [statements, kind]);
+  const pays = useMemo(() => payments.filter((p) => p.kind === kind), [payments, kind]);
+  const projName = (id) => projects.find((p) => p.id === id)?.name || "";
+  const parties = useMemo(() => Array.from(new Set([...list.map((s) => s.partyName), ...pays.map((p) => p.partyName)])).sort((a, b) => a.localeCompare(b, "ar")), [list, pays]);
+
+  const partyRows = parties.map((name) => {
+    const sts = list.filter((s) => s.partyName === name);
+    const ps = pays.filter((p) => p.partyName === name);
+    const total = stRound(sts.reduce((s, x) => s + x.netTotal, 0));
+    const paid = stRound(ps.reduce((s, x) => s + x.amount, 0));
+    return { name, sts, ps, total, paid, remaining: stRound(total - paid) };
+  });
+
+  const grandTotal = stRound(partyRows.reduce((s, p) => s + p.total, 0));
+  const grandPaid = stRound(partyRows.reduce((s, p) => s + p.paid, 0));
+  const grandRemaining = stRound(grandTotal - grandPaid);
+
+  if (dbError) {
+    return (
+      <div className="bg-[color:var(--cl-card)] rounded-xl border border-[color:var(--cl-red)] p-6 space-y-2">
+        <div className="font-bold text-[color:var(--cl-red)]">جداول المستخلصات مش موجودة على Supabase</div>
+        <div className="text-sm text-[color:var(--cl-soft)]">شغّل ملف <span className="mono">statements_schema.sql</span> في SQL Editor ثم حدّث الصفحة.</div>
+        <div className="text-[11px] mono text-[color:var(--cl-muted)]" dir="ltr">{dbError}</div>
+      </div>
+    );
+  }
+
+  if (mode === "form") {
+    return (
+      <StatementForm
+        cfg={cfg} initial={editing} parties={parties} projects={projects} existing={list}
+        onCancel={() => { setMode("list"); setEditing(null); }}
+        onSave={async (st) => { const ok = await onSave(st); if (ok !== false) { setMode("list"); setEditing(null); } }}
+      />
+    );
+  }
+
+  const q = search.trim();
+  const filtered = list
+    .filter((s) => !q || s.partyName.includes(q) || String(s.number).includes(q) || projName(s.projectId).includes(q))
+    .sort((a, b) => (b.date || "").localeCompare(a.date || ""));
+
+  const paidFor = (s) => stRound(pays.filter((p) => p.statementId === s.id).reduce((x, p) => x + p.amount, 0));
+
+  return (
+    <div className="space-y-5">
+      <div className="flex items-center justify-between">
+        <div>
+          <h2 className="font-bold text-xl text-[color:var(--cl-text)] flex items-center gap-2"><Icon size={20} /> {cfg.title}</h2>
+          <p className="text-[12px] text-[color:var(--cl-muted)] mt-1">مستقلة عن المشاريع والعقود — اربط بمشروع لو حابب فقط</p>
+        </div>
+        <button onClick={() => { setEditing(null); setMode("form"); }} className="px-3 py-2 rounded-lg bg-[color:var(--cl-accent-bg)] text-[color:var(--cl-on-accent)] text-sm font-semibold flex items-center gap-1.5 hover:bg-[color:var(--cl-accent-hover)] transition">
+          <Plus size={15} /> مستخلص جديد
+        </button>
+      </div>
+
+      <div className="grid grid-cols-3 gap-3">
+        <div className="bg-[color:var(--cl-card)] rounded-xl border border-[color:var(--cl-line)] p-4">
+          <div className="text-[11px] text-[color:var(--cl-muted)] mb-1">إجمالي صافي المستخلصات</div>
+          <div className="font-bold mono text-lg text-[color:var(--cl-text)]">{stMoney(grandTotal)} ج.م</div>
+        </div>
+        <div className="bg-[color:var(--cl-card)] rounded-xl border border-[color:var(--cl-line)] p-4">
+          <div className="text-[11px] text-[color:var(--cl-muted)] mb-1">المدفوع</div>
+          <div className="font-bold mono text-lg text-[color:var(--cl-green)]">{stMoney(grandPaid)} ج.م</div>
+        </div>
+        <div className="bg-[color:var(--cl-ink)] rounded-xl p-4 text-white">
+          <div className="text-[11px] text-white/50 mb-1">المتبقي</div>
+          <div className={`font-bold mono text-lg ${grandRemaining > 0 ? "text-[#E8AA6C]" : "text-white"}`}>{stMoney(grandRemaining)} ج.م</div>
+        </div>
+      </div>
+
+      <div className="flex items-center gap-2">
+        {[{ k: "list", l: "كل المستخلصات" }, { k: "parties", l: `كشف حساب ${cfg.partyPlural}` }].map((t) => (
+          <button key={t.k} onClick={() => setMode(t.k)} className={`px-4 py-2 rounded-lg text-sm font-semibold transition ${mode === t.k ? "bg-[color:var(--cl-ink)] text-white" : "border border-[color:var(--cl-line)] text-[color:var(--cl-soft)] hover:bg-[color:var(--cl-sub)]"}`}>{t.l}</button>
+        ))}
+        {mode === "list" && (
+          <input value={search} onChange={(e) => setSearch(e.target.value)} placeholder={`بحث بالاسم / الرقم / المشروع`} className="mr-auto w-72 border border-[color:var(--cl-line)] rounded-lg px-3 py-2 text-sm outline-none focus:border-[color:var(--cl-accent-bg)] bg-[color:var(--cl-card)]" />
+        )}
+      </div>
+
+      {mode === "list" && (
+        <div className="bg-[color:var(--cl-card)] rounded-xl border border-[color:var(--cl-line)] overflow-hidden">
+          <table className="w-full text-sm">
+            <thead>
+              <tr className="bg-[color:var(--cl-inset)] text-[color:var(--cl-soft)] text-[12px]">
+                <th className="text-right py-3 px-4">رقم</th>
+                <th className="text-right py-3 px-4">{cfg.partyLabel}</th>
+                <th className="text-right py-3 px-4">التاريخ</th>
+                <th className="text-right py-3 px-4">المشروع</th>
+                <th className="text-right py-3 px-4">الصافي</th>
+                <th className="text-right py-3 px-4">مدفوع عليه</th>
+                <th className="text-right py-3 px-4">الحالة</th>
+                <th className="w-28" />
+              </tr>
+            </thead>
+            <tbody className="divide-y divide-[color:var(--cl-sep)]">
+              {filtered.map((s) => (
+                <tr key={s.id} className="hover:bg-[color:var(--cl-sub)] group">
+                  <td className="py-3 px-4 mono">{s.number}</td>
+                  <td className="py-3 px-4 font-semibold text-[color:var(--cl-text)]">{s.partyName}</td>
+                  <td className="py-3 px-4 mono text-[color:var(--cl-soft)]">{s.date}</td>
+                  <td className="py-3 px-4 text-[color:var(--cl-soft)]">{projName(s.projectId) || "—"}</td>
+                  <td className="py-3 px-4 mono font-bold">{stMoney(s.netTotal)}</td>
+                  <td className="py-3 px-4 mono text-[color:var(--cl-green)]">{paidFor(s) ? stMoney(paidFor(s)) : "—"}</td>
+                  <td className="py-3 px-4"><span className={`text-[11px] px-2 py-0.5 rounded-full ${s.status === "معتمد" ? "bg-[color:var(--cl-green)]/15 text-[color:var(--cl-green)]" : "bg-[color:var(--cl-chip)] text-[color:var(--cl-soft)]"}`}>{s.status || "—"}</span></td>
+                  <td className="py-3 px-4">
+                    <div className="flex items-center gap-1 opacity-0 group-hover:opacity-100 transition">
+                      <button title="طباعة" onClick={() => printStatement(s, cfg, projName(s.projectId))} className="p-1.5 rounded-md text-[color:var(--cl-soft)] hover:bg-[color:var(--cl-line)]"><Printer size={14} /></button>
+                      <button title="تعديل" onClick={() => { setEditing(s); setMode("form"); }} className="p-1.5 rounded-md text-[color:var(--cl-soft)] hover:bg-[color:var(--cl-line)]"><Pencil size={14} /></button>
+                      <button title="حذف" onClick={() => onDelete(s.id)} className="p-1.5 rounded-md text-[color:var(--cl-red)] hover:bg-[#C1453B]/10"><Trash2 size={14} /></button>
+                    </div>
+                  </td>
+                </tr>
+              ))}
+              {filtered.length === 0 && <tr><td colSpan={8} className="text-center py-8 text-[color:var(--cl-muted)]">لا توجد مستخلصات.</td></tr>}
+            </tbody>
+          </table>
+        </div>
+      )}
+
+      {mode === "parties" && (
+        <div className="bg-[color:var(--cl-card)] rounded-xl border border-[color:var(--cl-line)] overflow-hidden">
+          <table className="w-full text-sm">
+            <thead>
+              <tr className="bg-[color:var(--cl-inset)] text-[color:var(--cl-soft)] text-[12px]">
+                <th className="w-8" />
+                <th className="text-right py-3 px-4">{cfg.partyLabel}</th>
+                <th className="text-right py-3 px-4">عدد المستخلصات</th>
+                <th className="text-right py-3 px-4">إجمالي الصافي</th>
+                <th className="text-right py-3 px-4">المدفوع</th>
+                <th className="text-right py-3 px-4">المتبقي</th>
+              </tr>
+            </thead>
+            <tbody>
+              {partyRows.map((p) => {
+                const open = openParty === p.name;
+                return (
+                  <React.Fragment key={p.name}>
+                    <tr onClick={() => setOpenParty(open ? null : p.name)} className="cursor-pointer hover:bg-[color:var(--cl-sub)] border-t border-[color:var(--cl-sep)]">
+                      <td className="px-3 text-[color:var(--cl-muted)]">{open ? <ChevronDown size={14} /> : <ChevronRight size={14} />}</td>
+                      <td className="py-3 px-4 font-semibold text-[color:var(--cl-text)]">{p.name}</td>
+                      <td className="py-3 px-4 mono">{p.sts.length}</td>
+                      <td className="py-3 px-4 mono">{stMoney(p.total)}</td>
+                      <td className="py-3 px-4 mono text-[color:var(--cl-green)]">{stMoney(p.paid)}</td>
+                      <td className={`py-3 px-4 mono font-bold ${p.remaining > 0 ? "text-[#D6A23C]" : "text-[color:var(--cl-green)]"}`}>{stMoney(p.remaining)}</td>
+                    </tr>
+                    {open && (
+                      <tr className="bg-[color:var(--cl-inset)]">
+                        <td colSpan={6} className="p-4 space-y-4">
+                          <div className="grid grid-cols-2 gap-4">
+                            <div>
+                              <div className="text-[12px] font-bold text-[color:var(--cl-soft)] mb-2">المستخلصات</div>
+                              <div className="space-y-1">
+                                {p.sts.sort((a, b) => (a.date || "").localeCompare(b.date || "")).map((s) => (
+                                  <div key={s.id} className="flex items-center justify-between text-sm bg-[color:var(--cl-card)] rounded-lg px-3 py-2 border border-[color:var(--cl-sep)]">
+                                    <span>#{s.number} <span className="text-[color:var(--cl-muted)] mono text-xs">· {s.date}</span></span>
+                                    <span className="mono font-semibold">{stMoney(s.netTotal)}</span>
+                                  </div>
+                                ))}
+                                {p.sts.length === 0 && <div className="text-xs text-[color:var(--cl-muted)]">لا مستخلصات.</div>}
+                              </div>
+                            </div>
+                            <div>
+                              <div className="text-[12px] font-bold text-[color:var(--cl-soft)] mb-2">الدفعات</div>
+                              <div className="space-y-1">
+                                {p.ps.sort((a, b) => (a.date || "").localeCompare(b.date || "")).map((x) => (
+                                  <div key={x.id} className="flex items-center justify-between text-sm bg-[color:var(--cl-card)] rounded-lg px-3 py-2 border border-[color:var(--cl-sep)]">
+                                    <span className="mono text-xs text-[color:var(--cl-muted)]">{x.date} · <span className="font-sans">{x.method}{x.note ? " · " + x.note : ""}</span></span>
+                                    <span className="flex items-center gap-2"><span className="mono font-semibold text-[color:var(--cl-green)]">{stMoney(x.amount)}</span>
+                                      <button onClick={() => onDeletePayment(x.id)} className="p-1 rounded text-[color:var(--cl-red)] hover:bg-[#C1453B]/10"><Trash2 size={12} /></button></span>
+                                  </div>
+                                ))}
+                                {p.ps.length === 0 && <div className="text-xs text-[color:var(--cl-muted)]">لا دفعات.</div>}
+                              </div>
+                            </div>
+                          </div>
+                          <div className="grid grid-cols-5 gap-2 items-end">
+                            <Field small label="تاريخ الدفعة" type="date" value={payForm.date} onChange={(v) => setPayForm((f) => ({ ...f, date: v }))} />
+                            <Field small label="المبلغ" type="number" value={payForm.amount} onChange={(v) => setPayForm((f) => ({ ...f, amount: v }))} />
+                            <SelectField small label="الطريقة" value={payForm.method} onChange={(v) => setPayForm((f) => ({ ...f, method: v }))} options={["تحويل بنكي", "نقدي", "شيك"].map((m) => ({ value: m, label: m }))} />
+                            <SelectField small label="على مستخلص (اختياري)" value={payForm.statementId} onChange={(v) => setPayForm((f) => ({ ...f, statementId: v }))} options={[{ value: "", label: "— عام —" }, ...p.sts.map((s) => ({ value: s.id, label: "#" + s.number }))]} />
+                            <button
+                              onClick={async () => {
+                                if (!payForm.amount || Number(payForm.amount) <= 0) return;
+                                await onAddPayment({ id: stUid("sp_"), kind, partyName: p.name, date: payForm.date || stToday(), amount: Number(payForm.amount), method: payForm.method, note: payForm.note, statementId: payForm.statementId || null });
+                                setPayForm((f) => ({ ...f, amount: "", statementId: "" }));
+                              }}
+                              className="px-3 py-1.5 rounded-lg bg-[color:var(--cl-accent-bg)] text-[color:var(--cl-on-accent)] text-xs font-bold hover:bg-[color:var(--cl-accent-hover)]">+ تسجيل دفعة</button>
+                          </div>
+                        </td>
+                      </tr>
+                    )}
+                  </React.Fragment>
+                );
+              })}
+              {partyRows.length === 0 && <tr><td colSpan={6} className="text-center py-8 text-[color:var(--cl-muted)]">لا يوجد بيانات بعد.</td></tr>}
+            </tbody>
+          </table>
+        </div>
+      )}
+    </div>
+  );
+}
 
 function NewProjectModal({ onClose, onCreate }) {
   const [form, setForm] = useState({ name: "", client: "", location: "", budget: "" });
