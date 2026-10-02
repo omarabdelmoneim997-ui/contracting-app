@@ -526,39 +526,62 @@ function ContractingApp({ currentUsername, onLogout }) {
     pTreasuryEntries.reduce((sum, t) => sum + (t.type === "ايداع" ? t.amount : -t.amount), 0);
 
   return (
-    <div dir="rtl" style={{ fontFamily: "'Cairo', sans-serif" }} className="w-full min-h-screen flex flex-col" >
+    <div dir="rtl" style={{ fontFamily: "'IBM Plex Sans Arabic', 'Cairo', sans-serif", color: "var(--cl-text)" }} className="w-full min-h-screen flex flex-col" >
       <style>{`
-        @import url('https://fonts.googleapis.com/css2?family=Cairo:wght@400;500;600;700;800&family=IBM+Plex+Mono:wght@400;500;600&display=swap');
-        .mono { font-family: 'IBM Plex Mono', monospace; }
+        @import url('https://fonts.googleapis.com/css2?family=IBM+Plex+Sans+Arabic:wght@400;500;600;700&family=IBM+Plex+Mono:wght@400;500;600&display=swap');
+        :root {
+          color-scheme: dark;
+          --cl-bg:#050505; --cl-card:#111114; --cl-input:#0a0a0c; --cl-sub:#16161a; --cl-inset:#0b0b0e;
+          --cl-line:#26262c; --cl-sep:#1c1c21; --cl-chip:#1a1a1f; --cl-hover:#2a2a31;
+          --cl-text:#eeeeee; --cl-muted:#8b8b95; --cl-soft:#a3a3ad;
+          --cl-ink:#2a2a31; --cl-ink-hover:#34343c;
+          --cl-accent:#f0c85a; --cl-red:#ff6b6b; --cl-green:#5fd0a0;
+        }
+        @media print {
+          :root {
+            color-scheme: light;
+            --cl-bg:#F6F3EA; --cl-card:#ffffff; --cl-input:#ffffff; --cl-sub:#FAF8F2; --cl-inset:#F6F3EA;
+            --cl-line:#E1DACB; --cl-sep:#EFEBDF; --cl-chip:#F1EDE1; --cl-hover:#D8D3C7;
+            --cl-text:#1E2530; --cl-muted:#9A9483; --cl-soft:#6B7280;
+            --cl-ink:#1E2530; --cl-ink-hover:#2b3543;
+            --cl-accent:#E8672C; --cl-red:#C1453B; --cl-green:#3F7D63;
+          }
+        }
+        body { background: var(--cl-bg); -webkit-font-smoothing: antialiased; text-rendering: optimizeLegibility; }
+        .mono { font-family: 'IBM Plex Mono', monospace; font-variant-numeric: tabular-nums; }
+        .tracking-wide:not(.mono):not([dir="ltr"]), .tracking-wider:not(.mono):not([dir="ltr"]) { letter-spacing: 0; }
+        :where(input:not([type=checkbox]):not([type=radio]), select, textarea) { background-color: var(--cl-input); color: var(--cl-text); }
+        ::placeholder { color: var(--cl-muted); opacity: 1; }
+        select option { background: #111114; color: #eee; }
         .blueprint-bg {
-          background-color: #14212C;
+          background-color: #0a0a0c;
           background-image:
-            linear-gradient(rgba(255,255,255,0.035) 1px, transparent 1px),
-            linear-gradient(90deg, rgba(255,255,255,0.035) 1px, transparent 1px);
+            linear-gradient(rgba(255,255,255,0.025) 1px, transparent 1px),
+            linear-gradient(90deg, rgba(255,255,255,0.025) 1px, transparent 1px);
           background-size: 28px 28px;
         }
         .paper-bg {
-          background-color: #F6F3EA;
-          background-image: linear-gradient(rgba(20,33,44,0.025) 1px, transparent 1px);
+          background-color: var(--cl-bg);
+          background-image: linear-gradient(rgba(255,255,255,0.02) 1px, transparent 1px);
           background-size: 100% 32px;
         }
-        .dim-line { border-top: 1px dashed #C9C1AC; }
+        .dim-line { border-top: 1px dashed #33333b; }
         ::-webkit-scrollbar { width: 8px; height: 8px; }
-        ::-webkit-scrollbar-thumb { background: #D8D3C7; border-radius: 4px; }
+        ::-webkit-scrollbar-thumb { background: #2a2a31; border-radius: 4px; }
       `}</style>
 
       {loading && (
-        <div className="fixed inset-0 bg-[#F6F3EA] flex items-center justify-center z-50 gap-2 text-[#1E2530]">
+        <div className="fixed inset-0 bg-[color:var(--cl-inset)] flex items-center justify-center z-50 gap-2 text-[color:var(--cl-text)]">
           <Loader2 size={20} className="animate-spin" />
           <span className="font-semibold text-sm">جاري تحميل بيانات المشروعات...</span>
         </div>
       )}
 
       {!loading && dbError && (
-        <div className="fixed inset-0 bg-[#F6F3EA] flex items-center justify-center z-50 p-8" dir="rtl">
-          <div className="bg-white border border-[#E1DACB] rounded-xl p-6 max-w-md text-center">
-            <div className="font-bold text-[#C1453B] mb-2">تعذّر الاتصال بقاعدة البيانات</div>
-            <div className="text-sm text-[#6B7280]">{dbError}</div>
+        <div className="fixed inset-0 bg-[color:var(--cl-inset)] flex items-center justify-center z-50 p-8" dir="rtl">
+          <div className="bg-[color:var(--cl-card)] border border-[color:var(--cl-line)] rounded-xl p-6 max-w-md text-center">
+            <div className="font-bold text-[color:var(--cl-red)] mb-2">تعذّر الاتصال بقاعدة البيانات</div>
+            <div className="text-sm text-[color:var(--cl-soft)]">{dbError}</div>
           </div>
         </div>
       )}
@@ -571,7 +594,7 @@ function ContractingApp({ currentUsername, onLogout }) {
           <div className="flex items-center gap-3">
             <CostLineMark size={42} />
             <div className="min-w-0">
-              <div className="font-extrabold text-[15px] text-white leading-tight tracking-wide" dir="ltr">Cost<span className="text-[#E8672C]">Line</span></div>
+              <div className="font-extrabold text-[15px] text-white leading-tight tracking-wide" dir="ltr">Cost<span className="text-[color:var(--cl-accent)]">Line</span></div>
               <div className="text-[10px] text-white/45 mono tracking-wider mt-0.5">CONSTRUCTION ERP</div>
             </div>
           </div>
@@ -593,11 +616,11 @@ function ContractingApp({ currentUsername, onLogout }) {
                   key={p.id}
                   onClick={() => { setActiveProjectId(p.id); setView("project"); }}
                   className={`w-full text-right px-3 py-2 rounded-lg text-sm transition flex items-center justify-between gap-2 ${
-                    on ? "bg-[#E8672C] text-white font-bold shadow-md shadow-[#E8672C]/20" : "text-white/70 hover:bg-white/5 hover:text-white"
+                    on ? "bg-[#f0c85a] text-[#1a1405] font-bold shadow-md shadow-[#f0c85a]/20" : "text-white/70 hover:bg-white/5 hover:text-white"
                   }`}
                 >
                   <span className="flex items-center gap-2 min-w-0">
-                    <span className={`w-1.5 h-1.5 rounded-full shrink-0 ${on ? "bg-white" : "bg-white/30"}`} />
+                    <span className={`w-1.5 h-1.5 rounded-full shrink-0 ${on ? "bg-[color:var(--cl-card)]" : "bg-white/30"}`} />
                     <span className="truncate">{p.name}</span>
                   </span>
                   {on && <ChevronRight size={14} className="shrink-0" />}
@@ -607,7 +630,7 @@ function ContractingApp({ currentUsername, onLogout }) {
           </div>
           <button
             onClick={() => setShowNewProject(true)}
-            className="w-full mt-2 px-3 py-2 rounded-lg text-xs font-semibold text-white/60 border border-dashed border-white/15 hover:border-[#E8672C]/60 hover:text-[#E8672C] flex items-center justify-center gap-1 transition"
+            className="w-full mt-2 px-3 py-2 rounded-lg text-xs font-semibold text-white/60 border border-dashed border-white/15 hover:border-[#f0c85a]/60 hover:text-[color:var(--cl-accent)] flex items-center justify-center gap-1 transition"
           >
             <Plus size={13} /> مشروع جديد
           </button>
@@ -709,23 +732,23 @@ function ContractingApp({ currentUsername, onLogout }) {
           </div>
         ) : (
           <>
-        <header className="px-8 pt-7 pb-5 border-b border-[#E1DACB] bg-[#F6F3EA]/80 sticky top-0 backdrop-blur z-10">
+        <header className="px-8 pt-7 pb-5 border-b border-[color:var(--cl-line)] bg-[#050505]/80 sticky top-0 backdrop-blur z-10">
           <div className="flex items-start justify-between">
             <div>
-              <div className="text-[11px] mono text-[#9A9483] mb-1">
+              <div className="text-[11px] mono text-[color:var(--cl-muted)] mb-1">
                 {project?.status} · {project?.location}
               </div>
-              <h1 className="text-2xl font-extrabold text-[#1E2530]">{project?.name}</h1>
+              <h1 className="text-2xl font-extrabold text-[color:var(--cl-text)]">{project?.name}</h1>
             </div>
             <div className="text-left">
-              <div className="text-[11px] text-[#9A9483] mb-1">إجمالي عقد المشروع</div>
-              <div className="text-xl font-bold mono text-[#1E2530]">{money(project?.budget)}</div>
+              <div className="text-[11px] text-[color:var(--cl-muted)] mb-1">إجمالي عقد المشروع</div>
+              <div className="text-xl font-bold mono text-[color:var(--cl-text)]">{money(project?.budget)}</div>
             </div>
           </div>
 
           {tab !== "dashboard" && (<>
           <div className="grid grid-cols-5 gap-3 mt-5">
-            <StatCard label="ميزانية بنود الأعمال" value={money(totals.budgetTotal)} icon={Wallet} color="#1E2530" />
+            <StatCard label="ميزانية بنود الأعمال" value={money(totals.budgetTotal)} icon={Wallet} color="#9AA3B2" />
             <StatCard
               label="إجمالي التكاليف الفعلية"
               value={money(totals.actualTotal)}
@@ -882,7 +905,7 @@ const rLine = (c) => c.qty * c.price;
 const rDay = (d) => String(d || "").slice(0, 10);
 const rPct = (v, d = 1) => (v === null || v === undefined || !isFinite(v) ? "—" : fmt(v, d) + "٪");
 const rTypeLabel = (k) => COST_TYPES.find((t) => t.key === k)?.label || k || "—";
-const rOverTone = (v) => (v > 0 ? "text-[#C1453B]" : "text-[#3F7D63]");
+const rOverTone = (v) => (v > 0 ? "text-[color:var(--cl-red)]" : "text-[color:var(--cl-green)]");
 
 const REPORT_LIST = [
   { key: "executive", title: "التقرير التنفيذي للمشروع", desc: "قيمة العقد، الأعمال، التكلفة الفعلية والمتوقعة، الربح والهامش، التحصيل وأهم التجاوزات.", icon: LayoutDashboard },
@@ -898,29 +921,29 @@ function ReportShell({ title, notice, s, children }) {
   const projLabel = s.multi ? "كل المشروعات" : (s.projects[0]?.name || "—");
   const period = !s.from && !s.to ? "كل الفترات" : `${s.from || "البداية"}  ←  ${s.to || "اليوم"}`;
   return (
-    <div id="report-print-area" dir="rtl" className="bg-white rounded-xl border border-[#E1DACB] p-8 space-y-6">
-      <div className="flex items-center justify-between border-b-[3px] border-[#E8672C] pb-4">
+    <div id="report-print-area" dir="rtl" className="bg-[color:var(--cl-card)] rounded-xl border border-[color:var(--cl-line)] p-8 space-y-6">
+      <div className="flex items-center justify-between border-b-[3px] border-[#f0c85a] pb-4">
         <div className="flex items-center gap-3">
           <CostLineMark size={40} />
           <div>
-            <div className="font-extrabold text-lg text-[#1E2530] leading-tight" dir="ltr">Cost<span className="text-[#E8672C]">Line</span></div>
-            <div className="text-[10px] text-[#9A9483] mono tracking-wider">CONTRACTING · MANAGEMENT REPORT</div>
+            <div className="font-extrabold text-lg text-[color:var(--cl-text)] leading-tight" dir="ltr">Cost<span className="text-[color:var(--cl-accent)]">Line</span></div>
+            <div className="text-[10px] text-[color:var(--cl-muted)] mono tracking-wider">CONTRACTING · MANAGEMENT REPORT</div>
           </div>
         </div>
-        <h1 className="text-xl font-extrabold text-[#1E2530]">{title}</h1>
+        <h1 className="text-xl font-extrabold text-[color:var(--cl-text)]">{title}</h1>
       </div>
 
-      <div className="grid grid-cols-3 gap-3 bg-[#F6F3EA] rounded-lg px-5 py-3 text-[12px]">
-        <div><span className="block text-[10px] text-[#9A9483]">المشروع</span><span className="font-bold text-[#1E2530]">{projLabel}</span></div>
-        <div><span className="block text-[10px] text-[#9A9483]">الفترة</span><span className="font-bold text-[#1E2530] mono">{period}</span></div>
-        <div><span className="block text-[10px] text-[#9A9483]">تاريخ الإصدار</span><span className="font-bold text-[#1E2530] mono">{new Date().toLocaleDateString("en-GB")}</span></div>
+      <div className="grid grid-cols-3 gap-3 bg-[color:var(--cl-inset)] rounded-lg px-5 py-3 text-[12px]">
+        <div><span className="block text-[10px] text-[color:var(--cl-muted)]">المشروع</span><span className="font-bold text-[color:var(--cl-text)]">{projLabel}</span></div>
+        <div><span className="block text-[10px] text-[color:var(--cl-muted)]">الفترة</span><span className="font-bold text-[color:var(--cl-text)] mono">{period}</span></div>
+        <div><span className="block text-[10px] text-[color:var(--cl-muted)]">تاريخ الإصدار</span><span className="font-bold text-[color:var(--cl-text)] mono">{new Date().toLocaleDateString("en-GB")}</span></div>
       </div>
 
-      {notice && <div className="text-[11px] text-[#8A6A1F] bg-[#D6A23C]/10 border border-[#D6A23C]/30 rounded-lg px-4 py-2">{notice}</div>}
+      {notice && <div className="text-[11px] text-[#e8c56a] bg-[#D6A23C]/10 border border-[#D6A23C]/30 rounded-lg px-4 py-2">{notice}</div>}
 
       {children}
 
-      <div className="flex justify-between text-[10px] text-[#9A9483] border-t border-[#E1DACB] pt-3">
+      <div className="flex justify-between text-[10px] text-[color:var(--cl-muted)] border-t border-[color:var(--cl-line)] pt-3">
         <span>CostLine — نظام إدارة المقاولات</span>
         <span>تقرير سري للإدارة — للاستخدام الداخلي</span>
       </div>
@@ -928,12 +951,12 @@ function ReportShell({ title, notice, s, children }) {
   );
 }
 
-function RptKpi({ label, value, sub, color = "#1E2530" }) {
+function RptKpi({ label, value, sub, color = "#9AA3B2" }) {
   return (
-    <div className="rounded-xl border border-[#E1DACB] bg-white px-4 py-3 avoid-break">
-      <div className="text-[11px] text-[#9A9483] mb-1">{label}</div>
+    <div className="rounded-xl border border-[color:var(--cl-line)] bg-[color:var(--cl-card)] px-4 py-3 avoid-break">
+      <div className="text-[11px] text-[color:var(--cl-muted)] mb-1">{label}</div>
       <div className="text-base font-extrabold mono" style={{ color }}>{value}</div>
-      {sub && <div className="text-[10px] text-[#9A9483] mt-0.5">{sub}</div>}
+      {sub && <div className="text-[10px] text-[color:var(--cl-muted)] mt-0.5">{sub}</div>}
     </div>
   );
 }
@@ -942,8 +965,8 @@ function RptSection({ title, hint, children }) {
   return (
     <section className="space-y-2">
       <div>
-        <h3 className="font-bold text-[#1E2530] text-sm border-r-4 border-[#E8672C] pr-2">{title}</h3>
-        {hint && <p className="text-[11px] text-[#9A9483] mt-1 pr-3">{hint}</p>}
+        <h3 className="font-bold text-[color:var(--cl-text)] text-sm border-r-4 border-[#f0c85a] pr-2">{title}</h3>
+        {hint && <p className="text-[11px] text-[color:var(--cl-muted)] mt-1 pr-3">{hint}</p>}
       </div>
       {children}
     </section>
@@ -952,14 +975,14 @@ function RptSection({ title, hint, children }) {
 
 function RptTable({ heads, rows, footer, empty }) {
   return (
-    <div className="border border-[#E1DACB] rounded-lg overflow-hidden">
+    <div className="border border-[color:var(--cl-line)] rounded-lg overflow-hidden">
       <table className="w-full text-[12px]">
-        <thead className="bg-[#1E2530] text-white">
+        <thead className="bg-[color:var(--cl-ink)] text-white">
           <tr>{heads.map((h, i) => <th key={i} className="text-right py-2 px-3 font-semibold whitespace-nowrap">{h.label}</th>)}</tr>
         </thead>
-        <tbody className="divide-y divide-[#EFEBDF]">
+        <tbody className="divide-y divide-[color:var(--cl-sep)]">
           {rows.length === 0 ? (
-            <tr><td colSpan={heads.length} className="py-6 text-center text-[#9A9483]">{empty || "لا توجد بيانات في هذه الفترة"}</td></tr>
+            <tr><td colSpan={heads.length} className="py-6 text-center text-[color:var(--cl-muted)]">{empty || "لا توجد بيانات في هذه الفترة"}</td></tr>
           ) : rows.map((r, ri) => (
             <tr key={ri} className={r.className || ""}>
               {r.cells.map((c, ci) => <td key={ci} className={`py-2 px-3 ${heads[ci]?.num ? "mono" : ""}`}>{c}</td>)}
@@ -967,7 +990,7 @@ function RptTable({ heads, rows, footer, empty }) {
           ))}
         </tbody>
         {footer && rows.length > 0 && (
-          <tfoot className="bg-[#F6F3EA] font-bold">
+          <tfoot className="bg-[color:var(--cl-inset)] font-bold">
             <tr>{footer.map((c, ci) => <td key={ci} className={`py-2 px-3 ${heads[ci]?.num ? "mono" : ""}`}>{c}</td>)}</tr>
           </tfoot>
         )}
@@ -980,8 +1003,8 @@ function RptBar({ label, value, max, color }) {
   const w = max > 0 ? Math.max(0, Math.min(100, (value / max) * 100)) : 0;
   return (
     <div>
-      <div className="flex justify-between text-[12px] mb-1"><span className="font-semibold text-[#1E2530]">{label}</span><span className="mono font-bold">{money(value)}</span></div>
-      <div className="h-2.5 rounded-full bg-[#F1EDE1] overflow-hidden"><div className="h-full rounded-full" style={{ width: `${w}%`, backgroundColor: color }} /></div>
+      <div className="flex justify-between text-[12px] mb-1"><span className="font-semibold text-[color:var(--cl-text)]">{label}</span><span className="mono font-bold">{money(value)}</span></div>
+      <div className="h-2.5 rounded-full bg-[color:var(--cl-chip)] overflow-hidden"><div className="h-full rounded-full" style={{ width: `${w}%`, backgroundColor: color }} /></div>
     </div>
   );
 }
@@ -1025,7 +1048,7 @@ function ExecutiveReport({ s }) {
 
       <RptSection title="مقارنة سريعة">
         <div className="space-y-3 avoid-break">
-          <RptBar label="قيمة العقد" value={contract} max={barMax} color="#1E2530" />
+          <RptBar label="قيمة العقد" value={contract} max={barMax} color="#9AA3B2" />
           <RptBar label="المستخلصات" value={worksValue} max={barMax} color="#E8672C" />
           <RptBar label="التكلفة المتوقعة" value={forecast} max={barMax} color={forecast > contract && contract > 0 ? "#C1453B" : "#D6A23C"} />
           <RptBar label="المحصل" value={collected} max={barMax} color="#3F7D63" />
@@ -1037,10 +1060,10 @@ function ExecutiveReport({ s }) {
           heads={[{ label: "البند" }, { label: "الميزانية", num: true }, { label: "الفعلي", num: true }, { label: "المتوقع", num: true }, { label: "التجاوز", num: true }, { label: "نسبة التجاوز", num: true }]}
           rows={over.map((r) => ({
             cells: [
-              <span className="font-semibold">{r.name}{s.multi && <span className="text-[10px] text-[#9A9483] block font-normal">{s.projName(r.projectId)}</span>}</span>,
+              <span className="font-semibold">{r.name}{s.multi && <span className="text-[10px] text-[color:var(--cl-muted)] block font-normal">{s.projName(r.projectId)}</span>}</span>,
               fmt(r.budget), fmt(r.actual), fmt(r.forecast),
-              <span className="text-[#C1453B] font-bold">{fmt(r.over)}</span>,
-              <span className="text-[#C1453B] font-bold">{rPct((r.over / r.budget) * 100)}</span>,
+              <span className="text-[color:var(--cl-red)] font-bold">{fmt(r.over)}</span>,
+              <span className="text-[color:var(--cl-red)] font-bold">{rPct((r.over / r.budget) * 100)}</span>,
             ],
           }))}
           empty="لا توجد بنود متجاوزة للميزانية 👍"
@@ -1075,9 +1098,9 @@ function CostDetailReport({ s }) {
   const levelRows = [];
   [...l1Map.entries()].sort((a, b) => rSum([...b[1].values()].flat(), rLine) - rSum([...a[1].values()].flat(), rLine)).forEach(([l1, inner]) => {
     const all = [...inner.values()].flat();
-    levelRows.push({ className: "bg-[#F6F3EA] font-bold", cells: [l1, "", all.length, fmt(rSum(all, rLine))] });
+    levelRows.push({ className: "bg-[color:var(--cl-inset)] font-bold", cells: [l1, "", all.length, fmt(rSum(all, rLine))] });
     [...inner.entries()].sort((a, b) => rSum(b[1], rLine) - rSum(a[1], rLine)).forEach(([l2, ls]) => {
-      levelRows.push({ cells: [<span className="pr-4 text-[#6B7280]">↳</span>, l2, ls.length, fmt(rSum(ls, rLine))] });
+      levelRows.push({ cells: [<span className="pr-4 text-[color:var(--cl-soft)]">↳</span>, l2, ls.length, fmt(rSum(ls, rLine))] });
     });
   });
 
@@ -1121,7 +1144,7 @@ function CostDetailReport({ s }) {
           rows={lines.map((c) => ({
             cells: [
               rDay(c.date) || "—",
-              <span>{itemName(c.workItemId)}{s.multi && <span className="text-[10px] text-[#9A9483] block">{s.projName(c.projectId)}</span>}</span>,
+              <span>{itemName(c.workItemId)}{s.multi && <span className="text-[10px] text-[color:var(--cl-muted)] block">{s.projName(c.projectId)}</span>}</span>,
               rTypeLabel(c.type), c.desc, c.costLevel1 || "—", c.costLevel2 || "—",
               fmt(c.qty, 2), c.unit, fmt(c.price, 2), <b>{fmt(rLine(c))}</b>,
             ],
@@ -1157,9 +1180,9 @@ function BudgetVsActualReport({ s }) {
   const overList = data.filter((r) => r.over).sort((a, b) => (b.actual - b.budget) - (a.actual - a.budget));
 
   const statusCell = (r) => r.over
-    ? <span className="text-[#C1453B] font-bold">{r.budget === 0 ? "بدون ميزانية" : "تجاوز"}</span>
+    ? <span className="text-[color:var(--cl-red)] font-bold">{r.budget === 0 ? "بدون ميزانية" : "تجاوز"}</span>
     : r.near ? <span className="text-[#D6A23C] font-bold">قريب من الحد</span>
-    : <span className="text-[#3F7D63] font-bold">ضمن الميزانية</span>;
+    : <span className="text-[color:var(--cl-green)] font-bold">ضمن الميزانية</span>;
 
   return (
     <ReportShell title="تقرير Budget vs Actual" s={s}
@@ -1177,7 +1200,7 @@ function BudgetVsActualReport({ s }) {
           rows={data.map((r) => ({
             className: r.over ? "bg-[#C1453B]/[0.07]" : "",
             cells: [
-              <span className="font-semibold">{r.name}{s.multi && r.projectId && <span className="text-[10px] text-[#9A9483] block font-normal">{s.projName(r.projectId)}</span>}</span>,
+              <span className="font-semibold">{r.name}{s.multi && r.projectId && <span className="text-[10px] text-[color:var(--cl-muted)] block font-normal">{s.projName(r.projectId)}</span>}</span>,
               fmt(r.budget), fmt(r.actual),
               <span className={rOverTone(-r.diff) + " font-bold"}>{(r.diff >= 0 ? "+" : "−") + fmt(Math.abs(r.diff))}</span>,
               r.dev === null ? "—" : <span className={rOverTone(r.dev) + " font-bold"}>{(r.dev > 0 ? "+" : "") + fmt(r.dev, 1)}٪</span>,
@@ -1191,7 +1214,7 @@ function BudgetVsActualReport({ s }) {
       <RptSection title="البنود المتجاوزة للميزانية">
         <RptTable
           heads={[{ label: "البند" }, { label: "قيمة التجاوز", num: true }, { label: "نسبة التجاوز", num: true }]}
-          rows={overList.map((r) => ({ cells: [r.name, <b className="text-[#C1453B]">{fmt(r.actual - r.budget)}</b>, r.dev === null ? "—" : <b className="text-[#C1453B]">{fmt(r.dev, 1)}٪</b>] }))}
+          rows={overList.map((r) => ({ cells: [r.name, <b className="text-[color:var(--cl-red)]">{fmt(r.actual - r.budget)}</b>, r.dev === null ? "—" : <b className="text-[color:var(--cl-red)]">{fmt(r.dev, 1)}٪</b>] }))}
           empty="لا توجد بنود متجاوزة للميزانية 👍"
         />
       </RptSection>
@@ -1231,8 +1254,8 @@ function ExtractsReport({ s }) {
             cells: [
               <b>{r.number}</b>, ...(s.multi ? [s.projName(r.projectId)] : []),
               rDay(r.date) || "—", rPct(r.percentage), fmt(r.amount),
-              <span className="text-[#3F7D63] font-bold">{fmt(r.collected)}</span>,
-              <span className={r.remaining > 0 ? "text-[#D6A23C] font-bold" : "text-[#3F7D63] font-bold"}>{fmt(r.remaining)}</span>,
+              <span className="text-[color:var(--cl-green)] font-bold">{fmt(r.collected)}</span>,
+              <span className={r.remaining > 0 ? "text-[#D6A23C] font-bold" : "text-[color:var(--cl-green)] font-bold"}>{fmt(r.remaining)}</span>,
               rPct(r.rate),
             ],
           }))}
@@ -1249,7 +1272,7 @@ function ExtractsReport({ s }) {
         />
       </RptSection>
 
-      <div className="text-[12px] text-[#6B7280] avoid-break">إجمالي التحصيلات المسجّلة خلال الفترة (المرتبطة وغير المرتبطة): <b className="mono text-[#1E2530]">{money(periodCollected)}</b></div>
+      <div className="text-[12px] text-[color:var(--cl-soft)] avoid-break">إجمالي التحصيلات المسجّلة خلال الفترة (المرتبطة وغير المرتبطة): <b className="mono text-[color:var(--cl-text)]">{money(periodCollected)}</b></div>
     </ReportShell>
   );
 }
@@ -1301,8 +1324,8 @@ function TreasuryReport({ s }) {
           heads={[{ label: "البيان" }, { label: "المبلغ", num: true }]}
           rows={[
             { cells: ["رصيد أول الفترة", fmt(periodOpening)] },
-            { cells: ["+ المقبوضات", <span className="text-[#3F7D63] font-bold">{fmt(receipts)}</span>] },
-            { cells: ["− المدفوعات", <span className="text-[#C1453B] font-bold">{fmt(payments)}</span>] },
+            { cells: ["+ المقبوضات", <span className="text-[color:var(--cl-green)] font-bold">{fmt(receipts)}</span>] },
+            { cells: ["− المدفوعات", <span className="text-[color:var(--cl-red)] font-bold">{fmt(payments)}</span>] },
           ]}
           footer={["رصيد آخر الفترة", fmt(periodOpening + net)]}
         />
@@ -1311,7 +1334,7 @@ function TreasuryReport({ s }) {
       <RptSection title="الحركة الشهرية">
         <RptTable
           heads={[{ label: "الشهر" }, { label: "مقبوضات", num: true }, { label: "مدفوعات", num: true }, { label: "الصافي", num: true }]}
-          rows={monthRows.map(([k, m]) => ({ cells: [k, fmt(m.in), fmt(m.out), <b className={m.in - m.out >= 0 ? "text-[#3F7D63]" : "text-[#C1453B]"}>{fmt(m.in - m.out)}</b>] }))}
+          rows={monthRows.map(([k, m]) => ({ cells: [k, fmt(m.in), fmt(m.out), <b className={m.in - m.out >= 0 ? "text-[color:var(--cl-green)]" : "text-[color:var(--cl-red)]"}>{fmt(m.in - m.out)}</b>] }))}
           footer={["الإجمالي", fmt(receipts), fmt(payments), fmt(net)]}
         />
       </RptSection>
@@ -1321,7 +1344,7 @@ function TreasuryReport({ s }) {
           heads={[{ label: "التاريخ" }, ...(s.multi ? [{ label: "المشروع" }] : []), { label: "النوع" }, { label: "البيان" }, { label: "المبلغ", num: true }]}
           rows={inPeriod.map((t) => ({
             cells: [rDay(t.date) || "—", ...(s.multi ? [s.projName(t.projectId)] : []),
-              t.type === "ايداع" ? <span className="text-[#3F7D63] font-bold">إيداع</span> : <span className="text-[#C1453B] font-bold">صرف</span>,
+              t.type === "ايداع" ? <span className="text-[color:var(--cl-green)] font-bold">إيداع</span> : <span className="text-[color:var(--cl-red)] font-bold">صرف</span>,
               t.note || "—", fmt(t.amount)],
           }))}
         />
@@ -1360,7 +1383,7 @@ function FinancingReport({ s }) {
       <RptSection title="ملخص الممولين">
         <RptTable
           heads={[{ label: "الممول" }, { label: "رصيد أول الفترة", num: true }, { label: "تمويلات", num: true }, { label: "سداد", num: true }, { label: "الرصيد المستحق", num: true }]}
-          rows={persons.map((p) => ({ cells: [<b>{p.name}</b>, fmt(p.opening), fmt(p.fin), fmt(p.rep), <b className={p.closing > 0 ? "text-[#D6A23C]" : "text-[#3F7D63]"}>{fmt(p.closing)}</b>] }))}
+          rows={persons.map((p) => ({ cells: [<b>{p.name}</b>, fmt(p.opening), fmt(p.fin), fmt(p.rep), <b className={p.closing > 0 ? "text-[#D6A23C]" : "text-[color:var(--cl-green)]"}>{fmt(p.closing)}</b>] }))}
           footer={["الإجمالي", fmt(to_), fmt(tf), fmt(tr), fmt(tc)]}
           empty="لا يوجد ممولون مسجلون"
         />
@@ -1376,7 +1399,7 @@ function FinancingReport({ s }) {
           <RptSection key={p.id} title={`كشف حساب: ${p.name}`}>
             <RptTable
               heads={[{ label: "التاريخ" }, { label: "النوع" }, { label: "البيان" }, { label: "مدين (تمويل)", num: true }, { label: "دائن (سداد)", num: true }, { label: "الرصيد", num: true }]}
-              rows={[{ className: "bg-[#F6F3EA]", cells: ["", "رصيد سابق", "", "", "", fmt(p.opening)] }, ...rows]}
+              rows={[{ className: "bg-[color:var(--cl-inset)]", cells: ["", "رصيد سابق", "", "", "", fmt(p.opening)] }, ...rows]}
               footer={["الإجمالي", "", "", fmt(p.fin), fmt(p.rep), fmt(p.closing)]}
             />
           </RptSection>
@@ -1403,9 +1426,9 @@ function ItemsReport({ s }) {
     const rows = [];
     [...m.entries()].sort((a, b) => a[0].localeCompare(b[0])).forEach(([k, ls]) => {
       const [l1, l2] = k.split("\u0000");
-      rows.push({ className: "bg-[#F6F3EA] font-bold", cells: [`${l1}  ›  ${l2}`, "", "", "", "", "", fmt(rSum(ls, rLine))] });
+      rows.push({ className: "bg-[color:var(--cl-inset)] font-bold", cells: [`${l1}  ›  ${l2}`, "", "", "", "", "", fmt(rSum(ls, rLine))] });
       ls.sort((a, b) => rDay(a.date).localeCompare(rDay(b.date))).forEach((c) => {
-        rows.push({ cells: [<span className="pr-4 text-[#6B7280]">{c.desc}</span>, rDay(c.date) || "—", rTypeLabel(c.type), fmt(c.qty, 2), c.unit, fmt(c.price, 2), fmt(rLine(c))] });
+        rows.push({ cells: [<span className="pr-4 text-[color:var(--cl-soft)]">{c.desc}</span>, rDay(c.date) || "—", rTypeLabel(c.type), fmt(c.qty, 2), c.unit, fmt(c.price, 2), fmt(rLine(c))] });
       });
     });
     return rows;
@@ -1425,7 +1448,7 @@ function ItemsReport({ s }) {
         const over = budget > 0 && actual > budget;
         return (
           <section key={g.id} className="space-y-2">
-            <div className="flex items-center justify-between bg-[#1E2530] text-white rounded-lg px-4 py-2.5 avoid-break">
+            <div className="flex items-center justify-between bg-[color:var(--cl-ink)] text-white rounded-lg px-4 py-2.5 avoid-break">
               <div>
                 <div className="font-bold text-sm">{g.name}</div>
                 <div className="text-[10px] text-white/60">
@@ -1447,7 +1470,7 @@ function ItemsReport({ s }) {
           </section>
         );
       })}
-      {groups.length === 0 && <div className="text-center text-[#9A9483] py-8 text-sm">لا توجد بنود مسجلة</div>}
+      {groups.length === 0 && <div className="text-center text-[color:var(--cl-muted)] py-8 text-sm">لا توجد بنود مسجلة</div>}
     </ReportShell>
   );
 }
@@ -1511,39 +1534,39 @@ function ReportsCenter({ projects, workItems, costs, extracts, collections, trea
 
       <div className="no-print flex items-start justify-between">
         <div>
-          <h2 className="font-bold text-[#1E2530] text-xl flex items-center gap-2"><BarChart3 size={20} className="text-[#E8672C]" /> مركز التقارير</h2>
-          <p className="text-[12px] text-[#9A9483] mt-1">تقارير إدارية جاهزة للتقديم — مبنية على البيانات المسجلة فعليًا في النظام</p>
+          <h2 className="font-bold text-[color:var(--cl-text)] text-xl flex items-center gap-2"><BarChart3 size={20} className="text-[color:var(--cl-accent)]" /> مركز التقارير</h2>
+          <p className="text-[12px] text-[color:var(--cl-muted)] mt-1">تقارير إدارية جاهزة للتقديم — مبنية على البيانات المسجلة فعليًا في النظام</p>
         </div>
         {current && (
           <div className="flex gap-2">
-            <button onClick={() => setReportKey(null)} className="px-3 py-2 rounded-lg border border-[#E1DACB] bg-white text-sm font-semibold text-[#1E2530] hover:bg-[#F6F3EA] flex items-center gap-1.5 transition">
+            <button onClick={() => setReportKey(null)} className="px-3 py-2 rounded-lg border border-[color:var(--cl-line)] bg-[color:var(--cl-card)] text-sm font-semibold text-[color:var(--cl-text)] hover:bg-[color:var(--cl-inset)] flex items-center gap-1.5 transition">
               <ChevronRight size={15} /> كل التقارير
             </button>
-            <button onClick={() => window.print()} className="px-3 py-2 rounded-lg bg-[#E8672C] text-white text-sm font-semibold flex items-center gap-1.5 hover:bg-[#d55a22] transition">
+            <button onClick={() => window.print()} className="px-3 py-2 rounded-lg bg-[#f0c85a] text-[#1a1405] text-sm font-semibold flex items-center gap-1.5 hover:bg-[#e3b53f] transition">
               <Printer size={15} /> طباعة / PDF
             </button>
           </div>
         )}
       </div>
 
-      <div className="no-print bg-white rounded-xl border border-[#E1DACB] p-4 flex flex-wrap items-end gap-4">
-        <label className="text-[11px] text-[#9A9483] font-semibold">
+      <div className="no-print bg-[color:var(--cl-card)] rounded-xl border border-[color:var(--cl-line)] p-4 flex flex-wrap items-end gap-4">
+        <label className="text-[11px] text-[color:var(--cl-muted)] font-semibold">
           المشروع
-          <select value={projectId} onChange={(e) => setProjectId(e.target.value)} className="block mt-1 min-w-[200px] px-3 py-2 rounded-lg border border-[#E1DACB] bg-white text-sm text-[#1E2530]">
+          <select value={projectId} onChange={(e) => setProjectId(e.target.value)} className="block mt-1 min-w-[200px] px-3 py-2 rounded-lg border border-[color:var(--cl-line)] bg-[color:var(--cl-card)] text-sm text-[color:var(--cl-text)]">
             <option value="all">كل المشروعات</option>
             {projects.map((p) => <option key={p.id} value={p.id}>{p.name}</option>)}
           </select>
         </label>
-        <label className="text-[11px] text-[#9A9483] font-semibold">
+        <label className="text-[11px] text-[color:var(--cl-muted)] font-semibold">
           من تاريخ
-          <input type="date" value={from} onChange={(e) => setFrom(e.target.value)} className="block mt-1 px-3 py-2 rounded-lg border border-[#E1DACB] bg-white text-sm text-[#1E2530]" />
+          <input type="date" value={from} onChange={(e) => setFrom(e.target.value)} className="block mt-1 px-3 py-2 rounded-lg border border-[color:var(--cl-line)] bg-[color:var(--cl-card)] text-sm text-[color:var(--cl-text)]" />
         </label>
-        <label className="text-[11px] text-[#9A9483] font-semibold">
+        <label className="text-[11px] text-[color:var(--cl-muted)] font-semibold">
           إلى تاريخ
-          <input type="date" value={to} onChange={(e) => setTo(e.target.value)} className="block mt-1 px-3 py-2 rounded-lg border border-[#E1DACB] bg-white text-sm text-[#1E2530]" />
+          <input type="date" value={to} onChange={(e) => setTo(e.target.value)} className="block mt-1 px-3 py-2 rounded-lg border border-[color:var(--cl-line)] bg-[color:var(--cl-card)] text-sm text-[color:var(--cl-text)]" />
         </label>
         {(from || to) && (
-          <button onClick={() => { setFrom(""); setTo(""); }} className="px-3 py-2 rounded-lg text-xs font-semibold text-[#6B7280] hover:bg-[#F6F3EA] flex items-center gap-1 transition">
+          <button onClick={() => { setFrom(""); setTo(""); }} className="px-3 py-2 rounded-lg text-xs font-semibold text-[color:var(--cl-soft)] hover:bg-[color:var(--cl-inset)] flex items-center gap-1 transition">
             <X size={13} /> مسح التاريخ
           </button>
         )}
@@ -1554,11 +1577,11 @@ function ReportsCenter({ projects, workItems, costs, extracts, collections, trea
           {REPORT_LIST.map((r) => {
             const Icon = r.icon;
             return (
-              <button key={r.key} onClick={() => setReportKey(r.key)} className="text-right bg-white rounded-xl border border-[#E1DACB] p-5 flex items-start gap-4 hover:border-[#E8672C] hover:shadow-md transition">
-                <div className="w-11 h-11 rounded-xl bg-[#E8672C]/10 flex items-center justify-center shrink-0"><Icon size={20} className="text-[#E8672C]" /></div>
+              <button key={r.key} onClick={() => setReportKey(r.key)} className="text-right bg-[color:var(--cl-card)] rounded-xl border border-[color:var(--cl-line)] p-5 flex items-start gap-4 hover:border-[#f0c85a] hover:shadow-md transition">
+                <div className="w-11 h-11 rounded-xl bg-[#f0c85a]/10 flex items-center justify-center shrink-0"><Icon size={20} className="text-[color:var(--cl-accent)]" /></div>
                 <div className="min-w-0">
-                  <div className="font-bold text-[#1E2530]">{r.title}</div>
-                  <div className="text-[12px] text-[#9A9483] mt-1 leading-relaxed">{r.desc}</div>
+                  <div className="font-bold text-[color:var(--cl-text)]">{r.title}</div>
+                  <div className="text-[12px] text-[color:var(--cl-muted)] mt-1 leading-relaxed">{r.desc}</div>
                 </div>
               </button>
             );
@@ -1580,9 +1603,9 @@ function ReportsCenter({ projects, workItems, costs, extracts, collections, trea
 /* ============================ التحليلات والرسوم البيانية ============================ */
 // قراءة فقط من بيانات المشروع المحمّلة أصلًا — لا كتابة على القاعدة ولا تغيير في الـ Schema.
 
-const AN_COLORS = { budget: "#1E2530", actual: "#E8672C", forecast: "#D6A23C", good: "#3F7D63", bad: "#C1453B", extract: "#1E2530", collect: "#3F7D63" };
-const AN_TIP = { fontFamily: "Cairo", fontSize: 12, borderRadius: 8, border: "1px solid #E1DACB", direction: "rtl", textAlign: "right" };
-const AN_TICK = { fontSize: 11, fontFamily: "Cairo", fill: "#6B7280" };
+const AN_COLORS = { budget: "#9AA3B2", actual: "#E8672C", forecast: "#D6A23C", good: "#3F7D63", bad: "#C1453B", extract: "#9AA3B2", collect: "#3F7D63" };
+const AN_TIP = { fontFamily: "IBM Plex Sans Arabic", fontSize: 12, borderRadius: 8, border: "1px solid #26262c", backgroundColor: "#111114", color: "#eee", direction: "rtl", textAlign: "right" };
+const AN_TICK = { fontSize: 11, fontFamily: "IBM Plex Sans Arabic", fill: "#8b8b95" };
 const anCompact = (v) => {
   const a = Math.abs(v);
   if (a >= 1e6) return (v / 1e6).toFixed(a >= 1e7 ? 0 : 1) + "M";
@@ -1593,11 +1616,11 @@ const anShort = (s, n = 18) => (String(s).length > n ? String(s).slice(0, n - 1)
 
 function AnCard({ title, subtitle, icon: Icon, right, children }) {
   return (
-    <section className="bg-white rounded-xl border border-[#E1DACB] p-5">
+    <section className="bg-[color:var(--cl-card)] rounded-xl border border-[color:var(--cl-line)] p-5">
       <div className="flex items-start justify-between gap-3 mb-4">
         <div>
-          <h2 className="font-bold text-[#1E2530] flex items-center gap-2">{Icon && <Icon size={16} className="text-[#E8672C]" />} {title}</h2>
-          {subtitle && <p className="text-[12px] text-[#9A9483] mt-1">{subtitle}</p>}
+          <h2 className="font-bold text-[color:var(--cl-text)] flex items-center gap-2">{Icon && <Icon size={16} className="text-[color:var(--cl-accent)]" />} {title}</h2>
+          {subtitle && <p className="text-[12px] text-[color:var(--cl-muted)] mt-1">{subtitle}</p>}
         </div>
         {right}
       </div>
@@ -1607,7 +1630,7 @@ function AnCard({ title, subtitle, icon: Icon, right, children }) {
 }
 
 function AnEmpty({ text }) {
-  return <div className="text-sm text-[#9A9483] py-10 text-center">{text}</div>;
+  return <div className="text-sm text-[color:var(--cl-muted)] py-10 text-center">{text}</div>;
 }
 
 function AnalyticsTab({ project, pWorkItems, pCosts, pExtracts, pCollections, pExpectedCosts }) {
@@ -1649,7 +1672,7 @@ function AnalyticsTab({ project, pWorkItems, pCosts, pExtracts, pCollections, pE
   }, [pWorkItems, pCosts, pExpectedCosts]);
 
   const itemStatus = (r) => {
-    if (r.budget <= 0 && r.forecast <= 0) return { label: "—", color: "#9A9483" };
+    if (r.budget <= 0 && r.forecast <= 0) return { label: "—", color: "#8b8b95" };
     if (r.overActual > 0.5) return { label: r.budget <= 0 ? "بدون ميزانية" : "تجاوز فعلي", color: AN_COLORS.bad };
     if (r.overForecast > 0.5) return { label: "تجاوز متوقع", color: "#B5651D" };
     if (r.budget > 0 && r.forecast > r.budget * 0.9) return { label: "قريب من الحد", color: AN_COLORS.forecast };
@@ -1672,7 +1695,7 @@ function AnalyticsTab({ project, pWorkItems, pCosts, pExtracts, pCollections, pE
   }));
   const knownTotal = rSum(typeData, (d) => d.value);
   const otherTotal = actualTotal - knownTotal;
-  if (otherTotal > 0.5) typeData.push({ key: "_other", name: "أنواع أخرى", color: "#9A9483", icon: Receipt, value: otherTotal, count: pCosts.filter((c) => !COST_TYPES.some((t) => t.key === c.type)).length });
+  if (otherTotal > 0.5) typeData.push({ key: "_other", name: "أنواع أخرى", color: "#8b8b95", icon: Receipt, value: otherTotal, count: pCosts.filter((c) => !COST_TYPES.some((t) => t.key === c.type)).length });
   const typePie = typeData.filter((d) => d.value > 0);
 
   /* ---------- 3) الرسم الشهري ---------- */
@@ -1750,11 +1773,11 @@ function AnalyticsTab({ project, pWorkItems, pCosts, pExtracts, pCollections, pE
             <div style={{ width: "100%", height: Math.max(260, itemChartData.length * 62) }}>
               <ResponsiveContainer>
                 <BarChart data={itemChartData} layout="vertical" barGap={2} barCategoryGap="24%" margin={{ top: 4, right: 4, left: 12, bottom: 4 }}>
-                  <CartesianGrid strokeDasharray="3 3" stroke="#E1DACB" horizontal={false} />
+                  <CartesianGrid strokeDasharray="3 3" stroke="#26262c" horizontal={false} />
                   <XAxis type="number" reversed tick={AN_TICK} stroke="#9A9483" tickFormatter={anCompact} />
                   <YAxis type="category" dataKey="name" orientation="right" width={130} tick={AN_TICK} stroke="#9A9483" tickFormatter={(v) => anShort(v)} />
-                  <Tooltip formatter={(v) => money(v)} contentStyle={AN_TIP} cursor={{ fill: "#F6F3EA" }} />
-                  <Legend wrapperStyle={{ fontFamily: "Cairo", fontSize: 12 }} />
+                  <Tooltip formatter={(v) => money(v)} contentStyle={AN_TIP} cursor={{ fill: "rgba(255,255,255,0.05)" }} />
+                  <Legend wrapperStyle={{ fontFamily: "IBM Plex Sans Arabic", fontSize: 12 }} />
                   <Bar dataKey="الميزانية" fill={AN_COLORS.budget} radius={3} />
                   <Bar dataKey="الفعلي" fill={AN_COLORS.actual} radius={3} />
                   <Bar dataKey="المتوقع" fill={AN_COLORS.forecast} radius={3}>
@@ -1764,31 +1787,31 @@ function AnalyticsTab({ project, pWorkItems, pCosts, pExtracts, pCollections, pE
               </ResponsiveContainer>
             </div>
             {itemsForChart.length > CHART_MAX_ITEMS && (
-              <p className="text-[11px] text-[#9A9483] mt-2">الرسم يعرض أكبر {CHART_MAX_ITEMS} بندًا من {itemsForChart.length}. الجدول التالي يشمل كل البنود.</p>
+              <p className="text-[11px] text-[color:var(--cl-muted)] mt-2">الرسم يعرض أكبر {CHART_MAX_ITEMS} بندًا من {itemsForChart.length}. الجدول التالي يشمل كل البنود.</p>
             )}
           </>
         )}
 
         {itemRows.length > 0 && (
-          <div className="mt-4 border border-[#EFEBDF] rounded-lg overflow-hidden">
+          <div className="mt-4 border border-[color:var(--cl-sep)] rounded-lg overflow-hidden">
             <div className="max-h-80 overflow-auto">
               <table className="w-full text-[12px]">
-                <thead className="bg-[#F6F3EA] text-[#6B7280] sticky top-0">
+                <thead className="bg-[color:var(--cl-inset)] text-[color:var(--cl-soft)] sticky top-0">
                   <tr>
                     {["البند", "الميزانية", "الفعلي", "المتوقع", "الفرق (الميزانية − المتوقع)", "الحالة"].map((h) => <th key={h} className="text-right py-2 px-3 font-semibold whitespace-nowrap">{h}</th>)}
                   </tr>
                 </thead>
-                <tbody className="divide-y divide-[#EFEBDF]">
+                <tbody className="divide-y divide-[color:var(--cl-sep)]">
                   {itemRows.map((r) => {
                     const st = itemStatus(r);
                     const diff = r.budget - r.forecast;
                     return (
                       <tr key={r.id}>
-                        <td className="py-2 px-3 font-semibold text-[#1E2530]">{r.name}</td>
+                        <td className="py-2 px-3 font-semibold text-[color:var(--cl-text)]">{r.name}</td>
                         <td className="py-2 px-3 mono">{fmt(r.budget)}</td>
-                        <td className="py-2 px-3 mono text-[#E8672C]">{fmt(r.actual)}</td>
+                        <td className="py-2 px-3 mono text-[color:var(--cl-accent)]">{fmt(r.actual)}</td>
                         <td className="py-2 px-3 mono">{fmt(r.forecast)}</td>
-                        <td className={`py-2 px-3 mono font-bold ${r.budget === 0 ? "text-[#9A9483]" : diff >= 0 ? "text-[#3F7D63]" : "text-[#C1453B]"}`}>{r.budget === 0 ? "—" : (diff >= 0 ? "+" : "−") + fmt(Math.abs(diff))}</td>
+                        <td className={`py-2 px-3 mono font-bold ${r.budget === 0 ? "text-[color:var(--cl-muted)]" : diff >= 0 ? "text-[color:var(--cl-green)]" : "text-[color:var(--cl-red)]"}`}>{r.budget === 0 ? "—" : (diff >= 0 ? "+" : "−") + fmt(Math.abs(diff))}</td>
                         <td className="py-2 px-3"><span className="text-[11px] font-bold rounded-full px-2.5 py-0.5" style={{ color: st.color, backgroundColor: st.color + "18" }}>{st.label}</span></td>
                       </tr>
                     );
@@ -1816,8 +1839,8 @@ function AnalyticsTab({ project, pWorkItems, pCosts, pExtracts, pCollections, pE
                 </RePieChart>
               </ResponsiveContainer>
               <div className="absolute inset-0 flex flex-col items-center justify-center pointer-events-none">
-                <div className="text-[11px] text-[#9A9483]">إجمالي الفعلي</div>
-                <div className="text-base font-extrabold mono text-[#1E2530]">{fmt(actualTotal)}</div>
+                <div className="text-[11px] text-[color:var(--cl-muted)]">إجمالي الفعلي</div>
+                <div className="text-base font-extrabold mono text-[color:var(--cl-text)]">{fmt(actualTotal)}</div>
               </div>
             </div>
             <div className="col-span-3 space-y-3">
@@ -1827,14 +1850,14 @@ function AnalyticsTab({ project, pWorkItems, pCosts, pExtracts, pCollections, pE
                 return (
                   <div key={d.key}>
                     <div className="flex items-center justify-between text-sm mb-1">
-                      <span className="flex items-center gap-2 font-semibold text-[#1E2530]">
+                      <span className="flex items-center gap-2 font-semibold text-[color:var(--cl-text)]">
                         <span className="w-6 h-6 rounded-md flex items-center justify-center" style={{ backgroundColor: d.color + "20" }}><Icon size={13} style={{ color: d.color }} /></span>
                         {d.name}
-                        <span className="text-[11px] text-[#9A9483] font-normal">· {fmt(d.count)} بند</span>
+                        <span className="text-[11px] text-[color:var(--cl-muted)] font-normal">· {fmt(d.count)} بند</span>
                       </span>
-                      <span className="mono text-[12px]"><b>{fmt(d.value)}</b> <span className="text-[#9A9483]">({fmt(p, 1)}٪)</span></span>
+                      <span className="mono text-[12px]"><b>{fmt(d.value)}</b> <span className="text-[color:var(--cl-muted)]">({fmt(p, 1)}٪)</span></span>
                     </div>
-                    <div className="h-2 rounded-full bg-[#F1EDE1] overflow-hidden"><div className="h-full rounded-full" style={{ width: `${p}%`, backgroundColor: d.color }} /></div>
+                    <div className="h-2 rounded-full bg-[color:var(--cl-chip)] overflow-hidden"><div className="h-full rounded-full" style={{ width: `${p}%`, backgroundColor: d.color }} /></div>
                   </div>
                 );
               })}
@@ -1849,9 +1872,9 @@ function AnalyticsTab({ project, pWorkItems, pCosts, pExtracts, pCollections, pE
         subtitle="التجميع حسب شهر تاريخ كل عملية. الترتيب الزمني من اليمين إلى اليسار."
         icon={TrendingUp}
         right={
-          <div className="flex rounded-lg border border-[#E1DACB] overflow-hidden text-[12px] font-semibold shrink-0">
+          <div className="flex rounded-lg border border-[color:var(--cl-line)] overflow-hidden text-[12px] font-semibold shrink-0">
             {[{ k: "monthly", l: "شهري" }, { k: "cumulative", l: "تراكمي" }].map((o) => (
-              <button key={o.k} onClick={() => setMonthMode(o.k)} className={`px-3 py-1.5 transition ${monthMode === o.k ? "bg-[#1E2530] text-white" : "bg-white text-[#6B7280] hover:bg-[#F6F3EA]"}`}>{o.l}</button>
+              <button key={o.k} onClick={() => setMonthMode(o.k)} className={`px-3 py-1.5 transition ${monthMode === o.k ? "bg-[color:var(--cl-ink)] text-white" : "bg-[color:var(--cl-card)] text-[color:var(--cl-soft)] hover:bg-[color:var(--cl-inset)]"}`}>{o.l}</button>
             ))}
           </div>
         }
@@ -1864,22 +1887,22 @@ function AnalyticsTab({ project, pWorkItems, pCosts, pExtracts, pCollections, pE
               <ResponsiveContainer>
                 {monthMode === "monthly" ? (
                   <BarChart data={monthly.data} barGap={3} margin={{ top: 8, right: 4, left: 4, bottom: 4 }}>
-                    <CartesianGrid strokeDasharray="3 3" stroke="#E1DACB" vertical={false} />
+                    <CartesianGrid strokeDasharray="3 3" stroke="#26262c" vertical={false} />
                     <XAxis dataKey="label" reversed tick={AN_TICK} stroke="#9A9483" />
                     <YAxis orientation="right" tick={AN_TICK} stroke="#9A9483" tickFormatter={anCompact} />
-                    <Tooltip formatter={(v) => money(v)} contentStyle={AN_TIP} cursor={{ fill: "#F6F3EA" }} />
-                    <Legend wrapperStyle={{ fontFamily: "Cairo", fontSize: 12 }} />
+                    <Tooltip formatter={(v) => money(v)} contentStyle={AN_TIP} cursor={{ fill: "rgba(255,255,255,0.05)" }} />
+                    <Legend wrapperStyle={{ fontFamily: "IBM Plex Sans Arabic", fontSize: 12 }} />
                     <Bar dataKey="التكاليف الفعلية" fill={AN_COLORS.actual} radius={[3, 3, 0, 0]} />
                     <Bar dataKey="المستخلصات" fill={AN_COLORS.extract} radius={[3, 3, 0, 0]} />
                     <Bar dataKey="التحصيلات" fill={AN_COLORS.collect} radius={[3, 3, 0, 0]} />
                   </BarChart>
                 ) : (
                   <LineChart data={monthly.cumulative} margin={{ top: 8, right: 4, left: 4, bottom: 4 }}>
-                    <CartesianGrid strokeDasharray="3 3" stroke="#E1DACB" vertical={false} />
+                    <CartesianGrid strokeDasharray="3 3" stroke="#26262c" vertical={false} />
                     <XAxis dataKey="label" reversed tick={AN_TICK} stroke="#9A9483" />
                     <YAxis orientation="right" tick={AN_TICK} stroke="#9A9483" tickFormatter={anCompact} />
                     <Tooltip formatter={(v) => money(v)} contentStyle={AN_TIP} />
-                    <Legend wrapperStyle={{ fontFamily: "Cairo", fontSize: 12 }} />
+                    <Legend wrapperStyle={{ fontFamily: "IBM Plex Sans Arabic", fontSize: 12 }} />
                     <Line type="monotone" dataKey="التكاليف الفعلية" stroke={AN_COLORS.actual} strokeWidth={2.5} dot={{ r: 3 }} />
                     <Line type="monotone" dataKey="المستخلصات" stroke={AN_COLORS.extract} strokeWidth={2.5} dot={{ r: 3 }} />
                     <Line type="monotone" dataKey="التحصيلات" stroke={AN_COLORS.collect} strokeWidth={2.5} dot={{ r: 3 }} />
@@ -1892,7 +1915,7 @@ function AnalyticsTab({ project, pWorkItems, pCosts, pExtracts, pCollections, pE
               <RptKpi label="إجمالي المستخلصات" value={money(worksValue)} />
               <RptKpi label="إجمالي التحصيلات" value={money(rSum(pCollections, (c) => c.amount))} color={AN_COLORS.good} />
             </div>
-            {monthly.undated > 0 && <p className="text-[11px] text-[#9A9483] mt-2">ملاحظة: {monthly.undated} عملية بدون تاريخ صحيح لم تظهر في الرسم الشهري.</p>}
+            {monthly.undated > 0 && <p className="text-[11px] text-[color:var(--cl-muted)] mt-2">ملاحظة: {monthly.undated} عملية بدون تاريخ صحيح لم تظهر في الرسم الشهري.</p>}
           </>
         )}
       </AnCard>
@@ -1915,38 +1938,38 @@ function AnalyticsTab({ project, pWorkItems, pCosts, pExtracts, pCollections, pE
             <div style={{ width: "100%", height: Math.max(220, overChartData.length * 52) }}>
               <ResponsiveContainer>
                 <BarChart data={overChartData} layout="vertical" barCategoryGap="28%" margin={{ top: 4, right: 4, left: 12, bottom: 4 }}>
-                  <CartesianGrid strokeDasharray="3 3" stroke="#E1DACB" horizontal={false} />
+                  <CartesianGrid strokeDasharray="3 3" stroke="#26262c" horizontal={false} />
                   <XAxis type="number" reversed tick={AN_TICK} stroke="#9A9483" tickFormatter={anCompact} />
                   <YAxis type="category" dataKey="name" orientation="right" width={130} tick={AN_TICK} stroke="#9A9483" tickFormatter={(v) => anShort(v)} />
-                  <Tooltip formatter={(v) => money(v)} contentStyle={AN_TIP} cursor={{ fill: "#F6F3EA" }} />
-                  <Legend wrapperStyle={{ fontFamily: "Cairo", fontSize: 12 }} />
+                  <Tooltip formatter={(v) => money(v)} contentStyle={AN_TIP} cursor={{ fill: "rgba(255,255,255,0.05)" }} />
+                  <Legend wrapperStyle={{ fontFamily: "IBM Plex Sans Arabic", fontSize: 12 }} />
                   <Bar dataKey="تجاوز فعلي" stackId="over" fill={AN_COLORS.bad} />
                   <Bar dataKey="تجاوز متوقع إضافي" stackId="over" fill={AN_COLORS.forecast} />
                 </BarChart>
               </ResponsiveContainer>
             </div>
-            <div className="mt-4 border border-[#EFEBDF] rounded-lg overflow-hidden">
+            <div className="mt-4 border border-[color:var(--cl-sep)] rounded-lg overflow-hidden">
               <table className="w-full text-[12px]">
-                <thead className="bg-[#F6F3EA] text-[#6B7280]">
+                <thead className="bg-[color:var(--cl-inset)] text-[color:var(--cl-soft)]">
                   <tr>
                     {["البند", "الميزانية", "الفعلي", "المتوقع", "قيمة التجاوز", "نسبة التجاوز"].map((h) => <th key={h} className="text-right py-2 px-3 font-semibold whitespace-nowrap">{h}</th>)}
                   </tr>
                 </thead>
-                <tbody className="divide-y divide-[#EFEBDF]">
+                <tbody className="divide-y divide-[color:var(--cl-sep)]">
                   {overList.map((r) => (
                     <tr key={r.id}>
-                      <td className="py-2 px-3 font-semibold text-[#1E2530]">{r.name}</td>
+                      <td className="py-2 px-3 font-semibold text-[color:var(--cl-text)]">{r.name}</td>
                       <td className="py-2 px-3 mono">{fmt(r.budget)}</td>
-                      <td className="py-2 px-3 mono text-[#E8672C]">{fmt(r.actual)}</td>
+                      <td className="py-2 px-3 mono text-[color:var(--cl-accent)]">{fmt(r.actual)}</td>
                       <td className="py-2 px-3 mono">{fmt(r.forecast)}</td>
-                      <td className="py-2 px-3 mono font-bold text-[#C1453B]">{fmt(r.overForecast)}</td>
-                      <td className="py-2 px-3 mono font-bold text-[#C1453B]">{r.pctForecast === null ? "بدون ميزانية" : fmt(r.pctForecast, 1) + "٪"}</td>
+                      <td className="py-2 px-3 mono font-bold text-[color:var(--cl-red)]">{fmt(r.overForecast)}</td>
+                      <td className="py-2 px-3 mono font-bold text-[color:var(--cl-red)]">{r.pctForecast === null ? "بدون ميزانية" : fmt(r.pctForecast, 1) + "٪"}</td>
                     </tr>
                   ))}
                 </tbody>
               </table>
             </div>
-            <p className="text-[11px] text-[#9A9483] mt-2">قيمة التجاوز = المتوقع − الميزانية، ونسبة التجاوز = قيمة التجاوز ÷ الميزانية.</p>
+            <p className="text-[11px] text-[color:var(--cl-muted)] mt-2">قيمة التجاوز = المتوقع − الميزانية، ونسبة التجاوز = قيمة التجاوز ÷ الميزانية.</p>
           </>
         )}
       </AnCard>
@@ -1967,10 +1990,10 @@ function AnalyticsTab({ project, pWorkItems, pCosts, pExtracts, pCollections, pE
         <div style={{ width: "100%", height: 300 }}>
           <ResponsiveContainer>
             <BarChart data={profitChart} margin={{ top: 8, right: 4, left: 4, bottom: 4 }}>
-              <CartesianGrid strokeDasharray="3 3" stroke="#E1DACB" vertical={false} />
+              <CartesianGrid strokeDasharray="3 3" stroke="#26262c" vertical={false} />
               <XAxis dataKey="name" reversed tick={AN_TICK} stroke="#9A9483" />
               <YAxis orientation="right" tick={AN_TICK} stroke="#9A9483" tickFormatter={anCompact} />
-              <Tooltip formatter={(v) => money(v)} contentStyle={AN_TIP} cursor={{ fill: "#F6F3EA" }} />
+              <Tooltip formatter={(v) => money(v)} contentStyle={AN_TIP} cursor={{ fill: "rgba(255,255,255,0.05)" }} />
               <Bar dataKey="value" name="القيمة" radius={[5, 5, 0, 0]} maxBarSize={72}>
                 {profitChart.map((d, i) => <Cell key={i} fill={d.color} />)}
               </Bar>
@@ -1980,14 +2003,14 @@ function AnalyticsTab({ project, pWorkItems, pCosts, pExtracts, pCollections, pE
         {revenueBase > 0 && (
           <div className="mt-4">
             <div className="flex justify-between text-[12px] mb-1.5">
-              <span className="font-semibold text-[#1E2530]">استهلاك {contract > 0 ? "قيمة العقد" : "قيمة الأعمال"} بالتكلفة المتوقعة</span>
+              <span className="font-semibold text-[color:var(--cl-text)]">استهلاك {contract > 0 ? "قيمة العقد" : "قيمة الأعمال"} بالتكلفة المتوقعة</span>
               <span className="mono font-bold">{fmt((forecastTotal / revenueBase) * 100, 1)}٪</span>
             </div>
-            <div className="h-3 rounded-full bg-[#F1EDE1] overflow-hidden flex">
+            <div className="h-3 rounded-full bg-[color:var(--cl-chip)] overflow-hidden flex">
               <div className="h-full" style={{ width: `${Math.min(100, (actualTotal / revenueBase) * 100)}%`, backgroundColor: AN_COLORS.actual }} />
               <div className="h-full" style={{ width: `${Math.max(0, Math.min(100 - (actualTotal / revenueBase) * 100, (expectedRest / revenueBase) * 100))}%`, backgroundColor: AN_COLORS.forecast }} />
             </div>
-            <div className="flex gap-4 mt-1.5 text-[11px] text-[#9A9483]">
+            <div className="flex gap-4 mt-1.5 text-[11px] text-[color:var(--cl-muted)]">
               <span className="flex items-center gap-1"><span className="w-2 h-2 rounded-sm" style={{ backgroundColor: AN_COLORS.actual }} /> فعلي</span>
               <span className="flex items-center gap-1"><span className="w-2 h-2 rounded-sm" style={{ backgroundColor: AN_COLORS.forecast }} /> متوقع مستقبلي</span>
             </div>
@@ -2013,29 +2036,29 @@ function AppFooter({ variant = "app" }) {
   const stamp = `${WD[now.getDay()]}, ${now.getDate()} ${MO[now.getMonth()]} ${now.getFullYear()}, ${p2(h12)}:${p2(now.getMinutes())}:${p2(now.getSeconds())} ${h24 < 12 ? "am" : "pm"}`;
 
   return (
-    <footer dir="ltr" className={`no-print w-full shrink-0${login ? "" : " blueprint-bg"} flex items-center justify-end gap-4 px-6 sticky bottom-0 z-40`} style={{ height: 48, backgroundColor: login ? "transparent" : "#14212C", borderTop: login ? "1px solid #1a1a1f" : "1px solid rgba(255,255,255,0.10)", fontFamily: login ? "system-ui, -apple-system, 'Segoe UI', sans-serif" : "'Cairo', sans-serif" }}>
-      <span className="mono text-[13px] font-semibold rounded-lg px-4 py-1 border" style={login ? { color: "#f0c85a", backgroundColor: "#111114", borderColor: "#26262c" } : { color: "#E8672C", backgroundColor: "rgba(255,255,255,0.05)", borderColor: "rgba(255,255,255,0.12)" }}>{stamp}</span>
+    <footer dir="ltr" className={`no-print w-full shrink-0${login ? "" : " blueprint-bg"} flex items-center justify-end gap-4 px-6 sticky bottom-0 z-40`} style={{ height: 48, backgroundColor: login ? "transparent" : "#0a0a0c", borderTop: login ? "1px solid #1a1a1f" : "1px solid rgba(255,255,255,0.10)", fontFamily: login ? "'IBM Plex Sans Arabic', system-ui, -apple-system, 'Segoe UI', sans-serif" : "'IBM Plex Sans Arabic', 'Cairo', sans-serif" }}>
+      <span className="mono text-[13px] font-semibold rounded-lg px-4 py-1 border" style={login ? { color: "#f0c85a", backgroundColor: "#111114", borderColor: "#26262c" } : { color: "#f0c85a", backgroundColor: "rgba(255,255,255,0.05)", borderColor: "rgba(255,255,255,0.12)" }}>{stamp}</span>
       <span className="text-[14px]" style={{ color: login ? "#8b8b95" : "rgba(255,255,255,0.45)" }}>{APP_VERSION}</span>
     </footer>
   );
 }
 
 /* ------------------------------- شعار CostLine ------------------------------- */
-const COSTLINE_MARK_SVG = '<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 48 48"><defs><linearGradient id="g" x1="0" y1="0" x2="1" y2="1"><stop offset="0" stop-color="#F58A4B"/><stop offset="1" stop-color="#D9531C"/></linearGradient></defs><rect width="48" height="48" rx="11" fill="url(#g)"/><path d="M30.5 16.5 A12 12 0 1 0 30.5 33.5" fill="none" stroke="#fff" stroke-width="4.6" stroke-linecap="round"/><polyline points="23.5,30.5 29,25 33,28 39.5,18.5" fill="none" stroke="#14212C" stroke-width="3.2" stroke-linecap="round" stroke-linejoin="round"/><circle cx="39.5" cy="18.5" r="2.7" fill="#14212C"/></svg>';
+const COSTLINE_MARK_SVG = '<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 48 48"><defs><linearGradient id="g" x1="0" y1="0" x2="1" y2="1"><stop offset="0" stop-color="#F7DC84"/><stop offset="1" stop-color="#E0A92E"/></linearGradient></defs><rect width="48" height="48" rx="11" fill="url(#g)"/><path d="M30.5 16.5 A12 12 0 1 0 30.5 33.5" fill="none" stroke="#1a1405" stroke-width="4.6" stroke-linecap="round"/><polyline points="23.5,30.5 29,25 33,28 39.5,18.5" fill="none" stroke="#1a1405" stroke-width="3.2" stroke-linecap="round" stroke-linejoin="round"/><circle cx="39.5" cy="18.5" r="2.7" fill="#1a1405"/></svg>';
 
 function CostLineMark({ size = 40, className = "" }) {
   return (
     <svg width={size} height={size} viewBox="0 0 48 48" className={className} role="img" aria-label="CostLine" style={{ display: "block", flexShrink: 0 }}>
       <defs>
         <linearGradient id="cl-grad" x1="0" y1="0" x2="1" y2="1">
-          <stop offset="0" stopColor="#F58A4B" />
-          <stop offset="1" stopColor="#D9531C" />
+          <stop offset="0" stopColor="#F7DC84" />
+          <stop offset="1" stopColor="#E0A92E" />
         </linearGradient>
       </defs>
       <rect width="48" height="48" rx="11" fill="url(#cl-grad)" />
-      <path d="M30.5 16.5 A12 12 0 1 0 30.5 33.5" fill="none" stroke="#fff" strokeWidth="4.6" strokeLinecap="round" />
-      <polyline points="23.5,30.5 29,25 33,28 39.5,18.5" fill="none" stroke="#14212C" strokeWidth="3.2" strokeLinecap="round" strokeLinejoin="round" />
-      <circle cx="39.5" cy="18.5" r="2.7" fill="#14212C" />
+      <path d="M30.5 16.5 A12 12 0 1 0 30.5 33.5" fill="none" stroke="#1a1405" strokeWidth="4.6" strokeLinecap="round" />
+      <polyline points="23.5,30.5 29,25 33,28 39.5,18.5" fill="none" stroke="#1a1405" strokeWidth="3.2" strokeLinecap="round" strokeLinejoin="round" />
+      <circle cx="39.5" cy="18.5" r="2.7" fill="#1a1405" />
     </svg>
   );
 }
@@ -2044,13 +2067,13 @@ function CostLineMark({ size = 40, className = "" }) {
 
 function StatCard({ label, value, icon: Icon, color }) {
   return (
-    <div className="bg-white rounded-xl border border-[#E1DACB] px-4 py-3 flex items-center gap-3">
+    <div className="bg-[color:var(--cl-card)] rounded-xl border border-[color:var(--cl-line)] px-4 py-3 flex items-center gap-3">
       <div className="w-9 h-9 rounded-lg flex items-center justify-center shrink-0" style={{ backgroundColor: color + "18" }}>
         <Icon size={17} style={{ color }} />
       </div>
       <div className="min-w-0">
-        <div className="text-[11px] text-[#9A9483] truncate">{label}</div>
-        <div className="text-sm font-bold mono text-[#1E2530] truncate">{value}</div>
+        <div className="text-[11px] text-[color:var(--cl-muted)] truncate">{label}</div>
+        <div className="text-sm font-bold mono text-[color:var(--cl-text)] truncate">{value}</div>
       </div>
     </div>
   );
@@ -2066,8 +2089,8 @@ function SidebarItem({ icon: Icon, label, active, onClick }) {
         active ? "bg-white/10 text-white font-bold" : "text-white/60 hover:bg-white/5 hover:text-white/95"
       }`}
     >
-      {active && <span className="absolute right-0 top-2 bottom-2 w-[3px] rounded-l bg-[#E8672C]" />}
-      <span className={`w-7 h-7 rounded-md flex items-center justify-center shrink-0 transition ${active ? "bg-[#E8672C] text-white" : "bg-white/5 text-white/60"}`}>
+      {active && <span className="absolute right-0 top-2 bottom-2 w-[3px] rounded-l bg-[#f0c85a]" />}
+      <span className={`w-7 h-7 rounded-md flex items-center justify-center shrink-0 transition ${active ? "bg-[#f0c85a] text-[#1a1405]" : "bg-white/5 text-white/60"}`}>
         <Icon size={15} />
       </span>
       <span className="truncate">{label}</span>
@@ -2079,16 +2102,16 @@ function SidebarItem({ icon: Icon, label, active, onClick }) {
 
 function KpiCard({ label, value, sub, icon: Icon, color, tone }) {
   return (
-    <div className="bg-white rounded-xl border border-[#E1DACB] p-4 relative overflow-hidden">
+    <div className="bg-[color:var(--cl-card)] rounded-xl border border-[color:var(--cl-line)] p-4 relative overflow-hidden">
       <span className="absolute top-0 right-0 bottom-0 w-1" style={{ backgroundColor: color }} />
       <div className="flex items-center justify-between gap-2 mb-2">
-        <div className="text-[12px] font-semibold text-[#6B7280] truncate">{label}</div>
+        <div className="text-[12px] font-semibold text-[color:var(--cl-soft)] truncate">{label}</div>
         <div className="w-8 h-8 rounded-lg flex items-center justify-center shrink-0" style={{ backgroundColor: color + "18" }}>
           <Icon size={16} style={{ color }} />
         </div>
       </div>
-      <div className="text-[19px] font-extrabold mono truncate" style={{ color: tone || "#1E2530" }}>{value}</div>
-      {sub && <div className="text-[11px] text-[#9A9483] mt-1 truncate">{sub}</div>}
+      <div className="text-[19px] font-extrabold mono truncate" style={{ color: tone || "#9AA3B2" }}>{value}</div>
+      {sub && <div className="text-[11px] text-[color:var(--cl-muted)] mt-1 truncate">{sub}</div>}
     </div>
   );
 }
@@ -2104,11 +2127,11 @@ function DashboardKpis({ contractValue, treasuryBalance, totals }) {
   return (
     <section>
       <div className="flex items-center gap-2 mb-3">
-        <Gauge size={16} className="text-[#E8672C]" />
-        <h2 className="font-bold text-[#1E2530]">المؤشرات الرئيسية</h2>
+        <Gauge size={16} className="text-[color:var(--cl-accent)]" />
+        <h2 className="font-bold text-[color:var(--cl-text)]">المؤشرات الرئيسية</h2>
       </div>
       <div className="grid grid-cols-2 lg:grid-cols-4 gap-3">
-        <KpiCard label="قيمة العقد" value={money(contractValue)} sub="إجمالي عقد المشروع" icon={FileSignature} color="#1E2530" />
+        <KpiCard label="قيمة العقد" value={money(contractValue)} sub="إجمالي عقد المشروع" icon={FileSignature} color="#9AA3B2" />
         <KpiCard label="قيمة الأعمال / المستخلصات" value={money(totals.extractsTotal)} sub={pctOfContract(totals.extractsTotal)} icon={FileCheck2} color="#E8672C" />
         <KpiCard label="إجمالي التكلفة الفعلية" value={money(totals.actualTotal)} sub={pctOfContract(totals.actualTotal)} icon={ReceiptText}
                  color={totals.actualTotal > totals.budgetTotal && totals.budgetTotal > 0 ? bad : "#6B5CA5"} />
@@ -2119,7 +2142,7 @@ function DashboardKpis({ contractValue, treasuryBalance, totals }) {
                  color={margin !== null && margin < 0 ? bad : good} tone={margin !== null && margin < 0 ? bad : good} />
         <KpiCard label="إجمالي المحصّل" value={money(totals.collectedTotal)} sub={collectedPct} icon={CircleDollarSign} color={good} />
         <KpiCard label="الرصيد بالخزينة" value={money(treasuryBalance)} sub="رصيد البداية + الإيداعات − المصروفات" icon={Vault}
-                 color={treasuryBalance >= 0 ? "#1E2530" : bad} tone={treasuryBalance >= 0 ? undefined : bad} />
+                 color={treasuryBalance >= 0 ? "#9AA3B2" : bad} tone={treasuryBalance >= 0 ? undefined : bad} />
       </div>
     </section>
   );
@@ -2139,7 +2162,7 @@ function BudgetActualForecast({ totals, pWorkItems, pCosts, pExpectedCosts }) {
   const remaining = budget - actual;
   const forecastVar = budget - forecast;
 
-  let status = { label: "لا توجد ميزانية بنود بعد", color: "#9A9483" };
+  let status = { label: "لا توجد ميزانية بنود بعد", color: "#8b8b95" };
   if (budget > 0) {
     if (forecast > budget) status = { label: "تجاوز متوقع للميزانية", color: "#C1453B" };
     else if (forecast > budget * 0.9) status = { label: "قريب من حد الميزانية", color: "#D6A23C" };
@@ -2157,57 +2180,57 @@ function BudgetActualForecast({ totals, pWorkItems, pCosts, pExpectedCosts }) {
   if (ua > 0 || ue > 0) rows.push({ id: "_none", name: "غير مرتبط ببند", budget: 0, actual: ua, forecast: ua + ue });
 
   return (
-    <section className="bg-white rounded-xl border border-[#E1DACB] p-5 h-full">
+    <section className="bg-[color:var(--cl-card)] rounded-xl border border-[color:var(--cl-line)] p-5 h-full">
       <div className="flex items-start justify-between gap-3 mb-5">
         <div>
-          <h2 className="font-bold text-[#1E2530] flex items-center gap-2"><Gauge size={16} className="text-[#E8672C]" /> الميزانية × الفعلي × المتوقع</h2>
-          <p className="text-[12px] text-[#9A9483] mt-1">المتوقع عند الإنجاز = التكلفة الفعلية + المصاريف المتوقعة المستقبلية</p>
+          <h2 className="font-bold text-[color:var(--cl-text)] flex items-center gap-2"><Gauge size={16} className="text-[color:var(--cl-accent)]" /> الميزانية × الفعلي × المتوقع</h2>
+          <p className="text-[12px] text-[color:var(--cl-muted)] mt-1">المتوقع عند الإنجاز = التكلفة الفعلية + المصاريف المتوقعة المستقبلية</p>
         </div>
         <span className="text-[11px] font-bold rounded-full px-3 py-1 shrink-0" style={{ color: status.color, backgroundColor: status.color + "18" }}>{status.label}</span>
       </div>
 
       <div className="space-y-4">
         <div>
-          <div className="flex justify-between text-sm mb-1.5"><span className="font-semibold text-[#1E2530]">الميزانية (المقايسة)</span><span className="mono font-bold">{money(budget)}</span></div>
-          <div className="h-3 rounded-full bg-[#F1EDE1] overflow-hidden"><div className="h-full rounded-full bg-[#1E2530]" style={{ width: w(budget) }} /></div>
+          <div className="flex justify-between text-sm mb-1.5"><span className="font-semibold text-[color:var(--cl-text)]">الميزانية (المقايسة)</span><span className="mono font-bold">{money(budget)}</span></div>
+          <div className="h-3 rounded-full bg-[color:var(--cl-chip)] overflow-hidden"><div className="h-full rounded-full bg-[#9AA3B2]" style={{ width: w(budget) }} /></div>
         </div>
         <div>
-          <div className="flex justify-between text-sm mb-1.5"><span className="font-semibold text-[#1E2530]">الفعلي حتى الآن <span className="text-[11px] text-[#9A9483] font-normal">· {pct(actual)}</span></span><span className="mono font-bold text-[#E8672C]">{money(actual)}</span></div>
-          <div className="h-3 rounded-full bg-[#F1EDE1] overflow-hidden"><div className="h-full rounded-full bg-[#E8672C]" style={{ width: w(actual) }} /></div>
+          <div className="flex justify-between text-sm mb-1.5"><span className="font-semibold text-[color:var(--cl-text)]">الفعلي حتى الآن <span className="text-[11px] text-[color:var(--cl-muted)] font-normal">· {pct(actual)}</span></span><span className="mono font-bold text-[color:var(--cl-accent)]">{money(actual)}</span></div>
+          <div className="h-3 rounded-full bg-[color:var(--cl-chip)] overflow-hidden"><div className="h-full rounded-full bg-[#f0c85a]" style={{ width: w(actual) }} /></div>
         </div>
         <div>
-          <div className="flex justify-between text-sm mb-1.5"><span className="font-semibold text-[#1E2530]">المتوقع عند الإنجاز <span className="text-[11px] text-[#9A9483] font-normal">· {pct(forecast)}</span></span><span className="mono font-bold" style={{ color: forecast > budget && budget > 0 ? "#C1453B" : "#1E2530" }}>{money(forecast)}</span></div>
-          <div className="h-3 rounded-full bg-[#F1EDE1] overflow-hidden flex" style={{ width: "100%" }}>
-            <div className="h-full bg-[#E8672C]" style={{ width: w(actual) }} />
+          <div className="flex justify-between text-sm mb-1.5"><span className="font-semibold text-[color:var(--cl-text)]">المتوقع عند الإنجاز <span className="text-[11px] text-[color:var(--cl-muted)] font-normal">· {pct(forecast)}</span></span><span className="mono font-bold" style={{ color: forecast > budget && budget > 0 ? "#ff6b6b" : "#eeeeee" }}>{money(forecast)}</span></div>
+          <div className="h-3 rounded-full bg-[color:var(--cl-chip)] overflow-hidden flex" style={{ width: "100%" }}>
+            <div className="h-full bg-[#f0c85a]" style={{ width: w(actual) }} />
             <div className="h-full bg-[#D6A23C]" style={{ width: w(expected) }} />
           </div>
-          <div className="flex gap-4 mt-1.5 text-[11px] text-[#9A9483]">
-            <span className="flex items-center gap-1"><span className="w-2 h-2 rounded-sm bg-[#E8672C]" /> فعلي</span>
+          <div className="flex gap-4 mt-1.5 text-[11px] text-[color:var(--cl-muted)]">
+            <span className="flex items-center gap-1"><span className="w-2 h-2 rounded-sm bg-[#f0c85a]" /> فعلي</span>
             <span className="flex items-center gap-1"><span className="w-2 h-2 rounded-sm bg-[#D6A23C]" /> متوقع مستقبلي ({money(expected)})</span>
           </div>
         </div>
       </div>
 
       <div className="grid grid-cols-3 gap-3 mt-5">
-        <div className="rounded-lg bg-[#FAF8F2] border border-[#EFEBDF] p-3">
-          <div className="text-[11px] text-[#9A9483] mb-1">المتبقي من الميزانية</div>
-          <div className={`text-sm font-bold mono ${remaining >= 0 ? "text-[#3F7D63]" : "text-[#C1453B]"}`}>{money(remaining)}</div>
+        <div className="rounded-lg bg-[color:var(--cl-sub)] border border-[color:var(--cl-sep)] p-3">
+          <div className="text-[11px] text-[color:var(--cl-muted)] mb-1">المتبقي من الميزانية</div>
+          <div className={`text-sm font-bold mono ${remaining >= 0 ? "text-[color:var(--cl-green)]" : "text-[color:var(--cl-red)]"}`}>{money(remaining)}</div>
         </div>
-        <div className="rounded-lg bg-[#FAF8F2] border border-[#EFEBDF] p-3">
-          <div className="text-[11px] text-[#9A9483] mb-1">{forecastVar >= 0 ? "وفر متوقع" : "تجاوز متوقع"}</div>
-          <div className={`text-sm font-bold mono ${forecastVar >= 0 ? "text-[#3F7D63]" : "text-[#C1453B]"}`}>{money(Math.abs(forecastVar))}</div>
+        <div className="rounded-lg bg-[color:var(--cl-sub)] border border-[color:var(--cl-sep)] p-3">
+          <div className="text-[11px] text-[color:var(--cl-muted)] mb-1">{forecastVar >= 0 ? "وفر متوقع" : "تجاوز متوقع"}</div>
+          <div className={`text-sm font-bold mono ${forecastVar >= 0 ? "text-[color:var(--cl-green)]" : "text-[color:var(--cl-red)]"}`}>{money(Math.abs(forecastVar))}</div>
         </div>
-        <div className="rounded-lg bg-[#FAF8F2] border border-[#EFEBDF] p-3">
-          <div className="text-[11px] text-[#9A9483] mb-1">نسبة الصرف</div>
-          <div className="text-sm font-bold mono text-[#1E2530]">{budget > 0 ? `${fmt((actual / budget) * 100, 1)}٪` : "—"}</div>
+        <div className="rounded-lg bg-[color:var(--cl-sub)] border border-[color:var(--cl-sep)] p-3">
+          <div className="text-[11px] text-[color:var(--cl-muted)] mb-1">نسبة الصرف</div>
+          <div className="text-sm font-bold mono text-[color:var(--cl-text)]">{budget > 0 ? `${fmt((actual / budget) * 100, 1)}٪` : "—"}</div>
         </div>
       </div>
 
       {rows.length > 0 && (
-        <div className="mt-5 border border-[#EFEBDF] rounded-lg overflow-hidden">
+        <div className="mt-5 border border-[color:var(--cl-sep)] rounded-lg overflow-hidden">
           <div className="max-h-64 overflow-auto">
             <table className="w-full text-[12px]">
-              <thead className="bg-[#F6F3EA] text-[#6B7280] sticky top-0">
+              <thead className="bg-[color:var(--cl-inset)] text-[color:var(--cl-soft)] sticky top-0">
                 <tr>
                   <th className="text-right py-2 px-3 font-semibold">بند العمل</th>
                   <th className="text-right py-2 px-3 font-semibold">الميزانية</th>
@@ -2216,16 +2239,16 @@ function BudgetActualForecast({ totals, pWorkItems, pCosts, pExpectedCosts }) {
                   <th className="text-right py-2 px-3 font-semibold">الانحراف</th>
                 </tr>
               </thead>
-              <tbody className="divide-y divide-[#EFEBDF]">
+              <tbody className="divide-y divide-[color:var(--cl-sep)]">
                 {rows.map((r) => {
                   const v = r.budget - r.forecast;
                   return (
                     <tr key={r.id}>
-                      <td className="py-2 px-3 font-semibold text-[#1E2530] max-w-[160px] truncate">{r.name}</td>
+                      <td className="py-2 px-3 font-semibold text-[color:var(--cl-text)] max-w-[160px] truncate">{r.name}</td>
                       <td className="py-2 px-3 mono">{fmt(r.budget)}</td>
-                      <td className="py-2 px-3 mono text-[#E8672C]">{fmt(r.actual)}</td>
+                      <td className="py-2 px-3 mono text-[color:var(--cl-accent)]">{fmt(r.actual)}</td>
                       <td className="py-2 px-3 mono">{fmt(r.forecast)}</td>
-                      <td className={`py-2 px-3 mono font-bold ${r.budget === 0 ? "text-[#9A9483]" : v >= 0 ? "text-[#3F7D63]" : "text-[#C1453B]"}`}>{r.budget === 0 ? "—" : (v >= 0 ? "+" : "−") + fmt(Math.abs(v))}</td>
+                      <td className={`py-2 px-3 mono font-bold ${r.budget === 0 ? "text-[color:var(--cl-muted)]" : v >= 0 ? "text-[color:var(--cl-green)]" : "text-[color:var(--cl-red)]"}`}>{r.budget === 0 ? "—" : (v >= 0 ? "+" : "−") + fmt(Math.abs(v))}</td>
                     </tr>
                   );
                 })}
@@ -2247,17 +2270,17 @@ function CostDistribution({ pCosts }) {
   }));
   const known = data.reduce((s, d) => s + d.value, 0);
   const other = pCosts.reduce((s, c) => s + c.qty * c.price, 0) - known;
-  if (other > 0.5) data.push({ key: "_other", name: "أنواع أخرى", color: "#9A9483", icon: Receipt, value: other });
+  if (other > 0.5) data.push({ key: "_other", name: "أنواع أخرى", color: "#8b8b95", icon: Receipt, value: other });
   const total = data.reduce((s, d) => s + d.value, 0);
   const pie = data.filter((d) => d.value > 0);
 
   return (
-    <section className="bg-white rounded-xl border border-[#E1DACB] p-5 h-full">
-      <h2 className="font-bold text-[#1E2530] flex items-center gap-2"><Layers size={16} className="text-[#E8672C]" /> توزيع التكاليف حسب النوع</h2>
-      <p className="text-[12px] text-[#9A9483] mt-1 mb-3">من إجمالي التكاليف الفعلية المسجّلة</p>
+    <section className="bg-[color:var(--cl-card)] rounded-xl border border-[color:var(--cl-line)] p-5 h-full">
+      <h2 className="font-bold text-[color:var(--cl-text)] flex items-center gap-2"><Layers size={16} className="text-[color:var(--cl-accent)]" /> توزيع التكاليف حسب النوع</h2>
+      <p className="text-[12px] text-[color:var(--cl-muted)] mt-1 mb-3">من إجمالي التكاليف الفعلية المسجّلة</p>
 
       {total <= 0 ? (
-        <div className="text-sm text-[#9A9483] py-10 text-center">لا توجد تكاليف مسجّلة بعد.</div>
+        <div className="text-sm text-[color:var(--cl-muted)] py-10 text-center">لا توجد تكاليف مسجّلة بعد.</div>
       ) : (
         <div className="relative" style={{ width: "100%", height: 200 }}>
           <ResponsiveContainer>
@@ -2265,12 +2288,12 @@ function CostDistribution({ pCosts }) {
               <Pie data={pie} dataKey="value" nameKey="name" innerRadius={58} outerRadius={88} paddingAngle={2} stroke="none">
                 {pie.map((d) => <Cell key={d.key} fill={d.color} />)}
               </Pie>
-              <Tooltip formatter={(v) => money(v)} contentStyle={{ fontFamily: "Cairo", fontSize: 12, borderRadius: 8, border: "1px solid #E1DACB" }} />
+              <Tooltip formatter={(v) => money(v)} contentStyle={{ fontFamily: "IBM Plex Sans Arabic", fontSize: 12, borderRadius: 8, border: "1px solid #26262c", backgroundColor: "#111114", color: "#eee" }} />
             </RePieChart>
           </ResponsiveContainer>
           <div className="absolute inset-0 flex flex-col items-center justify-center pointer-events-none">
-            <div className="text-[10px] text-[#9A9483]">الإجمالي</div>
-            <div className="text-sm font-extrabold mono text-[#1E2530]">{fmt(total)}</div>
+            <div className="text-[10px] text-[color:var(--cl-muted)]">الإجمالي</div>
+            <div className="text-sm font-extrabold mono text-[color:var(--cl-text)]">{fmt(total)}</div>
           </div>
         </div>
       )}
@@ -2282,13 +2305,13 @@ function CostDistribution({ pCosts }) {
           return (
             <div key={d.key}>
               <div className="flex items-center justify-between text-[13px] mb-1">
-                <span className="flex items-center gap-2 font-semibold text-[#1E2530]">
+                <span className="flex items-center gap-2 font-semibold text-[color:var(--cl-text)]">
                   <span className="w-6 h-6 rounded-md flex items-center justify-center" style={{ backgroundColor: d.color + "18" }}><Icon size={13} style={{ color: d.color }} /></span>
                   {d.name}
                 </span>
-                <span className="mono text-[12px]"><b>{money(d.value)}</b> <span className="text-[#9A9483]">· {fmt(p, 1)}٪</span></span>
+                <span className="mono text-[12px]"><b>{money(d.value)}</b> <span className="text-[color:var(--cl-muted)]">· {fmt(p, 1)}٪</span></span>
               </div>
-              <div className="h-1.5 rounded-full bg-[#F1EDE1] overflow-hidden"><div className="h-full rounded-full" style={{ width: `${p}%`, backgroundColor: d.color }} /></div>
+              <div className="h-1.5 rounded-full bg-[color:var(--cl-chip)] overflow-hidden"><div className="h-full rounded-full" style={{ width: `${p}%`, backgroundColor: d.color }} /></div>
             </div>
           );
         })}
@@ -2359,10 +2382,10 @@ function Dashboard({ contractValue, treasuryBalance, totals, pWorkItems, pCosts,
         </div>
       </div>
 
-      <section className="bg-white rounded-xl border border-[#E1DACB] p-5">
+      <section className="bg-[color:var(--cl-card)] rounded-xl border border-[color:var(--cl-line)] p-5">
         <div className="flex items-center justify-between mb-4">
-          <h2 className="font-bold text-[#1E2530]">الميزانية مقابل الفعلي — حسب بند العمل</h2>
-          <div className={`text-sm font-bold mono flex items-center gap-1 ${variance >= 0 ? "text-[#3F7D63]" : "text-[#C1453B]"}`}>
+          <h2 className="font-bold text-[color:var(--cl-text)]">الميزانية مقابل الفعلي — حسب بند العمل</h2>
+          <div className={`text-sm font-bold mono flex items-center gap-1 ${variance >= 0 ? "text-[color:var(--cl-green)]" : "text-[color:var(--cl-red)]"}`}>
             {variance >= 0 ? <TrendingDown size={14} /> : <TrendingUp size={14} />}
             {variance >= 0 ? "وفر" : "تجاوز"} {money(Math.abs(variance))}
           </div>
@@ -2370,11 +2393,11 @@ function Dashboard({ contractValue, treasuryBalance, totals, pWorkItems, pCosts,
         <div style={{ width: "100%", height: 280 }}>
           <ResponsiveContainer>
             <BarChart data={chartData} barGap={4}>
-              <CartesianGrid strokeDasharray="3 3" stroke="#E1DACB" />
-              <XAxis dataKey="name" tick={{ fontSize: 11, fontFamily: "Cairo" }} stroke="#9A9483" />
+              <CartesianGrid strokeDasharray="3 3" stroke="#26262c" />
+              <XAxis dataKey="name" tick={{ fontSize: 11, fontFamily: "IBM Plex Sans Arabic" }} stroke="#9A9483" />
               <YAxis tick={{ fontSize: 10 }} stroke="#9A9483" tickFormatter={(v) => (v / 1000) + "k"} />
-              <Tooltip formatter={(v) => money(v)} contentStyle={{ fontFamily: "Cairo", fontSize: 12, borderRadius: 8, border: "1px solid #E1DACB" }} />
-              <Bar dataKey="الميزانية" fill="#1E2530" radius={[4, 4, 0, 0]} />
+              <Tooltip formatter={(v) => money(v)} contentStyle={{ fontFamily: "IBM Plex Sans Arabic", fontSize: 12, borderRadius: 8, border: "1px solid #26262c", backgroundColor: "#111114", color: "#eee" }} />
+              <Bar dataKey="الميزانية" fill="#9AA3B2" radius={[4, 4, 0, 0]} />
               <Bar dataKey="الفعلي" radius={[4, 4, 0, 0]}>
                 {chartData.map((d, i) => (
                   <Cell key={i} fill={d.الفعلي > d.الميزانية ? "#C1453B" : "#E8672C"} />
@@ -2385,20 +2408,20 @@ function Dashboard({ contractValue, treasuryBalance, totals, pWorkItems, pCosts,
         </div>
       </section>
 
-      <section className="bg-white rounded-xl border border-[#E1DACB] p-5">
+      <section className="bg-[color:var(--cl-card)] rounded-xl border border-[color:var(--cl-line)] p-5">
         <div className="flex items-center justify-between mb-4">
           <div>
-            <h2 className="font-bold text-[#1E2530]">مصاريف متوقعة مستقبلية</h2>
-            <p className="text-[12px] text-[#9A9483] mt-1">حاجات لسه هتتصرف على المشروع، مش مسجّلة كتكلفة فعلية بعد — بتُستخدم لحساب "صافي الربح المتوقع" في أعلى الصفحة</p>
+            <h2 className="font-bold text-[color:var(--cl-text)]">مصاريف متوقعة مستقبلية</h2>
+            <p className="text-[12px] text-[color:var(--cl-muted)] mt-1">حاجات لسه هتتصرف على المشروع، مش مسجّلة كتكلفة فعلية بعد — بتُستخدم لحساب "صافي الربح المتوقع" في أعلى الصفحة</p>
           </div>
-          <button onClick={() => (open ? cancelForm() : setOpen(true))} className="px-3 py-2 rounded-lg bg-[#1E2530] text-white text-sm font-semibold flex items-center gap-1.5 hover:bg-[#2b3543] transition shrink-0">
+          <button onClick={() => (open ? cancelForm() : setOpen(true))} className="px-3 py-2 rounded-lg bg-[color:var(--cl-ink)] text-white text-sm font-semibold flex items-center gap-1.5 hover:bg-[color:var(--cl-ink-hover)] transition shrink-0">
             <Plus size={15} /> مصروف متوقع جديد
           </button>
         </div>
 
         {open && (
-          <div className="bg-[#FAF8F2] rounded-lg border border-[#E1DACB] p-4 grid grid-cols-4 gap-3 mb-4">
-            {editId && <div className="col-span-4 text-xs font-semibold text-[#E8672C] bg-[#E8672C]/10 rounded-md px-3 py-1.5">جاري تعديل مصروف موجود</div>}
+          <div className="bg-[color:var(--cl-sub)] rounded-lg border border-[color:var(--cl-line)] p-4 grid grid-cols-4 gap-3 mb-4">
+            {editId && <div className="col-span-4 text-xs font-semibold text-[color:var(--cl-accent)] bg-[#f0c85a]/10 rounded-md px-3 py-1.5">جاري تعديل مصروف موجود</div>}
             <div className="col-span-2">
               <Field label="الوصف" value={form.desc} onChange={(v) => setForm((f) => ({ ...f, desc: v }))} placeholder="مثال: باقي أعمال الدهانات" />
             </div>
@@ -2414,19 +2437,19 @@ function Dashboard({ contractValue, treasuryBalance, totals, pWorkItems, pCosts,
               <Field label="ملاحظات (اختياري)" value={form.notes} onChange={(v) => setForm((f) => ({ ...f, notes: v }))} placeholder="أي تفاصيل إضافية" />
             </div>
             <div className="col-span-4 flex justify-end gap-2">
-              {editId && <button onClick={cancelForm} className="px-4 py-2 rounded-lg bg-[#E1DACB] text-[#1E2530] text-sm font-semibold hover:bg-[#D8D3C7] transition">إلغاء</button>}
-              <button onClick={submit} className="px-4 py-2 rounded-lg bg-[#E8672C] text-white text-sm font-semibold hover:bg-[#C8511E] transition">{editId ? "حفظ التعديل" : "حفظ"}</button>
+              {editId && <button onClick={cancelForm} className="px-4 py-2 rounded-lg bg-[color:var(--cl-line)] text-[color:var(--cl-text)] text-sm font-semibold hover:bg-[color:var(--cl-hover)] transition">إلغاء</button>}
+              <button onClick={submit} className="px-4 py-2 rounded-lg bg-[#f0c85a] text-[#1a1405] text-sm font-semibold hover:bg-[#e3b53f] transition">{editId ? "حفظ التعديل" : "حفظ"}</button>
             </div>
           </div>
         )}
 
-        <div className="divide-y divide-[#EFEBDF]">
-          {pExpectedCosts.length === 0 && <div className="text-sm text-[#9A9483] py-4">لا توجد مصاريف متوقعة مسجّلة حاليًا.</div>}
+        <div className="divide-y divide-[color:var(--cl-sep)]">
+          {pExpectedCosts.length === 0 && <div className="text-sm text-[color:var(--cl-muted)] py-4">لا توجد مصاريف متوقعة مسجّلة حاليًا.</div>}
           {pExpectedCosts.map((e) => (
             <div key={e.id} className="py-3 flex items-center justify-between gap-3 group">
               <div className="min-w-0">
-                <div className="text-sm font-semibold text-[#1E2530] truncate">{e.desc}</div>
-                <div className="text-[11px] text-[#9A9483]">
+                <div className="text-sm font-semibold text-[color:var(--cl-text)] truncate">{e.desc}</div>
+                <div className="text-[11px] text-[color:var(--cl-muted)]">
                   {pWorkItems.find((w) => w.id === e.workItemId)?.name || "غير مرتبط ببند"}
                   {e.expectedDate ? ` · متوقع بتاريخ ${e.expectedDate}` : ""}
                   {e.notes ? ` · ${e.notes}` : ""}
@@ -2435,8 +2458,8 @@ function Dashboard({ contractValue, treasuryBalance, totals, pWorkItems, pCosts,
               <div className="flex items-center gap-3 shrink-0">
                 <div className="text-sm font-bold mono text-[#D6A23C]">{money(e.amount)}</div>
                 <div className="flex gap-1 opacity-0 group-hover:opacity-100 transition">
-                  <button onClick={() => startEdit(e)} title="تعديل" className="p-1.5 rounded-md text-[#6B7280] hover:bg-[#E1DACB] hover:text-[#1E2530] transition"><Pencil size={14} /></button>
-                  <button onClick={() => onDeleteExpectedCost(e.id)} title="حذف" className="p-1.5 rounded-md text-[#C1453B] hover:bg-[#C1453B]/10 transition"><Trash2 size={14} /></button>
+                  <button onClick={() => startEdit(e)} title="تعديل" className="p-1.5 rounded-md text-[color:var(--cl-soft)] hover:bg-[color:var(--cl-line)] hover:text-[color:var(--cl-text)] transition"><Pencil size={14} /></button>
+                  <button onClick={() => onDeleteExpectedCost(e.id)} title="حذف" className="p-1.5 rounded-md text-[color:var(--cl-red)] hover:bg-[#C1453B]/10 transition"><Trash2 size={14} /></button>
                 </div>
               </div>
             </div>
@@ -2444,10 +2467,10 @@ function Dashboard({ contractValue, treasuryBalance, totals, pWorkItems, pCosts,
         </div>
       </section>
 
-      <section className="bg-white rounded-xl border border-[#E1DACB] p-5">
-        <h2 className="font-bold text-[#1E2530] mb-3">آخر التكاليف المسجّلة</h2>
-        <div className="divide-y divide-[#EFEBDF]">
-          {recentCosts.length === 0 && <div className="text-sm text-[#9A9483] py-4">لا توجد تكاليف مسجّلة بعد.</div>}
+      <section className="bg-[color:var(--cl-card)] rounded-xl border border-[color:var(--cl-line)] p-5">
+        <h2 className="font-bold text-[color:var(--cl-text)] mb-3">آخر التكاليف المسجّلة</h2>
+        <div className="divide-y divide-[color:var(--cl-sep)]">
+          {recentCosts.length === 0 && <div className="text-sm text-[color:var(--cl-muted)] py-4">لا توجد تكاليف مسجّلة بعد.</div>}
           {recentCosts.map((c) => {
             const meta = COST_TYPES.find((t) => t.key === c.type);
             const Icon = meta?.icon || Receipt;
@@ -2458,8 +2481,8 @@ function Dashboard({ contractValue, treasuryBalance, totals, pWorkItems, pCosts,
                     <Icon size={14} style={{ color: meta?.color }} />
                   </div>
                   <div className="min-w-0">
-                    <div className="text-sm font-semibold text-[#1E2530] truncate">{c.desc}</div>
-                    <div className="text-[11px] text-[#9A9483]">{c.costLevel1 || "بدون مستوى أول"}{c.costLevel2 ? ` · ${c.costLevel2}` : ""} · {meta?.label} · {c.date}</div>
+                    <div className="text-sm font-semibold text-[color:var(--cl-text)] truncate">{c.desc}</div>
+                    <div className="text-[11px] text-[color:var(--cl-muted)]">{c.costLevel1 || "بدون مستوى أول"}{c.costLevel2 ? ` · ${c.costLevel2}` : ""} · {meta?.label} · {c.date}</div>
                   </div>
                 </div>
                 <div className="text-sm font-bold mono shrink-0">{money(c.qty * c.price)}</div>
@@ -2511,69 +2534,69 @@ function WorkItemsTab({ pWorkItems, pCosts, activeProjectId, onAddWorkItem, onUp
     <div className="space-y-5">
       <div className="flex items-center justify-between">
         <div>
-          <h2 className="font-bold text-[#1E2530] text-lg">بنود الأعمال</h2>
-          <p className="text-xs text-[#9A9483] mt-1">دليل البنود التي يتم اختيارها عند تسجيل التكاليف</p>
+          <h2 className="font-bold text-[color:var(--cl-text)] text-lg">بنود الأعمال</h2>
+          <p className="text-xs text-[color:var(--cl-muted)] mt-1">دليل البنود التي يتم اختيارها عند تسجيل التكاليف</p>
         </div>
-        <button onClick={() => setOpen((o) => !o)} className="px-3 py-2 rounded-lg bg-[#1E2530] text-white text-sm font-semibold flex items-center gap-1.5 hover:bg-[#2b3543] transition">
+        <button onClick={() => setOpen((o) => !o)} className="px-3 py-2 rounded-lg bg-[color:var(--cl-ink)] text-white text-sm font-semibold flex items-center gap-1.5 hover:bg-[color:var(--cl-ink-hover)] transition">
           <Plus size={15} /> إضافة بند عمل
         </button>
       </div>
 
       {open && (
-        <div className="bg-white rounded-xl border border-[#E1DACB] p-4">
+        <div className="bg-[color:var(--cl-card)] rounded-xl border border-[color:var(--cl-line)] p-4">
           <div className="max-w-md">
             <Field label="اسم / كود بند العمل" value={form.name} onChange={(v) => setForm({ name: v })} placeholder="مثال: أعمال الحفر والردم" />
           </div>
           <div className="flex justify-end mt-3">
-            <button onClick={submit} className="px-4 py-2 rounded-lg bg-[#E8672C] text-white text-sm font-semibold hover:bg-[#C8511E] transition">حفظ البند</button>
+            <button onClick={submit} className="px-4 py-2 rounded-lg bg-[#f0c85a] text-[#1a1405] text-sm font-semibold hover:bg-[#e3b53f] transition">حفظ البند</button>
           </div>
         </div>
       )}
 
-      <div className="bg-white rounded-xl border border-[#E1DACB] overflow-hidden">
+      <div className="bg-[color:var(--cl-card)] rounded-xl border border-[color:var(--cl-line)] overflow-hidden">
         <table className="w-full text-sm">
           <thead>
-            <tr className="bg-[#F6F3EA] text-[#6B7280] text-[12px]">
+            <tr className="bg-[color:var(--cl-inset)] text-[color:var(--cl-soft)] text-[12px]">
               <th className="text-right py-3 px-4 font-semibold">بند العمل</th>
               <th className="text-right py-3 px-4 font-semibold">التكلفة الفعلية</th>
               <th className="text-right py-3 px-4 font-semibold w-20"></th>
             </tr>
           </thead>
-          <tbody className="divide-y divide-[#EFEBDF]">
+          <tbody className="divide-y divide-[color:var(--cl-sep)]">
             {pWorkItems.map((w) => {
               const actual = pCosts.filter((c) => c.workItemId === w.id).reduce((s, c) => s + c.qty * c.price, 0);
               const isEditing = editId === w.id;
               if (isEditing) {
                 return (
-                  <tr key={w.id} className="bg-[#FAF8F2]">
+                  <tr key={w.id} className="bg-[color:var(--cl-sub)]">
                     <td className="py-2 px-2">
-                      <input value={editForm.name} onChange={(e) => setEditForm({ name: e.target.value })} className="w-full border border-[#E1DACB] rounded-md px-2 py-1.5 text-sm outline-none focus:border-[#E8672C]" />
+                      <input value={editForm.name} onChange={(e) => setEditForm({ name: e.target.value })} className="w-full border border-[color:var(--cl-line)] rounded-md px-2 py-1.5 text-sm outline-none focus:border-[#f0c85a]" />
                     </td>
-                    <td className="py-3 px-4 mono text-[#9A9483]">{money(actual)}</td>
+                    <td className="py-3 px-4 mono text-[color:var(--cl-muted)]">{money(actual)}</td>
                     <td className="py-2 px-2">
                       <div className="flex gap-1.5 justify-end">
                         <button onClick={saveEdit} className="px-2.5 py-1.5 rounded-md bg-[#3F7D63] text-white text-xs font-semibold hover:bg-[#356A54] transition">حفظ</button>
-                        <button onClick={() => setEditId(null)} className="px-2.5 py-1.5 rounded-md bg-[#E1DACB] text-[#1E2530] text-xs font-semibold hover:bg-[#D8D3C7] transition">إلغاء</button>
+                        <button onClick={() => setEditId(null)} className="px-2.5 py-1.5 rounded-md bg-[color:var(--cl-line)] text-[color:var(--cl-text)] text-xs font-semibold hover:bg-[color:var(--cl-hover)] transition">إلغاء</button>
                       </div>
                     </td>
                   </tr>
                 );
               }
               return (
-                <tr key={w.id} className="hover:bg-[#FAF8F2] transition group">
-                  <td className="py-3 px-4 font-semibold text-[#1E2530]">{w.name}</td>
+                <tr key={w.id} className="hover:bg-[color:var(--cl-sub)] transition group">
+                  <td className="py-3 px-4 font-semibold text-[color:var(--cl-text)]">{w.name}</td>
                   <td className="py-3 px-4 mono font-bold">{money(actual)}</td>
                   <td className="py-3 px-4">
                     <div className="flex gap-1 justify-end opacity-0 group-hover:opacity-100 transition">
-                      <button onClick={() => startEdit(w)} title="تعديل" className="p-1.5 rounded-md text-[#6B7280] hover:bg-[#E1DACB] hover:text-[#1E2530] transition"><Pencil size={14} /></button>
-                      <button onClick={() => onDeleteWorkItem(w.id)} title="حذف" className="p-1.5 rounded-md text-[#C1453B] hover:bg-[#C1453B]/10 transition"><Trash2 size={14} /></button>
+                      <button onClick={() => startEdit(w)} title="تعديل" className="p-1.5 rounded-md text-[color:var(--cl-soft)] hover:bg-[color:var(--cl-line)] hover:text-[color:var(--cl-text)] transition"><Pencil size={14} /></button>
+                      <button onClick={() => onDeleteWorkItem(w.id)} title="حذف" className="p-1.5 rounded-md text-[color:var(--cl-red)] hover:bg-[#C1453B]/10 transition"><Trash2 size={14} /></button>
                     </div>
                   </td>
                 </tr>
               );
             })}
             {pWorkItems.length === 0 && (
-              <tr><td colSpan={3} className="text-center py-8 text-[#9A9483]">لا توجد بنود أعمال بعد.</td></tr>
+              <tr><td colSpan={3} className="text-center py-8 text-[color:var(--cl-muted)]">لا توجد بنود أعمال بعد.</td></tr>
             )}
           </tbody>
         </table>
@@ -2629,48 +2652,48 @@ function CostExcelImportPanel({ pWorkItems, activeProjectId, onImport, onClose }
   };
 
   return (
-    <div className="bg-white rounded-xl border border-[#E1DACB] p-4 space-y-4">
+    <div className="bg-[color:var(--cl-card)] rounded-xl border border-[color:var(--cl-line)] p-4 space-y-4">
       <div className="flex items-start justify-between gap-3">
         <div>
-          <div className="font-bold text-[#1E2530]">استيراد تكاليف من إكسيل</div>
-          <p className="text-[12px] text-[#9A9483] mt-1">
+          <div className="font-bold text-[color:var(--cl-text)]">استيراد تكاليف من إكسيل</div>
+          <p className="text-[12px] text-[color:var(--cl-muted)] mt-1">
             الأعمدة المتوقعة بالترتيب: التاريخ، بند العمل (اختياري)، النوع، الوصف، المستوى الأول (اختياري)، المستوى الثاني (اختياري)، الكمية، الوحدة، السعر
           </p>
         </div>
-        <button onClick={() => downloadCostExcelTemplate(pWorkItems)} className="px-3 py-2 rounded-lg bg-white border border-[#E1DACB] text-[#1E2530] text-xs font-semibold hover:border-[#1E2530]/40 transition shrink-0 whitespace-nowrap">
+        <button onClick={() => downloadCostExcelTemplate(pWorkItems)} className="px-3 py-2 rounded-lg bg-[color:var(--cl-card)] border border-[color:var(--cl-line)] text-[color:var(--cl-text)] text-xs font-semibold hover:border-white/40 transition shrink-0 whitespace-nowrap">
           تحميل قالب إكسيل
         </button>
       </div>
 
       <div className="flex items-center gap-3 flex-wrap">
-        <label className="px-4 py-2 rounded-lg bg-[#1E2530] text-white text-sm font-semibold cursor-pointer hover:bg-[#2b3543] transition">
+        <label className="px-4 py-2 rounded-lg bg-[color:var(--cl-ink)] text-white text-sm font-semibold cursor-pointer hover:bg-[color:var(--cl-ink-hover)] transition">
           اختيار ملف إكسيل
           <input type="file" accept=".xlsx,.xls" onChange={handleFile} className="hidden" />
         </label>
-        {fileName && <span className="text-xs text-[#6B7280]">{fileName}</span>}
+        {fileName && <span className="text-xs text-[color:var(--cl-soft)]">{fileName}</span>}
         {loading && (
-          <span className="text-xs text-[#9A9483] flex items-center gap-1">
+          <span className="text-xs text-[color:var(--cl-muted)] flex items-center gap-1">
             <Loader2 size={13} className="animate-spin" /> جاري القراءة...
           </span>
         )}
-        <button onClick={onClose} className="text-xs text-[#9A9483] hover:text-[#1E2530] transition mr-auto">إلغاء</button>
+        <button onClick={onClose} className="text-xs text-[color:var(--cl-muted)] hover:text-[color:var(--cl-text)] transition mr-auto">إلغاء</button>
       </div>
 
-      {error && <div className="text-xs text-[#C1453B] bg-[#C1453B]/10 rounded-md px-3 py-2">{error}</div>}
+      {error && <div className="text-xs text-[color:var(--cl-red)] bg-[#C1453B]/10 rounded-md px-3 py-2">{error}</div>}
 
       {parsed && (
         <div className="space-y-3">
           <div className="flex gap-2 text-xs flex-wrap">
-            <span className="px-3 py-1.5 rounded-full bg-[#3F7D63]/10 text-[#3F7D63] font-semibold">{validRows.length} صف صالح للاستيراد</span>
+            <span className="px-3 py-1.5 rounded-full bg-[#3F7D63]/10 text-[color:var(--cl-green)] font-semibold">{validRows.length} صف صالح للاستيراد</span>
             {invalidRows.length > 0 && (
-              <span className="px-3 py-1.5 rounded-full bg-[#C1453B]/10 text-[#C1453B] font-semibold">{invalidRows.length} صف فيه خطأ (هيتجاهل)</span>
+              <span className="px-3 py-1.5 rounded-full bg-[#C1453B]/10 text-[color:var(--cl-red)] font-semibold">{invalidRows.length} صف فيه خطأ (هيتجاهل)</span>
             )}
           </div>
 
-          <div className="max-h-72 overflow-auto border border-[#E1DACB] rounded-lg">
+          <div className="max-h-72 overflow-auto border border-[color:var(--cl-line)] rounded-lg">
             <table className="w-full text-xs">
-              <thead className="sticky top-0 bg-[#F6F3EA]">
-                <tr className="text-[#6B7280]">
+              <thead className="sticky top-0 bg-[color:var(--cl-inset)]">
+                <tr className="text-[color:var(--cl-soft)]">
                   <th className="text-right py-2 px-3 font-semibold">صف</th>
                   <th className="text-right py-2 px-3 font-semibold">التاريخ</th>
                   <th className="text-right py-2 px-3 font-semibold">بند العمل</th>
@@ -2681,7 +2704,7 @@ function CostExcelImportPanel({ pWorkItems, activeProjectId, onImport, onClose }
                   <th className="text-right py-2 px-3 font-semibold">ملاحظات</th>
                 </tr>
               </thead>
-              <tbody className="divide-y divide-[#EFEBDF]">
+              <tbody className="divide-y divide-[color:var(--cl-sep)]">
                 {parsed.map((r) => (
                   <tr key={r.rowIndex} className={!r.valid ? "bg-[#C1453B]/5" : r.warnings.length ? "bg-[#D6A23C]/5" : ""}>
                     <td className="py-1.5 px-3 mono">{r.rowIndex}</td>
@@ -2691,9 +2714,9 @@ function CostExcelImportPanel({ pWorkItems, activeProjectId, onImport, onClose }
                     <td className="py-1.5 px-3">{r.data.desc || "—"}</td>
                     <td className="py-1.5 px-3 mono">{r.data.qty}</td>
                     <td className="py-1.5 px-3 mono">{r.data.price}</td>
-                    <td className="py-1.5 px-3 text-[#9A9483]">
+                    <td className="py-1.5 px-3 text-[color:var(--cl-muted)]">
                       {r.errors.map((e, i) => (
-                        <div key={"e" + i} className="text-[#C1453B]">{e}</div>
+                        <div key={"e" + i} className="text-[color:var(--cl-red)]">{e}</div>
                       ))}
                       {r.warnings.map((w, i) => (
                         <div key={"w" + i} className="text-[#D6A23C]">{w}</div>
@@ -2706,7 +2729,7 @@ function CostExcelImportPanel({ pWorkItems, activeProjectId, onImport, onClose }
           </div>
 
           <div className="flex justify-end gap-2">
-            <button onClick={onClose} className="px-4 py-2 rounded-lg bg-[#E1DACB] text-[#1E2530] text-sm font-semibold hover:bg-[#D8D3C7] transition">إلغاء</button>
+            <button onClick={onClose} className="px-4 py-2 rounded-lg bg-[color:var(--cl-line)] text-[color:var(--cl-text)] text-sm font-semibold hover:bg-[color:var(--cl-hover)] transition">إلغاء</button>
             <button
               onClick={confirmImport}
               disabled={validRows.length === 0}
@@ -2859,12 +2882,12 @@ function CostsTab({ pCosts, pWorkItems, activeProjectId, onAddCost, onAddCostsBu
   return (
     <div className="space-y-5">
       <div className="flex items-center justify-between">
-        <h2 className="font-bold text-[#1E2530] text-lg">التكاليف</h2>
+        <h2 className="font-bold text-[color:var(--cl-text)] text-lg">التكاليف</h2>
         <div className="flex gap-2">
-          <button onClick={openImportPanel} className="px-3 py-2 rounded-lg bg-white border border-[#E1DACB] text-[#1E2530] text-sm font-semibold flex items-center gap-1.5 hover:border-[#1E2530]/40 transition">
+          <button onClick={openImportPanel} className="px-3 py-2 rounded-lg bg-[color:var(--cl-card)] border border-[color:var(--cl-line)] text-[color:var(--cl-text)] text-sm font-semibold flex items-center gap-1.5 hover:border-white/40 transition">
             <Upload size={15} /> استيراد من إكسيل
           </button>
-          <button onClick={openManualForm} className="px-3 py-2 rounded-lg bg-[#1E2530] text-white text-sm font-semibold flex items-center gap-1.5 hover:bg-[#2b3543] transition">
+          <button onClick={openManualForm} className="px-3 py-2 rounded-lg bg-[color:var(--cl-ink)] text-white text-sm font-semibold flex items-center gap-1.5 hover:bg-[color:var(--cl-ink-hover)] transition">
             <Plus size={15} /> تسجيل تكلفة
           </button>
         </div>
@@ -2876,7 +2899,7 @@ function CostsTab({ pCosts, pWorkItems, activeProjectId, onAddCost, onAddCostsBu
             key={f}
             onClick={() => setFilter(f)}
             className={`px-3 py-1.5 rounded-full text-xs font-semibold border transition ${
-              filter === f ? "bg-[#1E2530] text-white border-[#1E2530]" : "bg-white text-[#6B7280] border-[#E1DACB] hover:border-[#1E2530]/40"
+              filter === f ? "bg-[color:var(--cl-ink)] text-white border-[color:var(--cl-text)]" : "bg-[color:var(--cl-card)] text-[color:var(--cl-soft)] border-[color:var(--cl-line)] hover:border-white/40"
             }`}
           >
             {f === "الكل" ? "الكل" : COST_TYPES.find((t) => t.key === f).label}
@@ -2894,9 +2917,9 @@ function CostsTab({ pCosts, pWorkItems, activeProjectId, onAddCost, onAddCostsBu
       )}
 
       {open && (
-        <div className="bg-white rounded-xl border border-[#E1DACB] p-4 grid grid-cols-3 gap-3">
+        <div className="bg-[color:var(--cl-card)] rounded-xl border border-[color:var(--cl-line)] p-4 grid grid-cols-3 gap-3">
           {editId && (
-            <div className="col-span-3 text-xs font-semibold text-[#E8672C] bg-[#E8672C]/10 rounded-md px-3 py-1.5">جاري تعديل تكلفة موجودة</div>
+            <div className="col-span-3 text-xs font-semibold text-[color:var(--cl-accent)] bg-[#f0c85a]/10 rounded-md px-3 py-1.5">جاري تعديل تكلفة موجودة</div>
           )}
           <SelectField label="نوع التكلفة" value={form.type} onChange={(v) => setForm((f) => ({ ...f, type: v }))} options={COST_TYPES.map((t) => ({ value: t.key, label: t.label }))} />
           <SelectField
@@ -2935,31 +2958,31 @@ function CostsTab({ pCosts, pWorkItems, activeProjectId, onAddCost, onAddCostsBu
           <Field label="الوحدة" value={form.unit} onChange={(v) => setForm((f) => ({ ...f, unit: v }))} placeholder="طن / دفعة / يوم" />
           <Field label="سعر الوحدة / القيمة" value={form.price} onChange={(v) => setForm((f) => ({ ...f, price: v }))} type="number" />
           <div className="col-span-3 flex justify-end gap-2">
-            {editId && <button onClick={cancelForm} className="px-4 py-2 rounded-lg bg-[#E1DACB] text-[#1E2530] text-sm font-semibold hover:bg-[#D8D3C7] transition">إلغاء</button>}
-            <button onClick={submit} className="px-4 py-2 rounded-lg bg-[#E8672C] text-white text-sm font-semibold hover:bg-[#C8511E] transition">{editId ? "حفظ التعديل" : "حفظ التكلفة"}</button>
+            {editId && <button onClick={cancelForm} className="px-4 py-2 rounded-lg bg-[color:var(--cl-line)] text-[color:var(--cl-text)] text-sm font-semibold hover:bg-[color:var(--cl-hover)] transition">إلغاء</button>}
+            <button onClick={submit} className="px-4 py-2 rounded-lg bg-[#f0c85a] text-[#1a1405] text-sm font-semibold hover:bg-[#e3b53f] transition">{editId ? "حفظ التعديل" : "حفظ التكلفة"}</button>
           </div>
         </div>
       )}
 
-      <div className="bg-white rounded-xl border border-[#E1DACB] overflow-hidden">
+      <div className="bg-[color:var(--cl-card)] rounded-xl border border-[color:var(--cl-line)] overflow-hidden">
         {pivot.length === 0 && (
-          <div className="text-center py-10 text-[#9A9483] text-sm">لا توجد تكاليف في هذا التصنيف.</div>
+          <div className="text-center py-10 text-[color:var(--cl-muted)] text-sm">لا توجد تكاليف في هذا التصنيف.</div>
         )}
 
         {pivot.map((g) => {
           const isCollapsed = collapsedGroups[g.key];
           return (
-            <div key={g.key} className="border-b border-[#EFEBDF] last:border-b-0">
+            <div key={g.key} className="border-b border-[color:var(--cl-sep)] last:border-b-0">
               <button
                 onClick={() => toggleGroup(g.key)}
-                className="w-full flex items-center justify-between px-4 py-3 bg-[#F6F3EA] hover:bg-[#EFEAD9] transition text-right"
+                className="w-full flex items-center justify-between px-4 py-3 bg-[color:var(--cl-inset)] hover:bg-[color:var(--cl-line)] transition text-right"
               >
                 <div className="flex items-center gap-2 min-w-0">
-                  <ChevronDown size={15} className={`text-[#6B7280] shrink-0 transition-transform ${isCollapsed ? "-rotate-90" : ""}`} />
-                  <span className={`font-bold truncate ${g.unassigned ? "text-[#9A9483]" : "text-[#1E2530]"}`}>{g.name}</span>
-                  <span className="text-[11px] text-[#9A9483] mono shrink-0">({g.subItems.length} بند فرعي)</span>
+                  <ChevronDown size={15} className={`text-[color:var(--cl-soft)] shrink-0 transition-transform ${isCollapsed ? "-rotate-90" : ""}`} />
+                  <span className={`font-bold truncate ${g.unassigned ? "text-[color:var(--cl-muted)]" : "text-[color:var(--cl-text)]"}`}>{g.name}</span>
+                  <span className="text-[11px] text-[color:var(--cl-muted)] mono shrink-0">({g.subItems.length} بند فرعي)</span>
                 </div>
-                <span className="font-bold mono text-[#1E2530] shrink-0">{money(g.groupTotal)}</span>
+                <span className="font-bold mono text-[color:var(--cl-text)] shrink-0">{money(g.groupTotal)}</span>
               </button>
 
               {!isCollapsed && (
@@ -2968,14 +2991,14 @@ function CostsTab({ pCosts, pWorkItems, activeProjectId, onAddCost, onAddCostsBu
                     const itemKey = g.key + "::" + it.desc;
                     const itemOpen = expandedItems[itemKey];
                     return (
-                      <div key={itemKey} className="border-t border-[#EFEBDF]">
+                      <div key={itemKey} className="border-t border-[color:var(--cl-sep)]">
                         <button
                           onClick={() => toggleItem(itemKey)}
-                          className="w-full flex items-center justify-between px-4 py-2.5 pr-9 hover:bg-[#FAF8F2] transition text-right"
+                          className="w-full flex items-center justify-between px-4 py-2.5 pr-9 hover:bg-[color:var(--cl-sub)] transition text-right"
                         >
                           <div className="flex items-center gap-2 min-w-0">
-                            <ChevronRight size={13} className={`text-[#9A9483] shrink-0 transition-transform ${itemOpen ? "rotate-90" : ""}`} />
-                            <span className="text-sm font-semibold text-[#1E2530] truncate">{it.desc}</span>
+                            <ChevronRight size={13} className={`text-[color:var(--cl-muted)] shrink-0 transition-transform ${itemOpen ? "rotate-90" : ""}`} />
+                            <span className="text-sm font-semibold text-[color:var(--cl-text)] truncate">{it.desc}</span>
                             <div className="flex gap-1 shrink-0">
                               {it.types.map((t) => {
                                 const meta = COST_TYPES.find((ct) => ct.key === t);
@@ -2986,23 +3009,23 @@ function CostsTab({ pCosts, pWorkItems, activeProjectId, onAddCost, onAddCostsBu
                                 );
                               })}
                             </div>
-                            <span className="text-[11px] text-[#9A9483] mono shrink-0">{it.entries.length} حركة</span>
+                            <span className="text-[11px] text-[color:var(--cl-muted)] mono shrink-0">{it.entries.length} حركة</span>
                           </div>
                           <div className="flex items-center gap-4 shrink-0">
-                            {it.unit && <span className="text-[11px] text-[#9A9483] mono">{fmt(it.totalQty)} {it.unit}</span>}
+                            {it.unit && <span className="text-[11px] text-[color:var(--cl-muted)] mono">{fmt(it.totalQty)} {it.unit}</span>}
                             <span className="text-sm font-bold mono">{money(it.totalValue)}</span>
                           </div>
                         </button>
 
                         {itemOpen && (
-                          <div className="bg-[#FAF8F2] px-4 pr-14 py-2.5 space-y-1.5">
+                          <div className="bg-[color:var(--cl-sub)] px-4 pr-14 py-2.5 space-y-1.5">
                             {it.entries.map((c) => (
-                              <div key={c.id} className="flex items-center justify-between bg-white rounded-lg px-3 py-2 border border-[#E1DACB] text-sm group">
-                                <div className="flex items-center gap-3 min-w-0 text-[#6B7280]">
-                                  <span className="mono text-xs text-[#9A9483] shrink-0">{c.date}</span>
+                              <div key={c.id} className="flex items-center justify-between bg-[color:var(--cl-card)] rounded-lg px-3 py-2 border border-[color:var(--cl-line)] text-sm group">
+                                <div className="flex items-center gap-3 min-w-0 text-[color:var(--cl-soft)]">
+                                  <span className="mono text-xs text-[color:var(--cl-muted)] shrink-0">{c.date}</span>
                                   <span className="shrink-0 mono">{fmt(c.qty)} {c.unit} × {fmt(c.price)}</span>
                                   {(c.costLevel1 || c.costLevel2) && (
-                                    <span className="text-[11px] text-[#9A9483] truncate">
+                                    <span className="text-[11px] text-[color:var(--cl-muted)] truncate">
                                       {c.costLevel1}{c.costLevel2 ? ` · ${c.costLevel2}` : ""}
                                     </span>
                                   )}
@@ -3010,8 +3033,8 @@ function CostsTab({ pCosts, pWorkItems, activeProjectId, onAddCost, onAddCostsBu
                                 <div className="flex items-center gap-2 shrink-0">
                                   <span className="font-bold mono">{money(c.qty * c.price)}</span>
                                   <div className="flex gap-1 opacity-0 group-hover:opacity-100 transition">
-                                    <button onClick={() => startEdit(c)} title="تعديل" className="p-1 rounded-md text-[#6B7280] hover:bg-[#E1DACB] hover:text-[#1E2530] transition"><Pencil size={13} /></button>
-                                    <button onClick={() => onDeleteCost(c.id)} title="حذف" className="p-1 rounded-md text-[#C1453B] hover:bg-[#C1453B]/10 transition"><Trash2 size={13} /></button>
+                                    <button onClick={() => startEdit(c)} title="تعديل" className="p-1 rounded-md text-[color:var(--cl-soft)] hover:bg-[color:var(--cl-line)] hover:text-[color:var(--cl-text)] transition"><Pencil size={13} /></button>
+                                    <button onClick={() => onDeleteCost(c.id)} title="حذف" className="p-1 rounded-md text-[color:var(--cl-red)] hover:bg-[#C1453B]/10 transition"><Trash2 size={13} /></button>
                                   </div>
                                 </div>
                               </div>
@@ -3028,7 +3051,7 @@ function CostsTab({ pCosts, pWorkItems, activeProjectId, onAddCost, onAddCostsBu
         })}
 
         {pivot.length > 0 && (
-          <div className="flex items-center justify-between px-4 py-3 bg-[#1E2530] text-white">
+          <div className="flex items-center justify-between px-4 py-3 bg-[color:var(--cl-ink)] text-white">
             <span className="font-bold text-sm">الإجمالي</span>
             <span className="font-bold mono">{money(grandTotal)}</span>
           </div>
@@ -3119,9 +3142,9 @@ function ExtractsTab({ pExtracts, collections, onAddExtract, onAddCollection, on
 <meta charset="UTF-8" />
 <title>مستخلص رقم ${extract.number}</title>
 <style>
-  @import url('https://fonts.googleapis.com/css2?family=Cairo:wght@400;600;700;800&family=IBM+Plex+Mono:wght@500;600&display=swap');
+  @import url('https://fonts.googleapis.com/css2?family=IBM+Plex+Sans+Arabic:wght@400;500;600;700&family=IBM+Plex+Mono:wght@500;600&display=swap');
   * { box-sizing: border-box; }
-  body { font-family: 'Cairo', sans-serif; color: #1E2530; margin: 0; padding: 32px; direction: rtl; }
+  body { font-family: 'IBM Plex Sans Arabic', 'Cairo', sans-serif; color: #1E2530; margin: 0; padding: 32px; direction: rtl; }
   .mono { font-family: 'IBM Plex Mono', monospace; }
   .header { display: flex; align-items: center; justify-content: space-between; border-bottom: 3px solid #E8672C; padding-bottom: 16px; margin-bottom: 24px; }
   .brand { display: flex; align-items: center; gap: 10px; }
@@ -3197,22 +3220,22 @@ function ExtractsTab({ pExtracts, collections, onAddExtract, onAddCollection, on
   return (
     <div className="space-y-5">
       <div className="flex items-center justify-between">
-        <h2 className="font-bold text-[#1E2530] text-lg">التحصيلات والمستخلصات</h2>
-        <button onClick={() => (open ? cancelForm() : setOpen(true))} className="px-3 py-2 rounded-lg bg-[#1E2530] text-white text-sm font-semibold flex items-center gap-1.5 hover:bg-[#2b3543] transition">
+        <h2 className="font-bold text-[color:var(--cl-text)] text-lg">التحصيلات والمستخلصات</h2>
+        <button onClick={() => (open ? cancelForm() : setOpen(true))} className="px-3 py-2 rounded-lg bg-[color:var(--cl-ink)] text-white text-sm font-semibold flex items-center gap-1.5 hover:bg-[color:var(--cl-ink-hover)] transition">
           <Plus size={15} /> مستخلص جديد
         </button>
       </div>
 
-      <div className="bg-white rounded-xl border border-[#E1DACB] overflow-hidden">
+      <div className="bg-[color:var(--cl-card)] rounded-xl border border-[color:var(--cl-line)] overflow-hidden">
         <div className="w-full flex items-center justify-between px-5 py-4">
           <div>
-            <div className="font-bold text-[#1E2530]">تحصيلات عامة (بدون مستخلص)</div>
-            <div className="text-[11px] text-[#9A9483] mt-0.5">مبالغ استُلمت من العميل قبل عمل مستخلص (دفعة مقدمة، دفعة تحت الحساب... إلخ)</div>
+            <div className="font-bold text-[color:var(--cl-text)]">تحصيلات عامة (بدون مستخلص)</div>
+            <div className="text-[11px] text-[color:var(--cl-muted)] mt-0.5">مبالغ استُلمت من العميل قبل عمل مستخلص (دفعة مقدمة، دفعة تحت الحساب... إلخ)</div>
           </div>
           <div className="flex items-center gap-4">
             <div className="text-right">
-              <div className="text-[11px] text-[#9A9483]">الإجمالي</div>
-              <div className="font-bold mono text-[#3F7D63]">{money(generalTotal)}</div>
+              <div className="text-[11px] text-[color:var(--cl-muted)]">الإجمالي</div>
+              <div className="font-bold mono text-[color:var(--cl-green)]">{money(generalTotal)}</div>
             </div>
             <button onClick={() => setShowGeneralForm((o) => !o)} className="px-3 py-2 rounded-lg bg-[#3F7D63] text-white text-xs font-semibold hover:bg-[#356A54] transition flex items-center gap-1.5">
               <Plus size={14} /> تحصيل جديد
@@ -3221,7 +3244,7 @@ function ExtractsTab({ pExtracts, collections, onAddExtract, onAddCollection, on
         </div>
 
         {showGeneralForm && (
-          <div className="border-t border-[#EFEBDF] px-5 py-4 bg-[#FAF8F2] grid grid-cols-4 gap-2 items-end">
+          <div className="border-t border-[color:var(--cl-sep)] px-5 py-4 bg-[color:var(--cl-sub)] grid grid-cols-4 gap-2 items-end">
             <Field label="المبلغ" value={generalForm.amount} onChange={(v) => setGeneralForm((f) => ({ ...f, amount: v }))} type="number" small />
             <Field label="التاريخ" value={generalForm.date} onChange={(v) => setGeneralForm((f) => ({ ...f, date: v }))} type="date" small />
             <SelectField label="طريقة التحصيل" value={generalForm.method} onChange={(v) => setGeneralForm((f) => ({ ...f, method: v }))} options={[{ value: "تحويل بنكي", label: "تحويل بنكي" }, { value: "شيك", label: "شيك" }, { value: "نقدي", label: "نقدي" }]} small />
@@ -3232,14 +3255,14 @@ function ExtractsTab({ pExtracts, collections, onAddExtract, onAddCollection, on
           </div>
         )}
 
-        <div className="border-t border-[#EFEBDF] px-5 py-4 space-y-1.5">
-          {generalCollections.length === 0 && <div className="text-xs text-[#9A9483] py-1">لا توجد تحصيلات عامة مسجّلة بعد.</div>}
+        <div className="border-t border-[color:var(--cl-sep)] px-5 py-4 space-y-1.5">
+          {generalCollections.length === 0 && <div className="text-xs text-[color:var(--cl-muted)] py-1">لا توجد تحصيلات عامة مسجّلة بعد.</div>}
           {generalCollections.map((c) => (
-            <div key={c.id} className="flex items-center justify-between bg-[#FAF8F2] rounded-lg px-3 py-2 border border-[#E1DACB] text-sm group/coll">
-              <span className="text-[#6B7280]">{c.method} · {c.date}{c.note ? ` · ${c.note}` : ""}</span>
+            <div key={c.id} className="flex items-center justify-between bg-[color:var(--cl-sub)] rounded-lg px-3 py-2 border border-[color:var(--cl-line)] text-sm group/coll">
+              <span className="text-[color:var(--cl-soft)]">{c.method} · {c.date}{c.note ? ` · ${c.note}` : ""}</span>
               <div className="flex items-center gap-2">
-                <span className="font-bold mono text-[#3F7D63]">{money(c.amount)}</span>
-                <button onClick={() => onDeleteCollection(c.id)} title="حذف التحصيل" className="p-1 rounded-md text-[#C1453B] opacity-0 group-hover/coll:opacity-100 hover:bg-[#C1453B]/10 transition"><Trash2 size={13} /></button>
+                <span className="font-bold mono text-[color:var(--cl-green)]">{money(c.amount)}</span>
+                <button onClick={() => onDeleteCollection(c.id)} title="حذف التحصيل" className="p-1 rounded-md text-[color:var(--cl-red)] opacity-0 group-hover/coll:opacity-100 hover:bg-[#C1453B]/10 transition"><Trash2 size={13} /></button>
               </div>
             </div>
           ))}
@@ -3247,24 +3270,24 @@ function ExtractsTab({ pExtracts, collections, onAddExtract, onAddCollection, on
       </div>
 
       {open && (
-        <div className="bg-white rounded-xl border border-[#E1DACB] p-4 grid grid-cols-4 gap-3">
+        <div className="bg-[color:var(--cl-card)] rounded-xl border border-[color:var(--cl-line)] p-4 grid grid-cols-4 gap-3">
           {editId && (
-            <div className="col-span-4 text-xs font-semibold text-[#E8672C] bg-[#E8672C]/10 rounded-md px-3 py-1.5">جاري تعديل مستخلص موجود</div>
+            <div className="col-span-4 text-xs font-semibold text-[color:var(--cl-accent)] bg-[#f0c85a]/10 rounded-md px-3 py-1.5">جاري تعديل مستخلص موجود</div>
           )}
           <Field label="رقم المستخلص" value={form.number} onChange={(v) => setForm((f) => ({ ...f, number: v }))} type="number" />
           <Field label="التاريخ" value={form.date} onChange={(v) => setForm((f) => ({ ...f, date: v }))} type="date" />
           <Field label="نسبة الإنجاز %" value={form.percentage} onChange={(v) => setForm((f) => ({ ...f, percentage: v }))} type="number" />
           <Field label="قيمة المستخلص" value={form.amount} onChange={(v) => setForm((f) => ({ ...f, amount: v }))} type="number" />
           <div className="col-span-4 flex justify-end gap-2">
-            {editId && <button onClick={cancelForm} className="px-4 py-2 rounded-lg bg-[#E1DACB] text-[#1E2530] text-sm font-semibold hover:bg-[#D8D3C7] transition">إلغاء</button>}
-            <button onClick={submit} className="px-4 py-2 rounded-lg bg-[#E8672C] text-white text-sm font-semibold hover:bg-[#C8511E] transition">{editId ? "حفظ التعديل" : "حفظ المستخلص"}</button>
+            {editId && <button onClick={cancelForm} className="px-4 py-2 rounded-lg bg-[color:var(--cl-line)] text-[color:var(--cl-text)] text-sm font-semibold hover:bg-[color:var(--cl-hover)] transition">إلغاء</button>}
+            <button onClick={submit} className="px-4 py-2 rounded-lg bg-[#f0c85a] text-[#1a1405] text-sm font-semibold hover:bg-[#e3b53f] transition">{editId ? "حفظ التعديل" : "حفظ المستخلص"}</button>
           </div>
         </div>
       )}
 
       <div className="space-y-3">
         {pExtracts.length === 0 && (
-          <div className="bg-white rounded-xl border border-[#E1DACB] p-8 text-center text-[#9A9483] text-sm">لا توجد مستخلصات مسجّلة بعد.</div>
+          <div className="bg-[color:var(--cl-card)] rounded-xl border border-[color:var(--cl-line)] p-8 text-center text-[color:var(--cl-muted)] text-sm">لا توجد مستخلصات مسجّلة بعد.</div>
         )}
         {[...pExtracts].sort((a, b) => a.number - b.number).map((e) => {
           const eColls = collections.filter((c) => c.extractId === e.id);
@@ -3272,58 +3295,58 @@ function ExtractsTab({ pExtracts, collections, onAddExtract, onAddCollection, on
           const outstanding = e.amount - collected;
           const isOpen = expanded === e.id;
           return (
-            <div key={e.id} className="bg-white rounded-xl border border-[#E1DACB] overflow-hidden group">
-              <div className="w-full flex items-center justify-between px-5 py-4 hover:bg-[#FAF8F2] transition">
+            <div key={e.id} className="bg-[color:var(--cl-card)] rounded-xl border border-[color:var(--cl-line)] overflow-hidden group">
+              <div className="w-full flex items-center justify-between px-5 py-4 hover:bg-[color:var(--cl-sub)] transition">
                 <button onClick={() => setExpanded(isOpen ? null : e.id)} className="flex items-center gap-4 flex-1 text-right">
-                  <div className="w-10 h-10 rounded-lg bg-[#E8672C]/10 flex items-center justify-center text-[#E8672C] font-extrabold mono text-sm">#{e.number}</div>
+                  <div className="w-10 h-10 rounded-lg bg-[#f0c85a]/10 flex items-center justify-center text-[color:var(--cl-accent)] font-extrabold mono text-sm">#{e.number}</div>
                   <div className="text-right">
-                    <div className="font-bold text-[#1E2530]">مستخلص رقم {e.number}</div>
-                    <div className="text-[11px] text-[#9A9483] mono">{e.date} · نسبة إنجاز {e.percentage}%</div>
+                    <div className="font-bold text-[color:var(--cl-text)]">مستخلص رقم {e.number}</div>
+                    <div className="text-[11px] text-[color:var(--cl-muted)] mono">{e.date} · نسبة إنجاز {e.percentage}%</div>
                   </div>
                 </button>
                 <div className="flex items-center gap-6">
                   <div className="text-right">
-                    <div className="text-[11px] text-[#9A9483]">قيمة المستخلص</div>
+                    <div className="text-[11px] text-[color:var(--cl-muted)]">قيمة المستخلص</div>
                     <div className="font-bold mono">{money(e.amount)}</div>
                   </div>
                   <div className="text-right">
-                    <div className="text-[11px] text-[#9A9483]">المحصَّل</div>
-                    <div className="font-bold mono text-[#3F7D63]">{money(collected)}</div>
+                    <div className="text-[11px] text-[color:var(--cl-muted)]">المحصَّل</div>
+                    <div className="font-bold mono text-[color:var(--cl-green)]">{money(collected)}</div>
                   </div>
                   <div className="text-right">
-                    <div className="text-[11px] text-[#9A9483]">المتبقي</div>
-                    <div className={`font-bold mono ${outstanding > 0 ? "text-[#D6A23C]" : "text-[#3F7D63]"}`}>{money(outstanding)}</div>
+                    <div className="text-[11px] text-[color:var(--cl-muted)]">المتبقي</div>
+                    <div className={`font-bold mono ${outstanding > 0 ? "text-[#D6A23C]" : "text-[color:var(--cl-green)]"}`}>{money(outstanding)}</div>
                   </div>
                   {outstanding <= 0 ? (
-                    <CheckCircle2 size={18} className="text-[#3F7D63]" />
+                    <CheckCircle2 size={18} className="text-[color:var(--cl-green)]" />
                   ) : (
                     <Clock size={18} className="text-[#D6A23C]" />
                   )}
                   <div className="flex gap-1 opacity-0 group-hover:opacity-100 transition">
-                    <button onClick={() => printExtract(e)} title="طباعة" className="p-1.5 rounded-md text-[#6B7280] hover:bg-[#E1DACB] hover:text-[#1E2530] transition"><Printer size={14} /></button>
-                    <button onClick={() => startEdit(e)} title="تعديل" className="p-1.5 rounded-md text-[#6B7280] hover:bg-[#E1DACB] hover:text-[#1E2530] transition"><Pencil size={14} /></button>
-                    <button onClick={() => onDeleteExtract(e.id)} title="حذف" className="p-1.5 rounded-md text-[#C1453B] hover:bg-[#C1453B]/10 transition"><Trash2 size={14} /></button>
+                    <button onClick={() => printExtract(e)} title="طباعة" className="p-1.5 rounded-md text-[color:var(--cl-soft)] hover:bg-[color:var(--cl-line)] hover:text-[color:var(--cl-text)] transition"><Printer size={14} /></button>
+                    <button onClick={() => startEdit(e)} title="تعديل" className="p-1.5 rounded-md text-[color:var(--cl-soft)] hover:bg-[color:var(--cl-line)] hover:text-[color:var(--cl-text)] transition"><Pencil size={14} /></button>
+                    <button onClick={() => onDeleteExtract(e.id)} title="حذف" className="p-1.5 rounded-md text-[color:var(--cl-red)] hover:bg-[#C1453B]/10 transition"><Trash2 size={14} /></button>
                   </div>
                   <button onClick={() => setExpanded(isOpen ? null : e.id)}>
-                    <ChevronDown size={16} className={`text-[#9A9483] transition-transform ${isOpen ? "rotate-180" : ""}`} />
+                    <ChevronDown size={16} className={`text-[color:var(--cl-muted)] transition-transform ${isOpen ? "rotate-180" : ""}`} />
                   </button>
                 </div>
               </div>
 
               {isOpen && (
-                <div className="border-t border-[#EFEBDF] px-5 py-4 bg-[#FAF8F2]">
-                  <div className="text-xs font-semibold text-[#6B7280] mb-2">التحصيلات</div>
+                <div className="border-t border-[color:var(--cl-sep)] px-5 py-4 bg-[color:var(--cl-sub)]">
+                  <div className="text-xs font-semibold text-[color:var(--cl-soft)] mb-2">التحصيلات</div>
                   <div className="space-y-1.5 mb-4">
                     {eColls.map((c) => (
-                      <div key={c.id} className="flex items-center justify-between bg-white rounded-lg px-3 py-2 border border-[#E1DACB] text-sm group/coll">
-                        <span className="text-[#6B7280]">{c.method} · {c.date}</span>
+                      <div key={c.id} className="flex items-center justify-between bg-[color:var(--cl-card)] rounded-lg px-3 py-2 border border-[color:var(--cl-line)] text-sm group/coll">
+                        <span className="text-[color:var(--cl-soft)]">{c.method} · {c.date}</span>
                         <div className="flex items-center gap-2">
-                          <span className="font-bold mono text-[#3F7D63]">{money(c.amount)}</span>
-                          <button onClick={() => onDeleteCollection(c.id)} title="حذف التحصيل" className="p-1 rounded-md text-[#C1453B] opacity-0 group-hover/coll:opacity-100 hover:bg-[#C1453B]/10 transition"><Trash2 size={13} /></button>
+                          <span className="font-bold mono text-[color:var(--cl-green)]">{money(c.amount)}</span>
+                          <button onClick={() => onDeleteCollection(c.id)} title="حذف التحصيل" className="p-1 rounded-md text-[color:var(--cl-red)] opacity-0 group-hover/coll:opacity-100 hover:bg-[#C1453B]/10 transition"><Trash2 size={13} /></button>
                         </div>
                       </div>
                     ))}
-                    {eColls.length === 0 && <div className="text-xs text-[#9A9483] py-1">لم يتم تحصيل أي مبلغ بعد.</div>}
+                    {eColls.length === 0 && <div className="text-xs text-[color:var(--cl-muted)] py-1">لم يتم تحصيل أي مبلغ بعد.</div>}
                   </div>
                   <div className="grid grid-cols-4 gap-2 items-end">
                     <Field label="المبلغ" value={collForm.amount} onChange={(v) => setCollForm((f) => ({ ...f, amount: v }))} type="number" small />
@@ -3358,12 +3381,12 @@ function BudgetTab({ pWorkItems, pCosts }) {
 
   return (
     <div className="space-y-5">
-      <h2 className="font-bold text-[#1E2530] text-lg">تحليل المقايسة — مقارنة الفعلي بالميزانية</h2>
+      <h2 className="font-bold text-[color:var(--cl-text)] text-lg">تحليل المقايسة — مقارنة الفعلي بالميزانية</h2>
 
-      <div className="bg-white rounded-xl border border-[#E1DACB] overflow-hidden">
+      <div className="bg-[color:var(--cl-card)] rounded-xl border border-[color:var(--cl-line)] overflow-hidden">
         <table className="w-full text-sm">
           <thead>
-            <tr className="bg-[#F6F3EA] text-[#6B7280] text-[12px]">
+            <tr className="bg-[color:var(--cl-inset)] text-[color:var(--cl-soft)] text-[12px]">
               <th className="text-right py-3 px-4 font-semibold">بند العمل</th>
               <th className="text-right py-3 px-4 font-semibold">الميزانية</th>
               <th className="text-right py-3 px-4 font-semibold">الفعلي</th>
@@ -3371,18 +3394,18 @@ function BudgetTab({ pWorkItems, pCosts }) {
               <th className="text-right py-3 px-4 font-semibold w-56">نسبة الصرف</th>
             </tr>
           </thead>
-          <tbody className="divide-y divide-[#EFEBDF]">
+          <tbody className="divide-y divide-[color:var(--cl-sep)]">
             {rows.map((r) => (
-              <tr key={r.id} className="hover:bg-[#FAF8F2] transition">
-                <td className="py-3 px-4 font-semibold text-[#1E2530]">{r.name}</td>
+              <tr key={r.id} className="hover:bg-[color:var(--cl-sub)] transition">
+                <td className="py-3 px-4 font-semibold text-[color:var(--cl-text)]">{r.name}</td>
                 <td className="py-3 px-4 mono">{money(r.budget)}</td>
                 <td className="py-3 px-4 mono">{money(r.actual)}</td>
-                <td className={`py-3 px-4 mono font-bold ${r.variance >= 0 ? "text-[#3F7D63]" : "text-[#C1453B]"}`}>
+                <td className={`py-3 px-4 mono font-bold ${r.variance >= 0 ? "text-[color:var(--cl-green)]" : "text-[color:var(--cl-red)]"}`}>
                   {r.variance >= 0 ? "+" : ""}{money(r.variance)}
                 </td>
                 <td className="py-3 px-4">
                   <div className="flex items-center gap-2">
-                    <div className="flex-1 h-2 rounded-full bg-[#EFEBDF] overflow-hidden">
+                    <div className="flex-1 h-2 rounded-full bg-[color:var(--cl-sep)] overflow-hidden">
                       <div
                         className="h-full rounded-full"
                         style={{ width: Math.min(r.pct, 100) + "%", backgroundColor: r.pct > 100 ? "#C1453B" : r.pct > 85 ? "#D6A23C" : "#3F7D63" }}
@@ -3394,17 +3417,17 @@ function BudgetTab({ pWorkItems, pCosts }) {
               </tr>
             ))}
             {unassigned > 0 && (
-              <tr className="bg-[#FAF8F2]">
-                <td className="py-3 px-4 font-semibold text-[#9A9483]">تكاليف غير مرتبطة ببند (مصروفات عامة)</td>
-                <td className="py-3 px-4 mono text-[#9A9483]">—</td>
+              <tr className="bg-[color:var(--cl-sub)]">
+                <td className="py-3 px-4 font-semibold text-[color:var(--cl-muted)]">تكاليف غير مرتبطة ببند (مصروفات عامة)</td>
+                <td className="py-3 px-4 mono text-[color:var(--cl-muted)]">—</td>
                 <td className="py-3 px-4 mono">{money(unassigned)}</td>
                 <td className="py-3 px-4 mono">—</td>
-                <td className="py-3 px-4 text-[#9A9483] text-xs">غير محسوب ضمن بند</td>
+                <td className="py-3 px-4 text-[color:var(--cl-muted)] text-xs">غير محسوب ضمن بند</td>
               </tr>
             )}
           </tbody>
           <tfoot>
-            <tr className="bg-[#1E2530] text-white">
+            <tr className="bg-[color:var(--cl-ink)] text-white">
               <td className="py-3 px-4 font-bold">الإجمالي</td>
               <td className="py-3 px-4 mono font-bold">{money(totalBudget)}</td>
               <td className="py-3 px-4 mono font-bold">{money(totalActual)}</td>
@@ -3488,59 +3511,59 @@ function TreasuryTab({ pTreasuryEntries, openingBalance, activeProjectId, onAddE
   return (
     <div className="space-y-5">
       <div className="flex items-center justify-between">
-        <h2 className="font-bold text-[#1E2530] text-lg">خزينة المشروع</h2>
-        <button onClick={() => (open ? cancelForm() : setOpen(true))} className="px-3 py-2 rounded-lg bg-[#1E2530] text-white text-sm font-semibold flex items-center gap-1.5 hover:bg-[#2b3543] transition">
+        <h2 className="font-bold text-[color:var(--cl-text)] text-lg">خزينة المشروع</h2>
+        <button onClick={() => (open ? cancelForm() : setOpen(true))} className="px-3 py-2 rounded-lg bg-[color:var(--cl-ink)] text-white text-sm font-semibold flex items-center gap-1.5 hover:bg-[color:var(--cl-ink-hover)] transition">
           <Plus size={15} /> حركة جديدة
         </button>
       </div>
 
       <div className="grid grid-cols-2 gap-3">
-        <div className="bg-white rounded-xl border border-[#E1DACB] p-4">
-          <div className="text-[11px] text-[#9A9483] mb-1">رصيد بداية الخزينة (يدوي)</div>
+        <div className="bg-[color:var(--cl-card)] rounded-xl border border-[color:var(--cl-line)] p-4">
+          <div className="text-[11px] text-[color:var(--cl-muted)] mb-1">رصيد بداية الخزينة (يدوي)</div>
           {editingOpening ? (
             <div className="flex items-center gap-2">
               <input
                 type="number"
                 value={openingInput}
                 onChange={(e) => setOpeningInput(e.target.value)}
-                className="border border-[#E1DACB] rounded-md px-2 py-1.5 text-sm outline-none focus:border-[#E8672C] w-40 mono"
+                className="border border-[color:var(--cl-line)] rounded-md px-2 py-1.5 text-sm outline-none focus:border-[#f0c85a] w-40 mono"
               />
               <button onClick={saveOpening} className="px-3 py-1.5 rounded-md bg-[#3F7D63] text-white text-xs font-semibold hover:bg-[#356A54] transition">حفظ</button>
-              <button onClick={() => { setEditingOpening(false); setOpeningInput(String(openingBalance || 0)); }} className="px-3 py-1.5 rounded-md bg-[#E1DACB] text-[#1E2530] text-xs font-semibold hover:bg-[#D8D3C7] transition">إلغاء</button>
+              <button onClick={() => { setEditingOpening(false); setOpeningInput(String(openingBalance || 0)); }} className="px-3 py-1.5 rounded-md bg-[color:var(--cl-line)] text-[color:var(--cl-text)] text-xs font-semibold hover:bg-[color:var(--cl-hover)] transition">إلغاء</button>
             </div>
           ) : (
             <div className="flex items-center gap-2">
-              <div className="font-bold mono text-lg text-[#1E2530]">{money(openingBalance)}</div>
-              <button onClick={() => setEditingOpening(true)} className="p-1 rounded-md text-[#6B7280] hover:bg-[#E1DACB] hover:text-[#1E2530] transition"><Pencil size={13} /></button>
+              <div className="font-bold mono text-lg text-[color:var(--cl-text)]">{money(openingBalance)}</div>
+              <button onClick={() => setEditingOpening(true)} className="p-1 rounded-md text-[color:var(--cl-soft)] hover:bg-[color:var(--cl-line)] hover:text-[color:var(--cl-text)] transition"><Pencil size={13} /></button>
             </div>
           )}
         </div>
-        <div className="bg-[#1E2530] rounded-xl p-4 text-white">
+        <div className="bg-[color:var(--cl-ink)] rounded-xl p-4 text-white">
           <div className="text-[11px] text-white/50 mb-1">رصيد الخزينة الحالي</div>
           <div className={`font-bold mono text-lg ${currentBalance < 0 ? "text-[#F0918A]" : "text-white"}`}>{money(currentBalance)}</div>
         </div>
       </div>
 
       {open && (
-        <div className="bg-white rounded-xl border border-[#E1DACB] p-4 grid grid-cols-4 gap-3">
+        <div className="bg-[color:var(--cl-card)] rounded-xl border border-[color:var(--cl-line)] p-4 grid grid-cols-4 gap-3">
           {editId && (
-            <div className="col-span-4 text-xs font-semibold text-[#E8672C] bg-[#E8672C]/10 rounded-md px-3 py-1.5">جاري تعديل حركة موجودة</div>
+            <div className="col-span-4 text-xs font-semibold text-[color:var(--cl-accent)] bg-[#f0c85a]/10 rounded-md px-3 py-1.5">جاري تعديل حركة موجودة</div>
           )}
           <Field label="التاريخ" value={form.date} onChange={(v) => setForm((f) => ({ ...f, date: v }))} type="date" />
           <SelectField label="نوع الحركة" value={form.type} onChange={(v) => setForm((f) => ({ ...f, type: v }))} options={[{ value: "ايداع", label: "إيداع" }, { value: "صرف", label: "صرف" }]} />
           <Field label="المبلغ" value={form.amount} onChange={(v) => setForm((f) => ({ ...f, amount: v }))} type="number" />
           <Field label="ملاحظة (اختياري)" value={form.note} onChange={(v) => setForm((f) => ({ ...f, note: v }))} placeholder="مثال: تحويل من الحساب الرئيسي" />
           <div className="col-span-4 flex justify-end gap-2">
-            {editId && <button onClick={cancelForm} className="px-4 py-2 rounded-lg bg-[#E1DACB] text-[#1E2530] text-sm font-semibold hover:bg-[#D8D3C7] transition">إلغاء</button>}
-            <button onClick={submit} className="px-4 py-2 rounded-lg bg-[#E8672C] text-white text-sm font-semibold hover:bg-[#C8511E] transition">{editId ? "حفظ التعديل" : "حفظ الحركة"}</button>
+            {editId && <button onClick={cancelForm} className="px-4 py-2 rounded-lg bg-[color:var(--cl-line)] text-[color:var(--cl-text)] text-sm font-semibold hover:bg-[color:var(--cl-hover)] transition">إلغاء</button>}
+            <button onClick={submit} className="px-4 py-2 rounded-lg bg-[#f0c85a] text-[#1a1405] text-sm font-semibold hover:bg-[#e3b53f] transition">{editId ? "حفظ التعديل" : "حفظ الحركة"}</button>
           </div>
         </div>
       )}
 
-      <div className="bg-white rounded-xl border border-[#E1DACB] overflow-hidden">
+      <div className="bg-[color:var(--cl-card)] rounded-xl border border-[color:var(--cl-line)] overflow-hidden">
         <table className="w-full text-sm">
           <thead>
-            <tr className="bg-[#F6F3EA] text-[#6B7280] text-[12px]">
+            <tr className="bg-[color:var(--cl-inset)] text-[color:var(--cl-soft)] text-[12px]">
               <th className="text-right py-3 px-4 font-semibold">التاريخ</th>
               <th className="text-right py-3 px-4 font-semibold">رصيد أول اليوم</th>
               <th className="text-right py-3 px-4 font-semibold">إجمالي الإيداع</th>
@@ -3549,36 +3572,36 @@ function TreasuryTab({ pTreasuryEntries, openingBalance, activeProjectId, onAddE
               <th className="text-right py-3 px-4 font-semibold w-10"></th>
             </tr>
           </thead>
-          <tbody className="divide-y divide-[#EFEBDF]">
+          <tbody className="divide-y divide-[color:var(--cl-sep)]">
             {[...rows].reverse().map((r) => {
               const isOpen = expandedDate === r.date;
               return (
                 <React.Fragment key={r.date}>
-                  <tr className="hover:bg-[#FAF8F2] transition cursor-pointer" onClick={() => setExpandedDate(isOpen ? null : r.date)}>
-                    <td className="py-3 px-4 font-semibold text-[#1E2530] mono">{r.date}</td>
+                  <tr className="hover:bg-[color:var(--cl-sub)] transition cursor-pointer" onClick={() => setExpandedDate(isOpen ? null : r.date)}>
+                    <td className="py-3 px-4 font-semibold text-[color:var(--cl-text)] mono">{r.date}</td>
                     <td className="py-3 px-4 mono">{money(r.dayOpening)}</td>
-                    <td className="py-3 px-4 mono text-[#3F7D63] font-bold">{r.deposits > 0 ? "+" + money(r.deposits) : "—"}</td>
-                    <td className="py-3 px-4 mono text-[#C1453B] font-bold">{r.withdrawals > 0 ? "-" + money(r.withdrawals) : "—"}</td>
+                    <td className="py-3 px-4 mono text-[color:var(--cl-green)] font-bold">{r.deposits > 0 ? "+" + money(r.deposits) : "—"}</td>
+                    <td className="py-3 px-4 mono text-[color:var(--cl-red)] font-bold">{r.withdrawals > 0 ? "-" + money(r.withdrawals) : "—"}</td>
                     <td className="py-3 px-4 mono font-bold">{money(r.dayClose)}</td>
                     <td className="py-3 px-4">
-                      <ChevronDown size={15} className={`text-[#9A9483] transition-transform ${isOpen ? "rotate-180" : ""}`} />
+                      <ChevronDown size={15} className={`text-[color:var(--cl-muted)] transition-transform ${isOpen ? "rotate-180" : ""}`} />
                     </td>
                   </tr>
                   {isOpen && (
                     <tr>
-                      <td colSpan={6} className="bg-[#FAF8F2] px-4 py-3">
+                      <td colSpan={6} className="bg-[color:var(--cl-sub)] px-4 py-3">
                         <div className="space-y-1.5">
                           {r.entries.map((t) => (
-                            <div key={t.id} className="flex items-center justify-between bg-white rounded-lg px-3 py-2 border border-[#E1DACB] text-sm group">
+                            <div key={t.id} className="flex items-center justify-between bg-[color:var(--cl-card)] rounded-lg px-3 py-2 border border-[color:var(--cl-line)] text-sm group">
                               <div className="flex items-center gap-2">
-                                <span className={`text-[11px] font-semibold px-2 py-0.5 rounded-md ${t.type === "ايداع" ? "bg-[#3F7D63]/10 text-[#3F7D63]" : "bg-[#C1453B]/10 text-[#C1453B]"}`}>{t.type === "ايداع" ? "إيداع" : "صرف"}</span>
-                                <span className="text-[#6B7280]">{t.note || "—"}</span>
+                                <span className={`text-[11px] font-semibold px-2 py-0.5 rounded-md ${t.type === "ايداع" ? "bg-[#3F7D63]/10 text-[color:var(--cl-green)]" : "bg-[#C1453B]/10 text-[color:var(--cl-red)]"}`}>{t.type === "ايداع" ? "إيداع" : "صرف"}</span>
+                                <span className="text-[color:var(--cl-soft)]">{t.note || "—"}</span>
                               </div>
                               <div className="flex items-center gap-2">
-                                <span className={`font-bold mono ${t.type === "ايداع" ? "text-[#3F7D63]" : "text-[#C1453B]"}`}>{money(t.amount)}</span>
+                                <span className={`font-bold mono ${t.type === "ايداع" ? "text-[color:var(--cl-green)]" : "text-[color:var(--cl-red)]"}`}>{money(t.amount)}</span>
                                 <div className="flex gap-1 opacity-0 group-hover:opacity-100 transition">
-                                  <button onClick={(e) => { e.stopPropagation(); startEdit(t); }} title="تعديل" className="p-1 rounded-md text-[#6B7280] hover:bg-[#E1DACB] hover:text-[#1E2530] transition"><Pencil size={13} /></button>
-                                  <button onClick={(e) => { e.stopPropagation(); onDeleteEntry(t.id); }} title="حذف" className="p-1 rounded-md text-[#C1453B] hover:bg-[#C1453B]/10 transition"><Trash2 size={13} /></button>
+                                  <button onClick={(e) => { e.stopPropagation(); startEdit(t); }} title="تعديل" className="p-1 rounded-md text-[color:var(--cl-soft)] hover:bg-[color:var(--cl-line)] hover:text-[color:var(--cl-text)] transition"><Pencil size={13} /></button>
+                                  <button onClick={(e) => { e.stopPropagation(); onDeleteEntry(t.id); }} title="حذف" className="p-1 rounded-md text-[color:var(--cl-red)] hover:bg-[#C1453B]/10 transition"><Trash2 size={13} /></button>
                                 </div>
                               </div>
                             </div>
@@ -3591,7 +3614,7 @@ function TreasuryTab({ pTreasuryEntries, openingBalance, activeProjectId, onAddE
               );
             })}
             {rows.length === 0 && (
-              <tr><td colSpan={6} className="text-center py-8 text-[#9A9483]">لا توجد حركات خزينة مسجّلة بعد.</td></tr>
+              <tr><td colSpan={6} className="text-center py-8 text-[color:var(--cl-muted)]">لا توجد حركات خزينة مسجّلة بعد.</td></tr>
             )}
           </tbody>
         </table>
@@ -3658,43 +3681,43 @@ function FinanceAccountsModule({ financePersons, financeTransactions, onAddPerso
     <div className="space-y-5">
       <div className="flex items-center justify-between">
         <div>
-          <h2 className="font-bold text-[#1E2530] text-xl">التمويلات والسلف</h2>
-          <p className="text-[12px] text-[#9A9483] mt-1">حساب مستقل لكل شخص/جهة — غير مرتبط بمشروع معين</p>
+          <h2 className="font-bold text-[color:var(--cl-text)] text-xl">التمويلات والسلف</h2>
+          <p className="text-[12px] text-[color:var(--cl-muted)] mt-1">حساب مستقل لكل شخص/جهة — غير مرتبط بمشروع معين</p>
         </div>
-        <button onClick={() => setShowAddPerson((o) => !o)} className="px-3 py-2 rounded-lg bg-[#1E2530] text-white text-sm font-semibold flex items-center gap-1.5 hover:bg-[#2b3543] transition">
+        <button onClick={() => setShowAddPerson((o) => !o)} className="px-3 py-2 rounded-lg bg-[color:var(--cl-ink)] text-white text-sm font-semibold flex items-center gap-1.5 hover:bg-[color:var(--cl-ink-hover)] transition">
           <Plus size={15} /> إضافة شخص/جهة
         </button>
       </div>
 
       <div className="grid grid-cols-3 gap-3">
-        <div className="bg-white rounded-xl border border-[#E1DACB] p-4">
-          <div className="text-[11px] text-[#9A9483] mb-1">إجمالي التمويلات والسلف</div>
-          <div className="font-bold mono text-lg text-[#1E2530]">{money(grandFinancing)}</div>
+        <div className="bg-[color:var(--cl-card)] rounded-xl border border-[color:var(--cl-line)] p-4">
+          <div className="text-[11px] text-[color:var(--cl-muted)] mb-1">إجمالي التمويلات والسلف</div>
+          <div className="font-bold mono text-lg text-[color:var(--cl-text)]">{money(grandFinancing)}</div>
         </div>
-        <div className="bg-white rounded-xl border border-[#E1DACB] p-4">
-          <div className="text-[11px] text-[#9A9483] mb-1">إجمالي السداد</div>
-          <div className="font-bold mono text-lg text-[#3F7D63]">{money(grandRepaid)}</div>
+        <div className="bg-[color:var(--cl-card)] rounded-xl border border-[color:var(--cl-line)] p-4">
+          <div className="text-[11px] text-[color:var(--cl-muted)] mb-1">إجمالي السداد</div>
+          <div className="font-bold mono text-lg text-[color:var(--cl-green)]">{money(grandRepaid)}</div>
         </div>
-        <div className="bg-[#1E2530] rounded-xl p-4 text-white">
+        <div className="bg-[color:var(--cl-ink)] rounded-xl p-4 text-white">
           <div className="text-[11px] text-white/50 mb-1">إجمالي المستحق</div>
           <div className={`font-bold mono text-lg ${grandBalance > 0 ? "text-[#E8AA6C]" : "text-white"}`}>{money(grandBalance)}</div>
         </div>
       </div>
 
       {showAddPerson && (
-        <div className="bg-white rounded-xl border border-[#E1DACB] p-4 grid grid-cols-3 gap-3">
+        <div className="bg-[color:var(--cl-card)] rounded-xl border border-[color:var(--cl-line)] p-4 grid grid-cols-3 gap-3">
           <Field label="الاسم" value={newPersonName} onChange={setNewPersonName} placeholder="اسم الشخص أو الجهة" />
           <Field label="ملاحظة (اختياري)" value={newPersonNote} onChange={setNewPersonNote} placeholder="مثال: صديق، مصدر تمويل خارجي" />
           <div className="flex items-end">
-            <button onClick={addPerson} className="px-4 py-2 rounded-lg bg-[#E8672C] text-white text-sm font-semibold hover:bg-[#C8511E] transition">حفظ</button>
+            <button onClick={addPerson} className="px-4 py-2 rounded-lg bg-[#f0c85a] text-[#1a1405] text-sm font-semibold hover:bg-[#e3b53f] transition">حفظ</button>
           </div>
         </div>
       )}
 
-      <div className="bg-white rounded-xl border border-[#E1DACB] overflow-hidden">
+      <div className="bg-[color:var(--cl-card)] rounded-xl border border-[color:var(--cl-line)] overflow-hidden">
         <table className="w-full text-sm">
           <thead>
-            <tr className="bg-[#F6F3EA] text-[#6B7280] text-[12px]">
+            <tr className="bg-[color:var(--cl-inset)] text-[color:var(--cl-soft)] text-[12px]">
               <th className="text-right py-3 px-4 font-semibold">الاسم</th>
               <th className="text-right py-3 px-4 font-semibold">إجمالي التمويلات والسلف</th>
               <th className="text-right py-3 px-4 font-semibold">إجمالي السداد</th>
@@ -3702,18 +3725,18 @@ function FinanceAccountsModule({ financePersons, financeTransactions, onAddPerso
               <th className="text-right py-3 px-4 font-semibold w-10"></th>
             </tr>
           </thead>
-          <tbody className="divide-y divide-[#EFEBDF]">
+          <tbody className="divide-y divide-[color:var(--cl-sep)]">
             {summaries.map((p) => (
-              <tr key={p.id} className="hover:bg-[#FAF8F2] transition cursor-pointer group" onClick={() => setSelectedId(p.id)}>
-                <td className="py-3 px-4 font-semibold text-[#1E2530]">{p.name}{p.note ? <span className="text-[#9A9483] font-normal text-xs"> — {p.note}</span> : null}</td>
+              <tr key={p.id} className="hover:bg-[color:var(--cl-sub)] transition cursor-pointer group" onClick={() => setSelectedId(p.id)}>
+                <td className="py-3 px-4 font-semibold text-[color:var(--cl-text)]">{p.name}{p.note ? <span className="text-[color:var(--cl-muted)] font-normal text-xs"> — {p.note}</span> : null}</td>
                 <td className="py-3 px-4 mono">{money(p.financingTotal)}</td>
-                <td className="py-3 px-4 mono text-[#3F7D63]">{money(p.repaidTotal)}</td>
-                <td className={`py-3 px-4 mono font-bold ${p.balance > 0 ? "text-[#D6A23C]" : "text-[#3F7D63]"}`}>{money(p.balance)}</td>
+                <td className="py-3 px-4 mono text-[color:var(--cl-green)]">{money(p.repaidTotal)}</td>
+                <td className={`py-3 px-4 mono font-bold ${p.balance > 0 ? "text-[#D6A23C]" : "text-[color:var(--cl-green)]"}`}>{money(p.balance)}</td>
                 <td className="py-3 px-4">
                   <button
                     onClick={(e) => { e.stopPropagation(); onDeletePerson(p.id); }}
                     title="حذف الحساب"
-                    className="p-1.5 rounded-md text-[#C1453B] opacity-0 group-hover:opacity-100 hover:bg-[#C1453B]/10 transition"
+                    className="p-1.5 rounded-md text-[color:var(--cl-red)] opacity-0 group-hover:opacity-100 hover:bg-[#C1453B]/10 transition"
                   >
                     <Trash2 size={14} />
                   </button>
@@ -3721,7 +3744,7 @@ function FinanceAccountsModule({ financePersons, financeTransactions, onAddPerso
               </tr>
             ))}
             {summaries.length === 0 && (
-              <tr><td colSpan={5} className="text-center py-8 text-[#9A9483]">لا يوجد أشخاص/جهات مسجّلة بعد.</td></tr>
+              <tr><td colSpan={5} className="text-center py-8 text-[color:var(--cl-muted)]">لا يوجد أشخاص/جهات مسجّلة بعد.</td></tr>
             )}
           </tbody>
         </table>
@@ -3773,45 +3796,45 @@ function PersonLedger({ person, transactions, onBack, onAddTransaction, onUpdate
 
   return (
     <div className="space-y-5">
-      <button onClick={onBack} className="text-sm font-semibold text-[#6B7280] hover:text-[#1E2530] flex items-center gap-1 transition">
+      <button onClick={onBack} className="text-sm font-semibold text-[color:var(--cl-soft)] hover:text-[color:var(--cl-text)] flex items-center gap-1 transition">
         <ChevronRight size={16} /> رجوع لكل الحسابات
       </button>
 
       <div className="flex items-center justify-between">
         <div>
-          <h2 className="font-bold text-[#1E2530] text-xl">{person.name}</h2>
-          {person.note && <p className="text-[12px] text-[#9A9483] mt-1">{person.note}</p>}
+          <h2 className="font-bold text-[color:var(--cl-text)] text-xl">{person.name}</h2>
+          {person.note && <p className="text-[12px] text-[color:var(--cl-muted)] mt-1">{person.note}</p>}
         </div>
-        <button onClick={() => (open ? cancelForm() : setOpen(true))} className="px-3 py-2 rounded-lg bg-[#1E2530] text-white text-sm font-semibold flex items-center gap-1.5 hover:bg-[#2b3543] transition">
+        <button onClick={() => (open ? cancelForm() : setOpen(true))} className="px-3 py-2 rounded-lg bg-[color:var(--cl-ink)] text-white text-sm font-semibold flex items-center gap-1.5 hover:bg-[color:var(--cl-ink-hover)] transition">
           <Plus size={15} /> حركة جديدة
         </button>
       </div>
 
-      <div className="bg-[#1E2530] rounded-xl p-4 text-white inline-block">
+      <div className="bg-[color:var(--cl-ink)] rounded-xl p-4 text-white inline-block">
         <div className="text-[11px] text-white/50 mb-1">الرصيد المستحق حاليًا</div>
         <div className={`font-bold mono text-lg ${currentBalance > 0 ? "text-[#E8AA6C]" : "text-white"}`}>{money(currentBalance)}</div>
       </div>
 
       {open && (
-        <div className="bg-white rounded-xl border border-[#E1DACB] p-4 grid grid-cols-4 gap-3">
+        <div className="bg-[color:var(--cl-card)] rounded-xl border border-[color:var(--cl-line)] p-4 grid grid-cols-4 gap-3">
           {editId && (
-            <div className="col-span-4 text-xs font-semibold text-[#E8672C] bg-[#E8672C]/10 rounded-md px-3 py-1.5">جاري تعديل حركة موجودة</div>
+            <div className="col-span-4 text-xs font-semibold text-[color:var(--cl-accent)] bg-[#f0c85a]/10 rounded-md px-3 py-1.5">جاري تعديل حركة موجودة</div>
           )}
           <Field label="التاريخ" value={form.date} onChange={(v) => setForm((f) => ({ ...f, date: v }))} type="date" />
           <SelectField label="نوع الحركة" value={form.type} onChange={(v) => setForm((f) => ({ ...f, type: v }))} options={FINANCE_TX_TYPES.map((t) => ({ value: t.key, label: t.key }))} />
           <Field label="المبلغ" value={form.amount} onChange={(v) => setForm((f) => ({ ...f, amount: v }))} type="number" />
           <Field label="البيان (اختياري)" value={form.note} onChange={(v) => setForm((f) => ({ ...f, note: v }))} placeholder="وصف الحركة" />
           <div className="col-span-4 flex justify-end gap-2">
-            {editId && <button onClick={cancelForm} className="px-4 py-2 rounded-lg bg-[#E1DACB] text-[#1E2530] text-sm font-semibold hover:bg-[#D8D3C7] transition">إلغاء</button>}
-            <button onClick={submit} className="px-4 py-2 rounded-lg bg-[#E8672C] text-white text-sm font-semibold hover:bg-[#C8511E] transition">{editId ? "حفظ التعديل" : "حفظ الحركة"}</button>
+            {editId && <button onClick={cancelForm} className="px-4 py-2 rounded-lg bg-[color:var(--cl-line)] text-[color:var(--cl-text)] text-sm font-semibold hover:bg-[color:var(--cl-hover)] transition">إلغاء</button>}
+            <button onClick={submit} className="px-4 py-2 rounded-lg bg-[#f0c85a] text-[#1a1405] text-sm font-semibold hover:bg-[#e3b53f] transition">{editId ? "حفظ التعديل" : "حفظ الحركة"}</button>
           </div>
         </div>
       )}
 
-      <div className="bg-white rounded-xl border border-[#E1DACB] overflow-hidden">
+      <div className="bg-[color:var(--cl-card)] rounded-xl border border-[color:var(--cl-line)] overflow-hidden">
         <table className="w-full text-sm">
           <thead>
-            <tr className="bg-[#F6F3EA] text-[#6B7280] text-[12px]">
+            <tr className="bg-[color:var(--cl-inset)] text-[color:var(--cl-soft)] text-[12px]">
               <th className="text-right py-3 px-4 font-semibold">التاريخ</th>
               <th className="text-right py-3 px-4 font-semibold">البيان</th>
               <th className="text-right py-3 px-4 font-semibold">نوع الحركة</th>
@@ -3820,29 +3843,29 @@ function PersonLedger({ person, transactions, onBack, onAddTransaction, onUpdate
               <th className="text-right py-3 px-4 font-semibold w-20"></th>
             </tr>
           </thead>
-          <tbody className="divide-y divide-[#EFEBDF]">
+          <tbody className="divide-y divide-[color:var(--cl-sep)]">
             {displayRows.map((t) => {
               const meta = FINANCE_TX_TYPES.find((m) => m.key === t.type);
               return (
-                <tr key={t.id} className="hover:bg-[#FAF8F2] transition group">
-                  <td className="py-3 px-4 mono text-[#1E2530]">{t.date}</td>
-                  <td className="py-3 px-4 text-[#6B7280]">{t.note || "—"}</td>
+                <tr key={t.id} className="hover:bg-[color:var(--cl-sub)] transition group">
+                  <td className="py-3 px-4 mono text-[color:var(--cl-text)]">{t.date}</td>
+                  <td className="py-3 px-4 text-[color:var(--cl-soft)]">{t.note || "—"}</td>
                   <td className="py-3 px-4">
                     <span className="text-[11px] font-semibold px-2 py-1 rounded-md" style={{ backgroundColor: meta?.color + "18", color: meta?.color }}>{t.type}</span>
                   </td>
-                  <td className={`py-3 px-4 mono font-bold ${t.type === "سداد" ? "text-[#3F7D63]" : "text-[#1E2530]"}`}>{t.type === "سداد" ? "-" : "+"}{money(t.amount)}</td>
+                  <td className={`py-3 px-4 mono font-bold ${t.type === "سداد" ? "text-[color:var(--cl-green)]" : "text-[color:var(--cl-text)]"}`}>{t.type === "سداد" ? "-" : "+"}{money(t.amount)}</td>
                   <td className="py-3 px-4 mono font-bold">{money(t.balanceAfter)}</td>
                   <td className="py-3 px-4">
                     <div className="flex gap-1 justify-end opacity-0 group-hover:opacity-100 transition">
-                      <button onClick={() => startEdit(t)} title="تعديل" className="p-1.5 rounded-md text-[#6B7280] hover:bg-[#E1DACB] hover:text-[#1E2530] transition"><Pencil size={14} /></button>
-                      <button onClick={() => onDeleteTransaction(t.id)} title="حذف" className="p-1.5 rounded-md text-[#C1453B] hover:bg-[#C1453B]/10 transition"><Trash2 size={14} /></button>
+                      <button onClick={() => startEdit(t)} title="تعديل" className="p-1.5 rounded-md text-[color:var(--cl-soft)] hover:bg-[color:var(--cl-line)] hover:text-[color:var(--cl-text)] transition"><Pencil size={14} /></button>
+                      <button onClick={() => onDeleteTransaction(t.id)} title="حذف" className="p-1.5 rounded-md text-[color:var(--cl-red)] hover:bg-[#C1453B]/10 transition"><Trash2 size={14} /></button>
                     </div>
                   </td>
                 </tr>
               );
             })}
             {displayRows.length === 0 && (
-              <tr><td colSpan={6} className="text-center py-8 text-[#9A9483]">لا توجد حركات مسجّلة بعد.</td></tr>
+              <tr><td colSpan={6} className="text-center py-8 text-[color:var(--cl-muted)]">لا توجد حركات مسجّلة بعد.</td></tr>
             )}
           </tbody>
         </table>
@@ -3913,71 +3936,71 @@ function CustodyTab({
     <div className="space-y-5">
       <div className="flex items-center justify-between">
         <div>
-          <h2 className="font-bold text-[#1E2530] text-xl">تصفية العهد</h2>
-          <p className="text-[12px] text-[#9A9483] mt-1">عُهد مربوطة بهذا المشروع فقط</p>
+          <h2 className="font-bold text-[color:var(--cl-text)] text-xl">تصفية العهد</h2>
+          <p className="text-[12px] text-[color:var(--cl-muted)] mt-1">عُهد مربوطة بهذا المشروع فقط</p>
         </div>
         <div className="flex gap-2">
-          <button onClick={() => setShowCategories((o) => !o)} className="px-3 py-2 rounded-lg bg-white border border-[#E1DACB] text-[#1E2530] text-sm font-semibold hover:border-[#1E2530]/40 transition">
+          <button onClick={() => setShowCategories((o) => !o)} className="px-3 py-2 rounded-lg bg-[color:var(--cl-card)] border border-[color:var(--cl-line)] text-[color:var(--cl-text)] text-sm font-semibold hover:border-white/40 transition">
             إدارة التصنيفات
           </button>
-          <button onClick={() => setOpen((o) => !o)} className="px-3 py-2 rounded-lg bg-[#1E2530] text-white text-sm font-semibold flex items-center gap-1.5 hover:bg-[#2b3543] transition">
+          <button onClick={() => setOpen((o) => !o)} className="px-3 py-2 rounded-lg bg-[color:var(--cl-ink)] text-white text-sm font-semibold flex items-center gap-1.5 hover:bg-[color:var(--cl-ink-hover)] transition">
             <Plus size={15} /> عهدة جديدة
           </button>
         </div>
       </div>
 
       {showCategories && (
-        <div className="bg-white rounded-xl border border-[#E1DACB] p-4 space-y-3">
-          <div className="text-sm font-bold text-[#1E2530]">تصنيفات التصفية العامة (تستخدم للبنود اللي مش مرتبطة ببند عمل)</div>
+        <div className="bg-[color:var(--cl-card)] rounded-xl border border-[color:var(--cl-line)] p-4 space-y-3">
+          <div className="text-sm font-bold text-[color:var(--cl-text)]">تصنيفات التصفية العامة (تستخدم للبنود اللي مش مرتبطة ببند عمل)</div>
           <div className="flex flex-wrap gap-2">
             {custodyCategories.map((cat) => (
-              <span key={cat.id} className="flex items-center gap-1.5 text-xs font-semibold bg-[#F6F3EA] border border-[#E1DACB] rounded-full px-3 py-1.5 text-[#1E2530]">
+              <span key={cat.id} className="flex items-center gap-1.5 text-xs font-semibold bg-[color:var(--cl-inset)] border border-[color:var(--cl-line)] rounded-full px-3 py-1.5 text-[color:var(--cl-text)]">
                 {cat.name}
-                <button onClick={() => onDeleteCategory(cat.id)} className="text-[#C1453B] hover:opacity-70"><X size={12} /></button>
+                <button onClick={() => onDeleteCategory(cat.id)} className="text-[color:var(--cl-red)] hover:opacity-70"><X size={12} /></button>
               </span>
             ))}
-            {custodyCategories.length === 0 && <span className="text-xs text-[#9A9483]">لا توجد تصنيفات بعد.</span>}
+            {custodyCategories.length === 0 && <span className="text-xs text-[color:var(--cl-muted)]">لا توجد تصنيفات بعد.</span>}
           </div>
           <div className="flex gap-2">
             <input
               value={newCategory}
               onChange={(e) => setNewCategory(e.target.value)}
               placeholder="اسم تصنيف جديد، مثال: مصروفات موقع"
-              className="flex-1 border border-[#E1DACB] rounded-lg px-3 py-2 text-sm outline-none focus:border-[#E8672C] transition"
+              className="flex-1 border border-[color:var(--cl-line)] rounded-lg px-3 py-2 text-sm outline-none focus:border-[#f0c85a] transition"
             />
-            <button onClick={addCategory} className="px-4 py-2 rounded-lg bg-[#E8672C] text-white text-sm font-semibold hover:bg-[#C8511E] transition">إضافة</button>
+            <button onClick={addCategory} className="px-4 py-2 rounded-lg bg-[#f0c85a] text-[#1a1405] text-sm font-semibold hover:bg-[#e3b53f] transition">إضافة</button>
           </div>
         </div>
       )}
 
       {open && (
-        <div className="bg-white rounded-xl border border-[#E1DACB] p-4 grid grid-cols-4 gap-3">
+        <div className="bg-[color:var(--cl-card)] rounded-xl border border-[color:var(--cl-line)] p-4 grid grid-cols-4 gap-3">
           <Field label="اسم الشخص" value={form.personName} onChange={(v) => setForm((f) => ({ ...f, personName: v }))} placeholder="اسم مستلم العهدة" />
           <Field label="المبلغ المستلم" value={form.amount} onChange={(v) => setForm((f) => ({ ...f, amount: v }))} type="number" />
           <Field label="تاريخ الاستلام" value={form.date} onChange={(v) => setForm((f) => ({ ...f, date: v }))} type="date" />
           <Field label="ملاحظات (اختياري)" value={form.notes} onChange={(v) => setForm((f) => ({ ...f, notes: v }))} placeholder="سبب العهدة" />
           <div className="col-span-4 flex justify-end gap-2">
-            <button onClick={() => { resetForm(); setOpen(false); }} className="px-4 py-2 rounded-lg bg-[#E1DACB] text-[#1E2530] text-sm font-semibold hover:bg-[#D8D3C7] transition">إلغاء</button>
-            <button onClick={submitCustody} className="px-4 py-2 rounded-lg bg-[#E8672C] text-white text-sm font-semibold hover:bg-[#C8511E] transition">حفظ العهدة</button>
+            <button onClick={() => { resetForm(); setOpen(false); }} className="px-4 py-2 rounded-lg bg-[color:var(--cl-line)] text-[color:var(--cl-text)] text-sm font-semibold hover:bg-[color:var(--cl-hover)] transition">إلغاء</button>
+            <button onClick={submitCustody} className="px-4 py-2 rounded-lg bg-[#f0c85a] text-[#1a1405] text-sm font-semibold hover:bg-[#e3b53f] transition">حفظ العهدة</button>
           </div>
         </div>
       )}
 
       <div className="grid grid-cols-2 gap-3">
-        <div className="bg-white rounded-xl border border-[#E1DACB] p-4">
-          <div className="text-[11px] text-[#9A9483] mb-1">إجمالي العُهد المفتوحة</div>
+        <div className="bg-[color:var(--cl-card)] rounded-xl border border-[color:var(--cl-line)] p-4">
+          <div className="text-[11px] text-[color:var(--cl-muted)] mb-1">إجمالي العُهد المفتوحة</div>
           <div className="font-bold mono text-lg text-[#D6A23C]">{money(totalOpen)}</div>
         </div>
-        <div className="bg-white rounded-xl border border-[#E1DACB] p-4">
-          <div className="text-[11px] text-[#9A9483] mb-1">عدد العُهد المصفاة</div>
-          <div className="font-bold mono text-lg text-[#3F7D63]">{closedCustodies.length}</div>
+        <div className="bg-[color:var(--cl-card)] rounded-xl border border-[color:var(--cl-line)] p-4">
+          <div className="text-[11px] text-[color:var(--cl-muted)] mb-1">عدد العُهد المصفاة</div>
+          <div className="font-bold mono text-lg text-[color:var(--cl-green)]">{closedCustodies.length}</div>
         </div>
       </div>
 
-      <div className="bg-white rounded-xl border border-[#E1DACB] overflow-hidden">
+      <div className="bg-[color:var(--cl-card)] rounded-xl border border-[color:var(--cl-line)] overflow-hidden">
         <table className="w-full text-sm">
           <thead>
-            <tr className="bg-[#F6F3EA] text-[#6B7280] text-[12px]">
+            <tr className="bg-[color:var(--cl-inset)] text-[color:var(--cl-soft)] text-[12px]">
               <th className="text-right py-3 px-4 font-semibold">الشخص</th>
               <th className="text-right py-3 px-4 font-semibold">تاريخ الاستلام</th>
               <th className="text-right py-3 px-4 font-semibold">المبلغ المستلم</th>
@@ -3985,17 +4008,17 @@ function CustodyTab({
               <th className="text-right py-3 px-4 font-semibold w-10"></th>
             </tr>
           </thead>
-          <tbody className="divide-y divide-[#EFEBDF]">
+          <tbody className="divide-y divide-[color:var(--cl-sep)]">
             {[...openCustodies, ...closedCustodies].map((c) => (
-              <tr key={c.id} className="hover:bg-[#FAF8F2] transition cursor-pointer group" onClick={() => setSelectedId(c.id)}>
-                <td className="py-3 px-4 font-semibold text-[#1E2530]">
+              <tr key={c.id} className="hover:bg-[color:var(--cl-sub)] transition cursor-pointer group" onClick={() => setSelectedId(c.id)}>
+                <td className="py-3 px-4 font-semibold text-[color:var(--cl-text)]">
                   {c.personName}
-                  {c.notes ? <span className="text-[#9A9483] font-normal text-xs"> — {c.notes}</span> : null}
+                  {c.notes ? <span className="text-[color:var(--cl-muted)] font-normal text-xs"> — {c.notes}</span> : null}
                 </td>
-                <td className="py-3 px-4 mono text-[#6B7280]">{c.dateGiven}</td>
+                <td className="py-3 px-4 mono text-[color:var(--cl-soft)]">{c.dateGiven}</td>
                 <td className="py-3 px-4 mono font-bold">{money(c.amountGiven)}</td>
                 <td className="py-3 px-4">
-                  <span className={`text-[11px] font-semibold px-2 py-1 rounded-md flex items-center gap-1 w-fit ${c.status === "مصفاة" ? "bg-[#3F7D63]/10 text-[#3F7D63]" : "bg-[#D6A23C]/10 text-[#D6A23C]"}`}>
+                  <span className={`text-[11px] font-semibold px-2 py-1 rounded-md flex items-center gap-1 w-fit ${c.status === "مصفاة" ? "bg-[#3F7D63]/10 text-[color:var(--cl-green)]" : "bg-[#D6A23C]/10 text-[#D6A23C]"}`}>
                     {c.status === "مصفاة" ? <CheckCircle2 size={12} /> : <Clock size={12} />}
                     {c.status}
                   </span>
@@ -4004,7 +4027,7 @@ function CustodyTab({
                   <button
                     onClick={(e) => { e.stopPropagation(); onDeleteCustody(c.id); }}
                     title="حذف العهدة"
-                    className="p-1.5 rounded-md text-[#C1453B] opacity-0 group-hover:opacity-100 hover:bg-[#C1453B]/10 transition"
+                    className="p-1.5 rounded-md text-[color:var(--cl-red)] opacity-0 group-hover:opacity-100 hover:bg-[#C1453B]/10 transition"
                   >
                     <Trash2 size={14} />
                   </button>
@@ -4012,7 +4035,7 @@ function CustodyTab({
               </tr>
             ))}
             {pCustodies.length === 0 && (
-              <tr><td colSpan={5} className="text-center py-8 text-[#9A9483]">لا توجد عُهد مسجّلة بعد لهذا المشروع.</td></tr>
+              <tr><td colSpan={5} className="text-center py-8 text-[color:var(--cl-muted)]">لا توجد عُهد مسجّلة بعد لهذا المشروع.</td></tr>
             )}
           </tbody>
         </table>
@@ -4086,43 +4109,43 @@ function CustodySettlement({ custody, lines, pWorkItems, custodyCategories, acti
 
   return (
     <div className="space-y-5">
-      <button onClick={onBack} className="text-sm font-semibold text-[#6B7280] hover:text-[#1E2530] flex items-center gap-1 transition">
+      <button onClick={onBack} className="text-sm font-semibold text-[color:var(--cl-soft)] hover:text-[color:var(--cl-text)] flex items-center gap-1 transition">
         <ChevronRight size={16} /> رجوع لكل العُهد
       </button>
 
       <div className="flex items-center justify-between">
         <div>
-          <h2 className="font-bold text-[#1E2530] text-xl">{custody.personName}</h2>
-          <p className="text-[12px] text-[#9A9483] mt-1">
+          <h2 className="font-bold text-[color:var(--cl-text)] text-xl">{custody.personName}</h2>
+          <p className="text-[12px] text-[color:var(--cl-muted)] mt-1">
             استُلمت بتاريخ {custody.dateGiven}{custody.notes ? ` — ${custody.notes}` : ""}
           </p>
         </div>
         {!isLocked && (
-          <button onClick={() => (open ? cancelForm() : setOpen(true))} className="px-3 py-2 rounded-lg bg-[#1E2530] text-white text-sm font-semibold flex items-center gap-1.5 hover:bg-[#2b3543] transition">
+          <button onClick={() => (open ? cancelForm() : setOpen(true))} className="px-3 py-2 rounded-lg bg-[color:var(--cl-ink)] text-white text-sm font-semibold flex items-center gap-1.5 hover:bg-[color:var(--cl-ink-hover)] transition">
             <Plus size={15} /> بند تصفية جديد
           </button>
         )}
       </div>
 
       <div className="grid grid-cols-3 gap-3">
-        <div className="bg-white rounded-xl border border-[#E1DACB] p-4">
-          <div className="text-[11px] text-[#9A9483] mb-1">المبلغ المستلم</div>
-          <div className="font-bold mono text-lg text-[#1E2530]">{money(custody.amountGiven)}</div>
+        <div className="bg-[color:var(--cl-card)] rounded-xl border border-[color:var(--cl-line)] p-4">
+          <div className="text-[11px] text-[color:var(--cl-muted)] mb-1">المبلغ المستلم</div>
+          <div className="font-bold mono text-lg text-[color:var(--cl-text)]">{money(custody.amountGiven)}</div>
         </div>
-        <div className="bg-white rounded-xl border border-[#E1DACB] p-4">
-          <div className="text-[11px] text-[#9A9483] mb-1">إجمالي المُصفّى</div>
-          <div className="font-bold mono text-lg text-[#6B7280]">{money(totalSettled)}</div>
+        <div className="bg-[color:var(--cl-card)] rounded-xl border border-[color:var(--cl-line)] p-4">
+          <div className="text-[11px] text-[color:var(--cl-muted)] mb-1">إجمالي المُصفّى</div>
+          <div className="font-bold mono text-lg text-[color:var(--cl-soft)]">{money(totalSettled)}</div>
         </div>
-        <div className="bg-[#1E2530] rounded-xl p-4 text-white">
+        <div className="bg-[color:var(--cl-ink)] rounded-xl p-4 text-white">
           <div className="text-[11px] text-white/50 mb-1">{remaining >= 0 ? "المتبقي عند الشخص" : "مستحق للشخص (صرف أكتر من العهدة)"}</div>
           <div className={`font-bold mono text-lg ${remaining !== 0 ? "text-[#E8AA6C]" : "text-white"}`}>{money(Math.abs(remaining))}</div>
         </div>
       </div>
 
       {open && !isLocked && (
-        <div className="bg-white rounded-xl border border-[#E1DACB] p-4 grid grid-cols-3 gap-3">
+        <div className="bg-[color:var(--cl-card)] rounded-xl border border-[color:var(--cl-line)] p-4 grid grid-cols-3 gap-3">
           {editId && (
-            <div className="col-span-3 text-xs font-semibold text-[#E8672C] bg-[#E8672C]/10 rounded-md px-3 py-1.5">جاري تعديل بند موجود</div>
+            <div className="col-span-3 text-xs font-semibold text-[color:var(--cl-accent)] bg-[#f0c85a]/10 rounded-md px-3 py-1.5">جاري تعديل بند موجود</div>
           )}
           <SelectField
             label="بند العمل (اختياري)"
@@ -4149,16 +4172,16 @@ function CustodySettlement({ custody, lines, pWorkItems, custodyCategories, acti
           </div>
           <Field label="المبلغ" value={form.amount} onChange={(v) => setForm((f) => ({ ...f, amount: v }))} type="number" />
           <div className="col-span-3 flex justify-end gap-2">
-            {editId && <button onClick={cancelForm} className="px-4 py-2 rounded-lg bg-[#E1DACB] text-[#1E2530] text-sm font-semibold hover:bg-[#D8D3C7] transition">إلغاء</button>}
-            <button onClick={submitLine} className="px-4 py-2 rounded-lg bg-[#E8672C] text-white text-sm font-semibold hover:bg-[#C8511E] transition">{editId ? "حفظ التعديل" : "إضافة البند"}</button>
+            {editId && <button onClick={cancelForm} className="px-4 py-2 rounded-lg bg-[color:var(--cl-line)] text-[color:var(--cl-text)] text-sm font-semibold hover:bg-[color:var(--cl-hover)] transition">إلغاء</button>}
+            <button onClick={submitLine} className="px-4 py-2 rounded-lg bg-[#f0c85a] text-[#1a1405] text-sm font-semibold hover:bg-[#e3b53f] transition">{editId ? "حفظ التعديل" : "إضافة البند"}</button>
           </div>
         </div>
       )}
 
-      <div className="bg-white rounded-xl border border-[#E1DACB] overflow-hidden">
+      <div className="bg-[color:var(--cl-card)] rounded-xl border border-[color:var(--cl-line)] overflow-hidden">
         <table className="w-full text-sm">
           <thead>
-            <tr className="bg-[#F6F3EA] text-[#6B7280] text-[12px]">
+            <tr className="bg-[color:var(--cl-inset)] text-[color:var(--cl-soft)] text-[12px]">
               <th className="text-right py-3 px-4 font-semibold">التاريخ</th>
               <th className="text-right py-3 px-4 font-semibold">البند</th>
               <th className="text-right py-3 px-4 font-semibold">بند العمل</th>
@@ -4166,25 +4189,25 @@ function CustodySettlement({ custody, lines, pWorkItems, custodyCategories, acti
               {!isLocked && <th className="text-right py-3 px-4 font-semibold w-20"></th>}
             </tr>
           </thead>
-          <tbody className="divide-y divide-[#EFEBDF]">
+          <tbody className="divide-y divide-[color:var(--cl-sep)]">
             {lines.map((c) => (
-              <tr key={c.id} className="hover:bg-[#FAF8F2] transition group">
-                <td className="py-3 px-4 mono text-[#1E2530]">{c.date}</td>
-                <td className="py-3 px-4 text-[#6B7280]">{c.desc}</td>
-                <td className="py-3 px-4 text-[#6B7280]">{pWorkItems.find((w) => w.id === c.workItemId)?.name || "—"}</td>
+              <tr key={c.id} className="hover:bg-[color:var(--cl-sub)] transition group">
+                <td className="py-3 px-4 mono text-[color:var(--cl-text)]">{c.date}</td>
+                <td className="py-3 px-4 text-[color:var(--cl-soft)]">{c.desc}</td>
+                <td className="py-3 px-4 text-[color:var(--cl-soft)]">{pWorkItems.find((w) => w.id === c.workItemId)?.name || "—"}</td>
                 <td className="py-3 px-4 mono font-bold">{money(c.qty * c.price)}</td>
                 {!isLocked && (
                   <td className="py-3 px-4">
                     <div className="flex gap-1 justify-end opacity-0 group-hover:opacity-100 transition">
-                      <button onClick={() => startEdit(c)} title="تعديل" className="p-1.5 rounded-md text-[#6B7280] hover:bg-[#E1DACB] hover:text-[#1E2530] transition"><Pencil size={14} /></button>
-                      <button onClick={() => onDeleteCost(c.id)} title="حذف" className="p-1.5 rounded-md text-[#C1453B] hover:bg-[#C1453B]/10 transition"><Trash2 size={14} /></button>
+                      <button onClick={() => startEdit(c)} title="تعديل" className="p-1.5 rounded-md text-[color:var(--cl-soft)] hover:bg-[color:var(--cl-line)] hover:text-[color:var(--cl-text)] transition"><Pencil size={14} /></button>
+                      <button onClick={() => onDeleteCost(c.id)} title="حذف" className="p-1.5 rounded-md text-[color:var(--cl-red)] hover:bg-[#C1453B]/10 transition"><Trash2 size={14} /></button>
                     </div>
                   </td>
                 )}
               </tr>
             ))}
             {lines.length === 0 && (
-              <tr><td colSpan={isLocked ? 4 : 5} className="text-center py-8 text-[#9A9483]">لا توجد بنود تصفية مسجّلة بعد.</td></tr>
+              <tr><td colSpan={isLocked ? 4 : 5} className="text-center py-8 text-[color:var(--cl-muted)]">لا توجد بنود تصفية مسجّلة بعد.</td></tr>
             )}
           </tbody>
         </table>
@@ -4213,16 +4236,16 @@ function NewProjectModal({ onClose, onCreate }) {
 
   return (
     <div className="fixed inset-0 bg-black/40 flex items-center justify-center z-50" dir="rtl">
-      <div className="bg-white rounded-xl w-full max-w-md p-6 relative" style={{ fontFamily: "'Cairo', sans-serif" }}>
-        <button onClick={onClose} className="absolute left-4 top-4 text-[#9A9483] hover:text-[#1E2530]"><X size={18} /></button>
-        <h3 className="font-bold text-lg text-[#1E2530] mb-4">مشروع جديد</h3>
+      <div className="bg-[color:var(--cl-card)] rounded-xl w-full max-w-md p-6 relative" style={{ fontFamily: "'IBM Plex Sans Arabic', 'Cairo', sans-serif" }}>
+        <button onClick={onClose} className="absolute left-4 top-4 text-[color:var(--cl-muted)] hover:text-[color:var(--cl-text)]"><X size={18} /></button>
+        <h3 className="font-bold text-lg text-[color:var(--cl-text)] mb-4">مشروع جديد</h3>
         <div className="space-y-3">
           <Field label="اسم المشروع" value={form.name} onChange={(v) => setForm((f) => ({ ...f, name: v }))} />
           <Field label="العميل" value={form.client} onChange={(v) => setForm((f) => ({ ...f, client: v }))} />
           <Field label="الموقع" value={form.location} onChange={(v) => setForm((f) => ({ ...f, location: v }))} />
           <Field label="قيمة العقد" value={form.budget} onChange={(v) => setForm((f) => ({ ...f, budget: v }))} type="number" />
         </div>
-        <button onClick={submit} className="w-full mt-5 py-2.5 rounded-lg bg-[#E8672C] text-white font-semibold hover:bg-[#C8511E] transition">إنشاء المشروع</button>
+        <button onClick={submit} className="w-full mt-5 py-2.5 rounded-lg bg-[#f0c85a] text-[#1a1405] font-semibold hover:bg-[#e3b53f] transition">إنشاء المشروع</button>
       </div>
     </div>
   );
@@ -4233,13 +4256,13 @@ function NewProjectModal({ onClose, onCreate }) {
 function Field({ label, value, onChange, type = "text", placeholder = "", small }) {
   return (
     <div>
-      <label className="block text-[11px] font-semibold text-[#6B7280] mb-1">{label}</label>
+      <label className="block text-[11px] font-semibold text-[color:var(--cl-soft)] mb-1">{label}</label>
       <input
         type={type}
         value={value}
         placeholder={placeholder}
         onChange={(e) => onChange(e.target.value)}
-        className={`w-full border border-[#E1DACB] rounded-lg px-3 ${small ? "py-1.5 text-xs" : "py-2 text-sm"} outline-none focus:border-[#E8672C] transition bg-white`}
+        className={`w-full border border-[color:var(--cl-line)] rounded-lg px-3 ${small ? "py-1.5 text-xs" : "py-2 text-sm"} outline-none focus:border-[#f0c85a] transition bg-[color:var(--cl-card)]`}
       />
     </div>
   );
@@ -4248,11 +4271,11 @@ function Field({ label, value, onChange, type = "text", placeholder = "", small 
 function SelectField({ label, value, onChange, options, small }) {
   return (
     <div>
-      <label className="block text-[11px] font-semibold text-[#6B7280] mb-1">{label}</label>
+      <label className="block text-[11px] font-semibold text-[color:var(--cl-soft)] mb-1">{label}</label>
       <select
         value={value}
         onChange={(e) => onChange(e.target.value)}
-        className={`w-full border border-[#E1DACB] rounded-lg px-3 ${small ? "py-1.5 text-xs" : "py-2 text-sm"} outline-none focus:border-[#E8672C] transition bg-white`}
+        className={`w-full border border-[color:var(--cl-line)] rounded-lg px-3 ${small ? "py-1.5 text-xs" : "py-2 text-sm"} outline-none focus:border-[#f0c85a] transition bg-[color:var(--cl-card)]`}
       >
         {options.map((o) => (
           <option key={o.value} value={o.value}>{o.label}</option>
@@ -4356,16 +4379,16 @@ function UsersManagementModule({ currentUsername }) {
   if (!users) {
     return (
       <div className="max-w-md">
-        <h2 className="font-bold text-[#1E2530] text-xl mb-1">إدارة المستخدمين</h2>
-        <p className="text-[12px] text-[#9A9483] mb-5">أدخل بيانات دخولك عشان تفتح شاشة إدارة المستخدمين</p>
-        <div className="bg-white rounded-xl border border-[#E1DACB] p-4 space-y-3">
+        <h2 className="font-bold text-[color:var(--cl-text)] text-xl mb-1">إدارة المستخدمين</h2>
+        <p className="text-[12px] text-[color:var(--cl-muted)] mb-5">أدخل بيانات دخولك عشان تفتح شاشة إدارة المستخدمين</p>
+        <div className="bg-[color:var(--cl-card)] rounded-xl border border-[color:var(--cl-line)] p-4 space-y-3">
           <Field label="اسم المستخدم" value={adminUsername} onChange={setAdminUsername} placeholder="اسم المستخدم بتاعك" />
           <Field label="كلمة المرور" value={adminPassword} onChange={setAdminPassword} type="password" placeholder="كلمة المرور بتاعتك" />
-          {error && <div className="text-xs text-[#C1453B] bg-[#C1453B]/10 rounded-md px-3 py-2">{error}</div>}
+          {error && <div className="text-xs text-[color:var(--cl-red)] bg-[#C1453B]/10 rounded-md px-3 py-2">{error}</div>}
           <button
             onClick={loadUsers}
             disabled={loading}
-            className="w-full px-4 py-2.5 rounded-lg bg-[#1E2530] text-white text-sm font-semibold hover:bg-[#2b3543] transition disabled:opacity-60 flex items-center justify-center gap-2"
+            className="w-full px-4 py-2.5 rounded-lg bg-[color:var(--cl-ink)] text-white text-sm font-semibold hover:bg-[color:var(--cl-ink-hover)] transition disabled:opacity-60 flex items-center justify-center gap-2"
           >
             {loading && <Loader2 size={15} className="animate-spin" />} دخول
           </button>
@@ -4378,56 +4401,56 @@ function UsersManagementModule({ currentUsername }) {
     <div className="space-y-5 max-w-2xl">
       <div className="flex items-center justify-between">
         <div>
-          <h2 className="font-bold text-[#1E2530] text-xl">إدارة المستخدمين</h2>
-          <p className="text-[12px] text-[#9A9483] mt-1">إضافة/تعديل/حذف مستخدمين — كل عملية بتتطلب بيانات دخولك للتأكيد</p>
+          <h2 className="font-bold text-[color:var(--cl-text)] text-xl">إدارة المستخدمين</h2>
+          <p className="text-[12px] text-[color:var(--cl-muted)] mt-1">إضافة/تعديل/حذف مستخدمين — كل عملية بتتطلب بيانات دخولك للتأكيد</p>
         </div>
-        <button onClick={() => setShowAdd((o) => !o)} className="px-3 py-2 rounded-lg bg-[#1E2530] text-white text-sm font-semibold flex items-center gap-1.5 hover:bg-[#2b3543] transition">
+        <button onClick={() => setShowAdd((o) => !o)} className="px-3 py-2 rounded-lg bg-[color:var(--cl-ink)] text-white text-sm font-semibold flex items-center gap-1.5 hover:bg-[color:var(--cl-ink-hover)] transition">
           <Plus size={15} /> مستخدم جديد
         </button>
       </div>
 
-      {error && <div className="text-xs text-[#C1453B] bg-[#C1453B]/10 rounded-md px-3 py-2">{error}</div>}
+      {error && <div className="text-xs text-[color:var(--cl-red)] bg-[#C1453B]/10 rounded-md px-3 py-2">{error}</div>}
 
       {showAdd && (
-        <div className="bg-white rounded-xl border border-[#E1DACB] p-4 grid grid-cols-2 gap-3">
+        <div className="bg-[color:var(--cl-card)] rounded-xl border border-[color:var(--cl-line)] p-4 grid grid-cols-2 gap-3">
           <Field label="اسم المستخدم الجديد" value={newUsername} onChange={setNewUsername} />
           <Field label="كلمة المرور" value={newPassword} onChange={setNewPassword} type="password" />
           <div className="col-span-2 flex justify-end gap-2">
-            <button onClick={() => setShowAdd(false)} className="px-4 py-2 rounded-lg bg-[#E1DACB] text-[#1E2530] text-sm font-semibold hover:bg-[#D8D3C7] transition">إلغاء</button>
-            <button onClick={addUser} className="px-4 py-2 rounded-lg bg-[#E8672C] text-white text-sm font-semibold hover:bg-[#C8511E] transition">حفظ</button>
+            <button onClick={() => setShowAdd(false)} className="px-4 py-2 rounded-lg bg-[color:var(--cl-line)] text-[color:var(--cl-text)] text-sm font-semibold hover:bg-[color:var(--cl-hover)] transition">إلغاء</button>
+            <button onClick={addUser} className="px-4 py-2 rounded-lg bg-[#f0c85a] text-[#1a1405] text-sm font-semibold hover:bg-[#e3b53f] transition">حفظ</button>
           </div>
         </div>
       )}
 
-      <div className="bg-white rounded-xl border border-[#E1DACB] overflow-hidden">
+      <div className="bg-[color:var(--cl-card)] rounded-xl border border-[color:var(--cl-line)] overflow-hidden">
         <table className="w-full text-sm">
           <thead>
-            <tr className="bg-[#F6F3EA] text-[#6B7280] text-[12px]">
+            <tr className="bg-[color:var(--cl-inset)] text-[color:var(--cl-soft)] text-[12px]">
               <th className="text-right py-3 px-4 font-semibold">اسم المستخدم</th>
               <th className="text-right py-3 px-4 font-semibold w-32"></th>
             </tr>
           </thead>
-          <tbody className="divide-y divide-[#EFEBDF]">
+          <tbody className="divide-y divide-[color:var(--cl-sep)]">
             {users.map((u) => (
               <React.Fragment key={u.id}>
-                <tr className="hover:bg-[#FAF8F2] transition group">
-                  <td className="py-3 px-4 font-semibold text-[#1E2530]">{u.username}</td>
+                <tr className="hover:bg-[color:var(--cl-sub)] transition group">
+                  <td className="py-3 px-4 font-semibold text-[color:var(--cl-text)]">{u.username}</td>
                   <td className="py-3 px-4">
                     <div className="flex gap-1 justify-end opacity-0 group-hover:opacity-100 transition">
-                      <button onClick={() => startEdit(u)} title="تعديل" className="p-1.5 rounded-md text-[#6B7280] hover:bg-[#E1DACB] hover:text-[#1E2530] transition"><Pencil size={14} /></button>
-                      <button onClick={() => deleteUser(u.username)} title="حذف" className="p-1.5 rounded-md text-[#C1453B] hover:bg-[#C1453B]/10 transition"><Trash2 size={14} /></button>
+                      <button onClick={() => startEdit(u)} title="تعديل" className="p-1.5 rounded-md text-[color:var(--cl-soft)] hover:bg-[color:var(--cl-line)] hover:text-[color:var(--cl-text)] transition"><Pencil size={14} /></button>
+                      <button onClick={() => deleteUser(u.username)} title="حذف" className="p-1.5 rounded-md text-[color:var(--cl-red)] hover:bg-[#C1453B]/10 transition"><Trash2 size={14} /></button>
                     </div>
                   </td>
                 </tr>
                 {editUsername === u.username && (
                   <tr>
-                    <td colSpan={2} className="p-4 bg-[#FAF8F2]">
+                    <td colSpan={2} className="p-4 bg-[color:var(--cl-sub)]">
                       <div className="grid grid-cols-2 gap-3">
                         <Field label="اسم المستخدم" value={editNewUsername} onChange={setEditNewUsername} />
                         <Field label="كلمة مرور جديدة (اختياري)" value={editNewPassword} onChange={setEditNewPassword} type="password" placeholder="سيبها فاضية لو مش عايز تغيّرها" />
                         <div className="col-span-2 flex justify-end gap-2">
-                          <button onClick={() => setEditUsername(null)} className="px-4 py-2 rounded-lg bg-[#E1DACB] text-[#1E2530] text-sm font-semibold hover:bg-[#D8D3C7] transition">إلغاء</button>
-                          <button onClick={saveEdit} className="px-4 py-2 rounded-lg bg-[#E8672C] text-white text-sm font-semibold hover:bg-[#C8511E] transition">حفظ التعديل</button>
+                          <button onClick={() => setEditUsername(null)} className="px-4 py-2 rounded-lg bg-[color:var(--cl-line)] text-[color:var(--cl-text)] text-sm font-semibold hover:bg-[color:var(--cl-hover)] transition">إلغاء</button>
+                          <button onClick={saveEdit} className="px-4 py-2 rounded-lg bg-[#f0c85a] text-[#1a1405] text-sm font-semibold hover:bg-[#e3b53f] transition">حفظ التعديل</button>
                         </div>
                       </div>
                     </td>
@@ -4436,7 +4459,7 @@ function UsersManagementModule({ currentUsername }) {
               </React.Fragment>
             ))}
             {users.length === 0 && (
-              <tr><td colSpan={2} className="text-center py-8 text-[#9A9483]">لا يوجد مستخدمون.</td></tr>
+              <tr><td colSpan={2} className="text-center py-8 text-[color:var(--cl-muted)]">لا يوجد مستخدمون.</td></tr>
             )}
           </tbody>
         </table>
@@ -4471,9 +4494,11 @@ function LoginScreen({ onSuccess }) {
   return (
     <div dir="ltr" className="lh-page">
       <style>{`
+        @import url('https://fonts.googleapis.com/css2?family=IBM+Plex+Sans+Arabic:wght@400;500;600;700&family=IBM+Plex+Mono:wght@400;500;600&display=swap');
+        .lh-page .mono { font-family:'IBM Plex Mono',monospace; }
         .lh-page { --gold:#f0c85a; --muted:#8b8b95; position:relative; width:100%; min-height:100vh; background:#050505;
           color:#eee; overflow:hidden; display:flex; align-items:center; justify-content:center; padding:24px;
-          font-family:system-ui,-apple-system,"Segoe UI",sans-serif; }
+          font-family:'IBM Plex Sans Arabic',system-ui,-apple-system,"Segoe UI",sans-serif; }
         .lh-page *, .lh-page *::before, .lh-page *::after { box-sizing:border-box; }
         .lh-lighthouse { position:absolute; left:6vw; bottom:0; width:110px; height:70vh; }
         .lh-lighthouse svg { width:100%; height:100%; display:block; }
@@ -4535,7 +4560,7 @@ function LoginScreen({ onSuccess }) {
       <form onSubmit={submit} className="lh-card">
         <div style={{ display: "flex", alignItems: "center", gap: 12, marginBottom: 22 }}>
           <CostLineMark size={44} />
-          <span style={{ fontSize: 22, fontWeight: 800, letterSpacing: 0.4, color: "#fff" }}>Cost<span style={{ color: "#E8672C" }}>Line</span></span>
+          <span style={{ fontSize: 22, fontWeight: 800, letterSpacing: 0.4, color: "#fff" }}>Cost<span style={{ color: "#f0c85a" }>Line</span></span>
         </div>
         <div className="lh-eyebrow">MEMBER ACCESS</div>
         <h1>Welcome back.</h1>
