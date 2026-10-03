@@ -4604,7 +4604,7 @@ ${s.notes ? `<p><b>ملاحظات:</b> ${stEsc(s.notes)}</p>` : ""}
 
 const stCellInput = "w-full border border-[color:var(--cl-line)] rounded-md px-2 py-1.5 text-sm outline-none focus:border-[color:var(--cl-accent-bg)] bg-[color:var(--cl-card)] text-[color:var(--cl-text)]";
 
-function StatementForm({ cfg, initial, parties, projects, existing, payments, onCancel, onSave }) {
+function StatementForm({ cfg, initial, parties, projects, existing, payments, onCancel, onSave, onAddPayment, onDeletePayment }) {
   const [partyName, setPartyName] = useState(initial?.partyName || "");
   const [date, setDate] = useState(initial?.date || stToday());
   const [number, setNumber] = useState(initial?.number || "");
@@ -4621,6 +4621,7 @@ function StatementForm({ cfg, initial, parties, projects, existing, payments, on
   );
   const [adjustments, setAdjustments] = useState(initial?.adjustments || []);
   const [err, setErr] = useState("");
+  const [payForm, setPayForm] = useState({ date: stToday(), amount: "", method: "تحويل بنكي", statementId: "" });
 
   // السابق: آخر إجمالي كمية وإجمالي نسبة تنفيذ لنفس البند (بنفس الوصف) في مستخلصات سابقة لنفس الطرف
   const prevMap = useMemo(() => {
@@ -4644,7 +4645,8 @@ function StatementForm({ cfg, initial, parties, projects, existing, payments, on
       const pctPrev = m ? m.pct : Number(it.prevPctManual) || 0;
       // إجمالي الكمية لو فاضي = نفس السابق | نسبة التنفيذ الحالية لو فاضية = المتبقي لحد 100٪
       const qtyTotal = it.totalIn === "" || it.totalIn == null ? qtyPrev : Number(it.totalIn) || 0;
-      const pctCur = it.curPctIn === "" || it.curPctIn == null ? Math.max(0, stRound(100 - pctPrev)) : Number(it.curPctIn) || 0;
+      const room = Math.max(0, stRound(100 - pctPrev)); // المتبقي لحد 100٪
+      const pctCur = it.curPctIn === "" || it.curPctIn == null ? room : Math.min(Number(it.curPctIn) || 0, room);
       return { ...it, ver: 3, qtyPrev, qtyTotal, pctPrev, pctTotal: stRound(pctPrev + pctCur), _matched: !!m };
     }),
     [items, prevMap]
@@ -4656,6 +4658,15 @@ function StatementForm({ cfg, initial, parties, projects, existing, payments, on
   const acct = useMemo(() => stAccount({ id: initial?.id, partyName, date, number }, existing, payments), [initial?.id, partyName, date, number, existing, payments]);
   const hasAcct = stHasAcct(acct);
   const dueNow = stDueNow(calc.net, acct);
+  const partyKey = partyName.trim();
+  const partyPays = useMemo(() => payments.filter((p) => p.partyName === partyKey).sort((a, b) => (a.date || "").localeCompare(b.date || "")), [payments, partyKey]);
+  const partySts = useMemo(() => existing.filter((s) => s.partyName === partyKey), [existing, partyKey]);
+  const addPay = async () => {
+    const amount = Number(payForm.amount);
+    if (!partyKey || !amount || amount <= 0) return;
+    await onAddPayment({ id: stUid("sp_"), kind: cfg.kind, partyName: partyKey, date: payForm.date || stToday(), amount, method: payForm.method, note: "", statementId: payForm.statementId || null });
+    setPayForm((f) => ({ ...f, amount: "", statementId: "" }));
+  };
 
   const setItem = (id, patch) => setItems((p) => p.map((i) => (i.id === id ? { ...i, ...patch } : i)));
   const setAdj = (id, patch) => setAdjustments((p) => p.map((a) => (a.id === id ? { ...a, ...patch } : a)));
@@ -4764,11 +4775,25 @@ function StatementForm({ cfg, initial, parties, projects, existing, payments, on
                     {it._matched ? (
                       <div title="من المستخلص السابق — ثابتة" className="mono text-sm px-2 py-1.5 rounded-md bg-[color:var(--cl-chip)] text-[color:var(--cl-soft)] border border-[color:var(--cl-sep)]">{stMoney(it.pctPrev)}٪</div>
                     ) : (
-                      <input type="number" min="0" max="100" title="مفيش مستخلص سابق للبند ده — اكتب لو فيه تنفيذ قبل كده" className={stCellInput + " mono"} value={it.prevPctManual ?? ""} onChange={(e) => setItem(it.id, { prevPctManual: e.target.value })} />
+                      <input type="number" min="0" max="100" title="مفيش مستخلص سابق للبند ده — اكتب لو فيه تنفيذ قبل كده" className={stCellInput + " mono"} value={it.prevPctManual ?? ""} onChange={(e) => { const v = e.target.value; setItem(it.id, { prevPctManual: v !== "" && Number(v) > 100 ? "100" : v }); }} />
                     )}
                   </td>
-                  <td className="py-2 px-3"><input type="number" min="0" max={Math.max(0, 100 - it.pctPrev)} className={stCellInput + " mono font-bold" + (overPct ? " !border-[color:var(--cl-red)]" : "")} value={it.curPctIn ?? ""} placeholder={String(Math.max(0, stRound(100 - it.pctPrev)))} onChange={(e) => setItem(it.id, { curPctIn: e.target.value })} /></td>
-                  <td className={`py-2 px-3 mono font-bold ${overPct ? "text-[color:var(--cl-red)]" : "text-[color:var(--cl-text)]"}`}>{stMoney(stTotalPct(it))}٪</td>
+                  <td className="py-2 px-3">
+                    <input
+                      type="number" min="0" max={Math.max(0, 100 - it.pctPrev)}
+                      disabled={it.pctPrev >= 100}
+                      title={it.pctPrev >= 100 ? "البند ده وصل 100٪ في مستخلص سابق" : "لو كتبت أكتر من المتبقي بيتقص على المتبقي لحد 100٪"}
+                      className={stCellInput + " mono font-bold" + (it.pctPrev >= 100 ? " opacity-50 cursor-not-allowed" : "")}
+                      value={it.pctPrev >= 100 ? "0" : it.curPctIn ?? ""}
+                      placeholder={String(Math.max(0, stRound(100 - it.pctPrev)))}
+                      onChange={(e) => {
+                        const v = e.target.value;
+                        const mx = Math.max(0, stRound(100 - it.pctPrev));
+                        setItem(it.id, { curPctIn: v !== "" && Number(v) > mx ? String(mx) : v });
+                      }}
+                    />
+                  </td>
+                  <td className={`py-2 px-3 mono font-bold ${overPct ? "text-[color:var(--cl-red)]" : "text-[color:var(--cl-text)]"}`}>{stMoney(stTotalPct(it))}٪{stTotalPct(it) >= 100 && <span className="block text-[10px] font-sans font-semibold text-[color:var(--cl-green)]">مكتمل</span>}</td>
                   <td className="py-2 px-3 mono font-semibold text-[color:var(--cl-text)]">{stMoney(stTotalValue(it))}</td>
                   <td className="py-2 px-2"><button onClick={() => setItems((p) => (p.length > 1 ? p.filter((x) => x.id !== it.id) : p))} className="p-1.5 rounded-md text-[color:var(--cl-red)] hover:bg-[#C1453B]/10"><Trash2 size={14} /></button></td>
                 </tr>
@@ -4858,23 +4883,55 @@ function StatementForm({ cfg, initial, parties, projects, existing, payments, on
         )}
       </div>
 
-      {hasAcct && (
+      {partyKey && (
         <div className="bg-[color:var(--cl-card)] rounded-xl border border-[color:var(--cl-line)] overflow-hidden">
           <div className="px-4 py-3 border-b border-[color:var(--cl-sep)]">
-            <div className="font-bold text-sm text-[color:var(--cl-text)]">الحساب مع {cfg.partyLabel} (تلقائي)</div>
-            <div className="text-[11px] text-[color:var(--cl-muted)]">بيتحسب من المستخلصات المعتمدة والدفعات المسجّلة لنفس الاسم — الدفعات بتتسجل من "كشف حساب {cfg.partyPlural}"</div>
+            <div className="font-bold text-sm text-[color:var(--cl-text)]">الحساب والدفعات مع {partyKey}</div>
+            <div className="text-[11px] text-[color:var(--cl-muted)]">سجّل هنا الفلوس اللي اتصرفت له (على مستخلص سابق أو دفعة عامة) وهتتخصم تلقائيًا من المستحق — الدفعة العامة بتتحسب لو تاريخها في تاريخ المستخلص أو قبله</div>
           </div>
-          <table className="w-full text-sm">
-            <tbody className="divide-y divide-[color:var(--cl-sep)]">
-              <tr><td className="py-2.5 px-4 text-[color:var(--cl-soft)]">صافي هذا المستخلص</td><td className="py-2.5 px-4 mono w-48">{stMoney(calc.net)}</td></tr>
-              <tr><td className="py-2.5 px-4 text-[color:var(--cl-soft)]">(+) صافي المستخلصات السابقة المعتمدة</td><td className="py-2.5 px-4 mono">{stMoney(acct.prevNet)}</td></tr>
-              <tr><td className="py-2.5 px-4 text-[color:var(--cl-soft)]">(−) السابق صرفه</td><td className="py-2.5 px-4 mono text-[color:var(--cl-red)]">{stMoney(acct.prevPaid)}</td></tr>
-              {acct.paidHere > 0 && (
-                <tr><td className="py-2.5 px-4 text-[color:var(--cl-soft)]">(−) مدفوع على هذا المستخلص</td><td className="py-2.5 px-4 mono text-[color:var(--cl-red)]">{stMoney(acct.paidHere)}</td></tr>
-              )}
-              <tr className="bg-[color:var(--cl-inset)]"><td className="py-2.5 px-4 font-bold text-[color:var(--cl-text)]">المستحق صرفه الآن</td><td className="py-2.5 px-4 mono font-bold text-[color:var(--cl-text)]">{stMoney(dueNow)} ج.م</td></tr>
-            </tbody>
-          </table>
+          {hasAcct && (
+            <table className="w-full text-sm">
+              <tbody className="divide-y divide-[color:var(--cl-sep)]">
+                <tr><td className="py-2.5 px-4 text-[color:var(--cl-soft)]">صافي هذا المستخلص</td><td className="py-2.5 px-4 mono w-48">{stMoney(calc.net)}</td></tr>
+                <tr><td className="py-2.5 px-4 text-[color:var(--cl-soft)]">(+) صافي المستخلصات السابقة المعتمدة</td><td className="py-2.5 px-4 mono">{stMoney(acct.prevNet)}</td></tr>
+                <tr><td className="py-2.5 px-4 text-[color:var(--cl-soft)]">(−) السابق صرفه</td><td className="py-2.5 px-4 mono text-[color:var(--cl-red)]">{stMoney(acct.prevPaid)}</td></tr>
+                {acct.paidHere > 0 && (
+                  <tr><td className="py-2.5 px-4 text-[color:var(--cl-soft)]">(−) مدفوع على هذا المستخلص</td><td className="py-2.5 px-4 mono text-[color:var(--cl-red)]">{stMoney(acct.paidHere)}</td></tr>
+                )}
+                <tr className="bg-[color:var(--cl-inset)]"><td className="py-2.5 px-4 font-bold text-[color:var(--cl-text)]">المستحق صرفه الآن</td><td className="py-2.5 px-4 mono font-bold text-[color:var(--cl-text)]">{stMoney(dueNow)} ج.م</td></tr>
+              </tbody>
+            </table>
+          )}
+          <div className="p-4 space-y-3 border-t border-[color:var(--cl-sep)]">
+            <div className="text-[12px] font-bold text-[color:var(--cl-soft)]">الدفعات المسجّلة</div>
+            <div className="space-y-1">
+              {partyPays.map((p) => {
+                const st = partySts.find((s) => s.id === p.statementId);
+                const late = !p.statementId && (p.date || "") > date;
+                return (
+                  <div key={p.id} className="flex items-center justify-between text-sm bg-[color:var(--cl-inset)] rounded-lg px-3 py-2 border border-[color:var(--cl-sep)]">
+                    <span className="text-[color:var(--cl-soft)]">
+                      <span className="mono text-xs text-[color:var(--cl-muted)]">{p.date}</span> · {p.method || "—"} · {st ? `على مستخلص #${st.number}` : "دفعة عامة"}
+                      {late && <span className="text-[11px] text-[#D6A23C] mr-2">(بتاريخ بعد المستخلص — مش بتتحسب هنا)</span>}
+                    </span>
+                    <span className="flex items-center gap-2">
+                      <span className="mono font-semibold text-[color:var(--cl-green)]">{stMoney(p.amount)}</span>
+                      <button onClick={() => onDeletePayment(p.id)} title="حذف الدفعة" className="p-1 rounded text-[color:var(--cl-red)] hover:bg-[#C1453B]/10"><Trash2 size={12} /></button>
+                    </span>
+                  </div>
+                );
+              })}
+              {partyPays.length === 0 && <div className="text-xs text-[color:var(--cl-muted)]">لسه مفيش دفعات مسجّلة لـ {partyKey}.</div>}
+            </div>
+            <div className="grid grid-cols-5 gap-2 items-end">
+              <Field small label="تاريخ الدفعة" type="date" value={payForm.date} onChange={(v) => setPayForm((f) => ({ ...f, date: v }))} />
+              <Field small label="المبلغ المصروف" type="number" value={payForm.amount} onChange={(v) => setPayForm((f) => ({ ...f, amount: v }))} />
+              <SelectField small label="الطريقة" value={payForm.method} onChange={(v) => setPayForm((f) => ({ ...f, method: v }))} options={["تحويل بنكي", "نقدي", "شيك"].map((m) => ({ value: m, label: m }))} />
+              <SelectField small label="على مستخلص (اختياري)" value={payForm.statementId} onChange={(v) => setPayForm((f) => ({ ...f, statementId: v }))} options={[{ value: "", label: "— دفعة عامة —" }, ...partySts.map((s) => ({ value: s.id, label: "#" + s.number + " — " + s.date }))]} />
+              <button onClick={addPay} className="px-3 py-1.5 rounded-lg bg-[color:var(--cl-accent-bg)] text-[color:var(--cl-on-accent)] text-xs font-bold hover:bg-[color:var(--cl-accent-hover)]">+ تسجيل دفعة</button>
+            </div>
+            <div className="text-[11px] text-[color:var(--cl-muted)]">الدفعة بتتحفظ فورًا (مش محتاجة "حفظ المستخلص").</div>
+          </div>
         </div>
       )}
 
@@ -4942,7 +4999,7 @@ function StatementsModule({ kind, statements, payments, projects, dbError, onSav
   if (mode === "form") {
     return (
       <StatementForm
-        cfg={cfg} initial={editing} parties={parties} projects={projects} existing={list} payments={pays}
+        cfg={cfg} initial={editing} parties={parties} projects={projects} existing={list} payments={pays} onAddPayment={onAddPayment} onDeletePayment={onDeletePayment}
         onCancel={() => { setMode("list"); setEditing(null); }}
         onSave={async (st) => { const ok = await onSave(st); if (ok !== false) { setMode("list"); setEditing(null); } }}
       />
