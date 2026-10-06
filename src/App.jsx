@@ -321,6 +321,9 @@ function ContractingApp({ currentUsername, onLogout }) {
   const [statements, setStatements] = useState([]);
   const [statementPayments, setStatementPayments] = useState([]);
   const [statementsDbError, setStatementsDbError] = useState(null);
+  const [registeredParties, setRegisteredParties] = useState([]); // المقاولين/الموردين المسجلين
+  const [workTypes, setWorkTypes] = useState([]); // أنواع الأعمال المسجلة
+  const [registryDbError, setRegistryDbError] = useState(null);
   const [view, setView] = useState("project"); // 'project' | 'finance' | 'reports' | 'users' | 'contractor_statements' | 'supplier_statements'
   const [loading, setLoading] = useState(true);
   const [dbError, setDbError] = useState(null);
@@ -397,14 +400,101 @@ function ContractingApp({ currentUsername, onLogout }) {
       const err = stRes.error || spRes.error;
       if (err) { setStatementsDbError(err.message); return; }
       setStatementsDbError(null);
-      setStatements((stRes.data || []).map((s) => ({ id: s.id, kind: s.kind, partyName: s.party_name, date: s.statement_date, number: s.number || "", projectId: s.project_id || null, status: s.status || "", notes: s.notes || "", items: s.items || [], adjustments: s.adjustments || [], subtotal: Number(s.subtotal), netTotal: Number(s.net_total) })));
+      setStatements((stRes.data || []).map((s) => ({ id: s.id, kind: s.kind, partyName: s.party_name, date: s.statement_date, number: s.number || "", projectId: s.project_id || null, status: s.status || "", notes: s.notes || "", workType: s.work_type || "", items: s.items || [], adjustments: s.adjustments || [], subtotal: Number(s.subtotal), netTotal: Number(s.net_total) })));
       setStatementPayments((spRes.data || []).map((p) => ({ id: p.id, kind: p.kind, partyName: p.party_name, date: p.payment_date, amount: Number(p.amount), method: p.method || "", note: p.note || "", statementId: p.statement_id || null })));
     }
     loadStatements();
   }, []);
 
+  // المقاولين/الموردين المسجلين + أنواع الأعمال (جداول registered_parties و work_types)
+  useEffect(() => {
+    async function loadRegistry() {
+      const [rpRes, wtRes] = await Promise.all([
+        supabase.from("registered_parties").select("*").order("name"),
+        supabase.from("work_types").select("*").order("name"),
+      ]);
+      const err = rpRes.error || wtRes.error;
+      if (err) { setRegistryDbError(err.message); return; }
+      setRegistryDbError(null);
+      setRegisteredParties((rpRes.data || []).map((r) => ({ id: r.id, kind: r.kind, name: r.name, phone: r.phone || "", taxId: r.tax_id || "", address: r.address || "", notes: r.notes || "" })));
+      setWorkTypes((wtRes.data || []).map((w) => ({ id: w.id, kind: w.kind || "contractor", name: w.name })));
+    }
+    loadRegistry();
+  }, []);
+
+  async function saveParty(p) {
+    const name = String(p.name || "").trim();
+    if (!name) { alert("اكتب الاسم."); return false; }
+    if (registeredParties.some((x) => x.kind === p.kind && x.id !== p.id && x.name === name)) { alert("الاسم ده متسجل قبل كده."); return false; }
+    const old = registeredParties.find((x) => x.id === p.id);
+    const row = { id: p.id, kind: p.kind, name, phone: p.phone || null, tax_id: p.taxId || null, address: p.address || null, notes: p.notes || null };
+    const { error } = await supabase.from("registered_parties").upsert([row]);
+    if (error) { alert("حصل خطأ أثناء حفظ البيانات: " + error.message); return false; }
+    // لو الاسم اتغير: نحدّث الاسم في المستخلصات والدفعات القديمة عشان الحساب يفضل مربوط
+    if (old && old.name !== name) {
+      const r1 = await supabase.from("party_statements").update({ party_name: name }).eq("kind", p.kind).eq("party_name", old.name);
+      const r2 = await supabase.from("party_payments").update({ party_name: name }).eq("kind", p.kind).eq("party_name", old.name);
+      if (r1.error || r2.error) alert("اتحفظ الاسم الجديد، بس حصل خطأ أثناء تحديثه في المستخلصات/الدفعات القديمة: " + (r1.error || r2.error).message);
+      else {
+        setStatements((prev) => prev.map((s) => (s.kind === p.kind && s.partyName === old.name ? { ...s, partyName: name } : s)));
+        setStatementPayments((prev) => prev.map((x) => (x.kind === p.kind && x.partyName === old.name ? { ...x, partyName: name } : x)));
+      }
+    }
+    const saved = { ...p, name };
+    setRegisteredParties((prev) => (prev.some((x) => x.id === p.id) ? prev.map((x) => (x.id === p.id ? saved : x)) : [...prev, saved]).sort((a, b) => a.name.localeCompare(b.name, "ar")));
+    return true;
+  }
+
+  async function deleteParty(id) {
+    const p = registeredParties.find((x) => x.id === id);
+    if (!p) return;
+    const used = statements.some((s) => s.kind === p.kind && s.partyName === p.name) || statementPayments.some((x) => x.kind === p.kind && x.partyName === p.name);
+    if (used) { alert(`مينفعش تمسح "${p.name}" لأن عليه مستخلصات أو دفعات مسجّلة. امسحها الأول أو سيبه في القايمة.`); return; }
+    if (!window.confirm(`متأكد إنك عايز تمسح "${p.name}" من القايمة؟`)) return;
+    const { error } = await supabase.from("registered_parties").delete().eq("id", id);
+    if (error) { alert("حصل خطأ أثناء الحذف: " + error.message); return; }
+    setRegisteredParties((prev) => prev.filter((x) => x.id !== id));
+  }
+
+  // تسجيل كل الأسماء القديمة اللي في المستخلصات/الدفعات ومش متسجلة (مرة واحدة)
+  async function importPartiesFromStatements(kind) {
+    const known = new Set(registeredParties.filter((x) => x.kind === kind).map((x) => x.name));
+    const names = Array.from(new Set([...statements.filter((s) => s.kind === kind).map((s) => s.partyName), ...statementPayments.filter((x) => x.kind === kind).map((x) => x.partyName)].map((n) => String(n || "").trim()).filter((n) => n && !known.has(n))));
+    if (names.length === 0) { alert("كل الأسماء اللي في المستخلصات متسجلة بالفعل."); return; }
+    const rows = names.map((name) => ({ id: stUid("rp_"), kind, name }));
+    const { error } = await supabase.from("registered_parties").insert(rows);
+    if (error) { alert("حصل خطأ أثناء التسجيل: " + error.message); return; }
+    setRegisteredParties((prev) => [...prev, ...rows.map((r) => ({ ...r, phone: "", taxId: "", address: "", notes: "" }))].sort((a, b) => a.name.localeCompare(b.name, "ar")));
+    alert(`تم تسجيل ${rows.length} اسم.`);
+  }
+
+  async function addWorkType(kind, name) {
+    const n = String(name || "").trim();
+    if (!n) return null;
+    const exists = workTypes.find((w) => w.kind === kind && w.name === n);
+    if (exists) return exists;
+    const row = { id: stUid("wt_"), kind, name: n };
+    const { error } = await supabase.from("work_types").insert([row]);
+    if (error) { alert("حصل خطأ أثناء إضافة نوع الأعمال: " + error.message); return null; }
+    setWorkTypes((prev) => [...prev, row].sort((a, b) => a.name.localeCompare(b.name, "ar")));
+    return row;
+  }
+
+  async function deleteWorkType(id) {
+    const w = workTypes.find((x) => x.id === id);
+    if (!w) return;
+    const usedCount = statements.filter((s) => s.kind === w.kind && s.workType === w.name).length;
+    const msg = usedCount ? `"${w.name}" مستخدم في ${usedCount} مستخلص — المستخلصات دي هتفضل محتفظة بالاسم، بس النوع مش هيظهر في القايمة تاني. متأكد؟` : `متأكد إنك عايز تمسح "${w.name}"؟`;
+    if (!window.confirm(msg)) return;
+    const { error } = await supabase.from("work_types").delete().eq("id", id);
+    if (error) { alert("حصل خطأ أثناء الحذف: " + error.message); return; }
+    setWorkTypes((prev) => prev.filter((x) => x.id !== id));
+  }
+
   async function saveStatement(st) {
     const row = { id: st.id, kind: st.kind, party_name: st.partyName, statement_date: st.date, number: st.number, project_id: st.projectId || null, status: st.status, notes: st.notes || null, items: st.items, adjustments: st.adjustments, subtotal: st.subtotal, net_total: st.netTotal };
+    // عمود work_type بيتبعت بس لو جداول التسجيل متركّبة (عشان الحفظ ميقعش قبل تشغيل ملف SQL)
+    if (!registryDbError) row.work_type = st.workType || null;
     const { error } = await supabase.from("party_statements").upsert([row]);
     if (error) { alert("حصل خطأ أثناء حفظ المستخلص: " + error.message); return false; }
     setStatements((prev) => (prev.some((x) => x.id === st.id) ? prev.map((x) => (x.id === st.id ? st : x)) : [st, ...prev]));
@@ -952,6 +1042,14 @@ function ContractingApp({ currentUsername, onLogout }) {
               onDelete={deleteStatement}
               onAddPayment={addStatementPayment}
               onDeletePayment={deleteStatementPayment}
+              registeredParties={registeredParties}
+              workTypes={workTypes}
+              registryDbError={registryDbError}
+              onSaveParty={saveParty}
+              onDeleteParty={deleteParty}
+              onImportParties={importPartiesFromStatements}
+              onAddWorkType={addWorkType}
+              onDeleteWorkType={deleteWorkType}
             />
           </div>
         ) : (
@@ -4457,8 +4555,8 @@ function CustodySettlement({ custody, lines, pWorkItems, custodyCategories, acti
 */
 
 const ST_KINDS = {
-  contractor: { title: "مستخلصات المقاولين", partyLabel: "المقاول", partyPlural: "المقاولين", icon: HardHat },
-  supplier: { title: "مستخلصات الموردين", partyLabel: "المورد", partyPlural: "الموردين", icon: Package },
+  contractor: { title: "مستخلصات المقاولين", partyLabel: "المقاول", partyPlural: "المقاولين", workLabel: "نوع الأعمال", workPlural: "أنواع الأعمال", icon: HardHat },
+  supplier: { title: "مستخلصات الموردين", partyLabel: "المورد", partyPlural: "الموردين", workLabel: "نوع التوريد", workPlural: "أنواع التوريد", icon: Package },
 };
 
 // قائمة جاهزة للاختيار السريع — القيم قابلة للتعديل في كل مستخلص (راجع النسب مع المحاسب القانوني)
@@ -4581,6 +4679,7 @@ th,td{border:1px solid #cfc8b8;padding:5px 6px;text-align:right;font-size:11px} 
 <div><span>${stEsc(cfg.partyLabel)}: </span><b>${stEsc(s.partyName)}</b></div>
 <div><span>التاريخ: </span>${stEsc(s.date)}</div>
 ${projectName ? `<div><span>المشروع: </span>${stEsc(projectName)}</div>` : ""}
+${s.workType ? `<div><span>${stEsc(cfg.workLabel || "نوع الأعمال")}: </span>${stEsc(s.workType)}</div>` : ""}
 ${s.status ? `<div><span>الحالة: </span>${stEsc(s.status)}</div>` : ""}
 </div>
 <table><thead><tr><th>#</th><th>البند</th><th>الوحدة</th><th>الكمية السابقة</th><th>الكمية الحالية</th><th>إجمالي الكمية</th><th>السعر</th><th>نسبة التنفيذ السابقة</th><th>نسبة التنفيذ الحالية</th><th>إجمالي نسبة التنفيذ</th><th>الإجمالي</th></tr></thead><tbody>
@@ -4604,8 +4703,31 @@ ${s.notes ? `<p><b>ملاحظات:</b> ${stEsc(s.notes)}</p>` : ""}
 
 const stCellInput = "w-full border border-[color:var(--cl-line)] rounded-md px-2 py-1.5 text-sm outline-none focus:border-[color:var(--cl-accent-bg)] bg-[color:var(--cl-card)] text-[color:var(--cl-text)]";
 
-function StatementForm({ cfg, initial, parties, projects, existing, payments, onCancel, onSave, onAddPayment, onDeletePayment }) {
+function StatementForm({ cfg, initial, parties, projects, existing, payments, onCancel, onSave, onAddPayment, onDeletePayment, registry, kindWorkTypes, registryReady, onSaveParty, onAddWorkType }) {
   const [partyName, setPartyName] = useState(initial?.partyName || "");
+  const [workType, setWorkType] = useState(initial?.workType || "");
+  const [quickParty, setQuickParty] = useState(null); // { name, phone } لما تفتح "إضافة سريعة"
+  const [quickWork, setQuickWork] = useState(null); // اسم نوع أعمال جديد
+  // الأسماء في القايمة: المسجلين + اسم المستخلص الحالي لو قديم ومش متسجل
+  const partyOptions = useMemo(() => {
+    const names = registry.map((r) => r.name);
+    if (initial?.partyName && !names.includes(initial.partyName)) names.push(initial.partyName);
+    return names.sort((a, b) => a.localeCompare(b, "ar"));
+  }, [registry, initial?.partyName]);
+  const workOptions = useMemo(() => {
+    const names = kindWorkTypes.map((w) => w.name);
+    if (initial?.workType && !names.includes(initial.workType)) names.push(initial.workType);
+    return names;
+  }, [kindWorkTypes, initial?.workType]);
+  const saveQuickParty = async () => {
+    const id = stUid("rp_");
+    const ok = await onSaveParty({ id, kind: cfg.kind, name: quickParty.name, phone: quickParty.phone, taxId: "", address: "", notes: "" });
+    if (ok) { setPartyName(quickParty.name.trim()); setQuickParty(null); }
+  };
+  const saveQuickWork = async () => {
+    const w = await onAddWorkType(cfg.kind, quickWork);
+    if (w) { setWorkType(w.name); setQuickWork(null); }
+  };
   const [date, setDate] = useState(initial?.date || stToday());
   const [number, setNumber] = useState(initial?.number || "");
   const [projectId, setProjectId] = useState(initial?.projectId || "");
@@ -4697,7 +4819,7 @@ function StatementForm({ cfg, initial, parties, projects, existing, payments, on
     const c = calcStatement(cleanItems, adjustments);
     onSave({
       id: initial?.id || stUid("st_"), kind: initial?.kind || cfg.kind, partyName: name, date, number: num,
-      projectId: projectId || null, status, notes: notes.trim(),
+      projectId: projectId || null, status, notes: notes.trim(), workType: workType || "",
       items: cleanItems.map((i) => ({
         id: i.id, ver: 3, desc: i.desc.trim(), unit: i.unit, price: Number(i.price) || 0,
         qtyPrev: stPrevQty(i), qtyCur: stCurQty(i), qtyTotal: stTotalQty(i),
@@ -4716,16 +4838,58 @@ function StatementForm({ cfg, initial, parties, projects, existing, payments, on
       </div>
 
       <div className="bg-[color:var(--cl-card)] rounded-xl border border-[color:var(--cl-line)] p-4 grid grid-cols-4 gap-3">
-        <div>
-          <label className="block text-[11px] font-semibold text-[color:var(--cl-soft)] mb-1">اسم {cfg.partyLabel} *</label>
-          <input list="st-parties" value={partyName} onChange={(e) => setPartyName(e.target.value)} placeholder="اكتب أو اختار من السابقين" className="w-full border border-[color:var(--cl-line)] rounded-lg px-3 py-2 text-sm outline-none focus:border-[color:var(--cl-accent-bg)] bg-[color:var(--cl-card)]" />
-          <datalist id="st-parties">{parties.map((p) => <option key={p} value={p} />)}</datalist>
-        </div>
+        {registryReady ? (
+          <div>
+            <label className="block text-[11px] font-semibold text-[color:var(--cl-soft)] mb-1">{cfg.partyLabel} *</label>
+            <div className="flex gap-1.5">
+              <select value={partyName} onChange={(e) => setPartyName(e.target.value)} className="flex-1 min-w-0 border border-[color:var(--cl-line)] rounded-lg px-3 py-2 text-sm outline-none focus:border-[color:var(--cl-accent-bg)] bg-[color:var(--cl-card)] text-[color:var(--cl-text)]">
+                <option value="">— اختار {cfg.partyLabel} —</option>
+                {partyOptions.map((n) => <option key={n} value={n}>{n}{registry.some((r) => r.name === n) ? "" : " (غير مسجّل)"}</option>)}
+              </select>
+              <button type="button" title={`إضافة ${cfg.partyLabel} جديد`} onClick={() => setQuickParty(quickParty ? null : { name: "", phone: "" })} className="px-2.5 rounded-lg border border-[color:var(--cl-line)] text-[color:var(--cl-soft)] hover:bg-[color:var(--cl-sub)]"><Plus size={15} /></button>
+            </div>
+          </div>
+        ) : (
+          <div>
+            <label className="block text-[11px] font-semibold text-[color:var(--cl-soft)] mb-1">اسم {cfg.partyLabel} *</label>
+            <input list="st-parties" value={partyName} onChange={(e) => setPartyName(e.target.value)} placeholder="اكتب أو اختار من السابقين" className="w-full border border-[color:var(--cl-line)] rounded-lg px-3 py-2 text-sm outline-none focus:border-[color:var(--cl-accent-bg)] bg-[color:var(--cl-card)]" />
+            <datalist id="st-parties">{parties.map((p) => <option key={p} value={p} />)}</datalist>
+          </div>
+        )}
         <Field label="التاريخ *" type="date" value={date} onChange={setDate} />
         <Field label="رقم المستخلص (اختياري — تلقائي)" value={number} onChange={setNumber} placeholder="تلقائي" />
         <SelectField label="الحالة" value={status} onChange={setStatus} options={[{ value: "مسودة", label: "مسودة" }, { value: "معتمد", label: "معتمد" }]} />
+        {quickParty && (
+          <div className="col-span-4 rounded-lg border border-dashed border-[color:var(--cl-accent-bg)] bg-[color:var(--cl-inset)] p-3 grid grid-cols-4 gap-2 items-end">
+            <Field small label={`اسم ${cfg.partyLabel} الجديد *`} value={quickParty.name} onChange={(v) => setQuickParty((q) => ({ ...q, name: v }))} />
+            <Field small label="التليفون (اختياري)" value={quickParty.phone} onChange={(v) => setQuickParty((q) => ({ ...q, phone: v }))} />
+            <div className="col-span-2 flex items-center gap-2">
+              <button type="button" onClick={saveQuickParty} className="px-3 py-1.5 rounded-lg bg-[color:var(--cl-accent-bg)] text-[color:var(--cl-on-accent)] text-xs font-bold hover:bg-[color:var(--cl-accent-hover)]">تسجيل واختياره</button>
+              <button type="button" onClick={() => setQuickParty(null)} className="px-3 py-1.5 rounded-lg border border-[color:var(--cl-line)] text-xs text-[color:var(--cl-soft)] hover:bg-[color:var(--cl-sub)]">إلغاء</button>
+              <span className="text-[11px] text-[color:var(--cl-muted)]">باقي البيانات تقدر تكملها من تبويب "{cfg.partyPlural} المسجلين"</span>
+            </div>
+          </div>
+        )}
         <SelectField label="المشروع (اختياري)" value={projectId} onChange={setProjectId} options={[{ value: "", label: "— بدون مشروع —" }, ...projects.map((p) => ({ value: p.id, label: p.name }))]} />
-        <div className="col-span-3"><Field label="ملاحظات (اختياري)" value={notes} onChange={setNotes} /></div>
+        {registryReady && (
+          <div>
+            <label className="block text-[11px] font-semibold text-[color:var(--cl-soft)] mb-1">{cfg.workLabel}</label>
+            <div className="flex gap-1.5">
+              <select value={workType} onChange={(e) => setWorkType(e.target.value)} className="flex-1 min-w-0 border border-[color:var(--cl-line)] rounded-lg px-3 py-2 text-sm outline-none focus:border-[color:var(--cl-accent-bg)] bg-[color:var(--cl-card)] text-[color:var(--cl-text)]">
+                <option value="">— اختار —</option>
+                {workOptions.map((n) => <option key={n} value={n}>{n}</option>)}
+              </select>
+              <button type="button" title={`إضافة ${cfg.workLabel} جديد`} onClick={() => setQuickWork(quickWork === null ? "" : null)} className="px-2.5 rounded-lg border border-[color:var(--cl-line)] text-[color:var(--cl-soft)] hover:bg-[color:var(--cl-sub)]"><Plus size={15} /></button>
+            </div>
+            {quickWork !== null && (
+              <div className="flex gap-1.5 mt-1.5">
+                <input autoFocus value={quickWork} onChange={(e) => setQuickWork(e.target.value)} onKeyDown={(e) => e.key === "Enter" && saveQuickWork()} placeholder="مثال: محارة" className="flex-1 min-w-0 border border-[color:var(--cl-line)] rounded-lg px-2 py-1.5 text-xs outline-none focus:border-[color:var(--cl-accent-bg)] bg-[color:var(--cl-card)]" />
+                <button type="button" onClick={saveQuickWork} className="px-2.5 rounded-lg bg-[color:var(--cl-accent-bg)] text-[color:var(--cl-on-accent)] text-xs font-bold">حفظ</button>
+              </div>
+            )}
+          </div>
+        )}
+        <div className={registryReady ? "col-span-2" : "col-span-3"}><Field label="ملاحظات (اختياري)" value={notes} onChange={setNotes} /></div>
       </div>
 
       {/* البنود */}
@@ -4958,16 +5122,24 @@ function StatementForm({ cfg, initial, parties, projects, existing, payments, on
   );
 }
 
-function StatementsModule({ kind, statements, payments, projects, dbError, onSave, onDelete, onAddPayment, onDeletePayment }) {
+function StatementsModule({ kind, statements, payments, projects, dbError, onSave, onDelete, onAddPayment, onDeletePayment, registeredParties = [], workTypes = [], registryDbError, onSaveParty, onDeleteParty, onImportParties, onAddWorkType, onDeleteWorkType }) {
   const cfg = { ...ST_KINDS[kind], kind };
   const Icon = cfg.icon;
-  const [mode, setMode] = useState("list"); // list | form | parties
+  const [mode, setMode] = useState("list"); // list | form | parties | registry | worktypes
   const [editing, setEditing] = useState(null);
   const [search, setSearch] = useState("");
+  const [workFilter, setWorkFilter] = useState("");
   const [openParty, setOpenParty] = useState(null);
   const [payForm, setPayForm] = useState({ date: stToday(), amount: "", method: "تحويل بنكي", note: "", statementId: "" });
+  const emptyParty = { id: "", name: "", phone: "", taxId: "", address: "", notes: "" };
+  const [partyForm, setPartyForm] = useState(emptyParty);
+  const [newWork, setNewWork] = useState("");
 
-  useEffect(() => { setMode("list"); setEditing(null); setOpenParty(null); setSearch(""); }, [kind]);
+  useEffect(() => { setMode("list"); setEditing(null); setOpenParty(null); setSearch(""); setWorkFilter(""); setPartyForm(emptyParty); setNewWork(""); }, [kind]);
+
+  const registryReady = !registryDbError;
+  const registry = useMemo(() => registeredParties.filter((r) => r.kind === kind), [registeredParties, kind]);
+  const kindWorkTypes = useMemo(() => workTypes.filter((w) => w.kind === kind), [workTypes, kind]);
 
   const list = useMemo(() => statements.filter((s) => s.kind === kind), [statements, kind]);
   const pays = useMemo(() => payments.filter((p) => p.kind === kind), [payments, kind]);
@@ -5000,6 +5172,7 @@ function StatementsModule({ kind, statements, payments, projects, dbError, onSav
     return (
       <StatementForm
         cfg={cfg} initial={editing} parties={parties} projects={projects} existing={list} payments={pays} onAddPayment={onAddPayment} onDeletePayment={onDeletePayment}
+        registry={registry} kindWorkTypes={kindWorkTypes} registryReady={registryReady} onSaveParty={onSaveParty} onAddWorkType={onAddWorkType}
         onCancel={() => { setMode("list"); setEditing(null); }}
         onSave={async (st) => { const ok = await onSave(st); if (ok !== false) { setMode("list"); setEditing(null); } }}
       />
@@ -5008,7 +5181,8 @@ function StatementsModule({ kind, statements, payments, projects, dbError, onSav
 
   const q = search.trim();
   const filtered = list
-    .filter((s) => !q || s.partyName.includes(q) || String(s.number).includes(q) || projName(s.projectId).includes(q))
+    .filter((s) => !q || s.partyName.includes(q) || String(s.number).includes(q) || projName(s.projectId).includes(q) || (s.workType || "").includes(q))
+    .filter((s) => !workFilter || s.workType === workFilter)
     .sort((a, b) => (b.date || "").localeCompare(a.date || ""));
 
   const paidFor = (s) => stRound(pays.filter((p) => p.statementId === s.id).reduce((x, p) => x + p.amount, 0));
@@ -5041,13 +5215,122 @@ function StatementsModule({ kind, statements, payments, projects, dbError, onSav
       </div>
 
       <div className="flex items-center gap-2">
-        {[{ k: "list", l: "كل المستخلصات" }, { k: "parties", l: `كشف حساب ${cfg.partyPlural}` }].map((t) => (
+        {[
+          { k: "list", l: "كل المستخلصات" },
+          { k: "parties", l: `كشف حساب ${cfg.partyPlural}` },
+          { k: "registry", l: `${cfg.partyPlural} المسجلين` },
+          { k: "worktypes", l: cfg.workPlural },
+        ].map((t) => (
           <button key={t.k} onClick={() => setMode(t.k)} className={`px-4 py-2 rounded-lg text-sm font-semibold transition ${mode === t.k ? "bg-[color:var(--cl-ink)] text-white" : "border border-[color:var(--cl-line)] text-[color:var(--cl-soft)] hover:bg-[color:var(--cl-sub)]"}`}>{t.l}</button>
         ))}
         {mode === "list" && (
-          <input value={search} onChange={(e) => setSearch(e.target.value)} placeholder={`بحث بالاسم / الرقم / المشروع`} className="mr-auto w-72 border border-[color:var(--cl-line)] rounded-lg px-3 py-2 text-sm outline-none focus:border-[color:var(--cl-accent-bg)] bg-[color:var(--cl-card)]" />
+          <div className="mr-auto flex items-center gap-2">
+            {registryReady && kindWorkTypes.length > 0 && (
+              <select value={workFilter} onChange={(e) => setWorkFilter(e.target.value)} className="border border-[color:var(--cl-line)] rounded-lg px-3 py-2 text-sm bg-[color:var(--cl-card)] text-[color:var(--cl-text)]">
+                <option value="">كل {cfg.workPlural}</option>
+                {kindWorkTypes.map((w) => <option key={w.id} value={w.name}>{w.name}</option>)}
+              </select>
+            )}
+            <input value={search} onChange={(e) => setSearch(e.target.value)} placeholder={`بحث بالاسم / الرقم / المشروع`} className="w-72 border border-[color:var(--cl-line)] rounded-lg px-3 py-2 text-sm outline-none focus:border-[color:var(--cl-accent-bg)] bg-[color:var(--cl-card)]" />
+          </div>
         )}
       </div>
+
+      {(mode === "registry" || mode === "worktypes") && !registryReady && (
+        <div className="bg-[color:var(--cl-card)] rounded-xl border border-[color:var(--cl-red)] p-6 space-y-2">
+          <div className="font-bold text-[color:var(--cl-red)]">جداول التسجيل مش موجودة على Supabase</div>
+          <div className="text-sm text-[color:var(--cl-soft)]">شغّل ملف <span className="mono">registry_migration.sql</span> في SQL Editor ثم حدّث الصفحة. لحد ما تعمل كده، المستخلصات شغالة عادي بكتابة الاسم يدوي.</div>
+          <div className="text-[11px] mono text-[color:var(--cl-muted)]" dir="ltr">{registryDbError}</div>
+        </div>
+      )}
+
+      {mode === "registry" && registryReady && (
+        <div className="space-y-4">
+          <div className="bg-[color:var(--cl-card)] rounded-xl border border-[color:var(--cl-line)] p-4 space-y-3">
+            <div className="flex items-center justify-between">
+              <div className="font-bold text-sm text-[color:var(--cl-text)]">{partyForm.id ? `تعديل بيانات ${cfg.partyLabel}` : `تسجيل ${cfg.partyLabel} جديد`}</div>
+              <button onClick={() => onImportParties(kind)} title="يسجّل كل الأسماء اللي في المستخلصات القديمة ومش متسجلة" className="px-3 py-1.5 rounded-lg border border-[color:var(--cl-line)] text-xs text-[color:var(--cl-soft)] hover:bg-[color:var(--cl-sub)]">تسجيل الأسماء من المستخلصات القديمة</button>
+            </div>
+            <div className="grid grid-cols-5 gap-2 items-end">
+              <Field small label="الاسم *" value={partyForm.name} onChange={(v) => setPartyForm((f) => ({ ...f, name: v }))} />
+              <Field small label="التليفون" value={partyForm.phone} onChange={(v) => setPartyForm((f) => ({ ...f, phone: v }))} />
+              <Field small label="الرقم الضريبي / السجل" value={partyForm.taxId} onChange={(v) => setPartyForm((f) => ({ ...f, taxId: v }))} />
+              <Field small label="العنوان" value={partyForm.address} onChange={(v) => setPartyForm((f) => ({ ...f, address: v }))} />
+              <Field small label="ملاحظات" value={partyForm.notes} onChange={(v) => setPartyForm((f) => ({ ...f, notes: v }))} />
+            </div>
+            <div className="flex items-center gap-2">
+              <button
+                onClick={async () => { const ok = await onSaveParty({ ...partyForm, id: partyForm.id || stUid("rp_"), kind }); if (ok) setPartyForm(emptyParty); }}
+                className="px-4 py-1.5 rounded-lg bg-[color:var(--cl-accent-bg)] text-[color:var(--cl-on-accent)] text-xs font-bold hover:bg-[color:var(--cl-accent-hover)]">{partyForm.id ? "حفظ التعديل" : "+ تسجيل"}</button>
+              {partyForm.id && <button onClick={() => setPartyForm(emptyParty)} className="px-3 py-1.5 rounded-lg border border-[color:var(--cl-line)] text-xs text-[color:var(--cl-soft)] hover:bg-[color:var(--cl-sub)]">إلغاء</button>}
+              {partyForm.id && <span className="text-[11px] text-[color:var(--cl-muted)]">لو غيّرت الاسم، هيتغير تلقائي في كل مستخلصاته ودفعاته القديمة.</span>}
+            </div>
+          </div>
+          <div className="bg-[color:var(--cl-card)] rounded-xl border border-[color:var(--cl-line)] overflow-hidden">
+            <table className="w-full text-sm">
+              <thead>
+                <tr className="bg-[color:var(--cl-inset)] text-[color:var(--cl-soft)] text-[12px]">
+                  <th className="text-right py-3 px-4">الاسم</th>
+                  <th className="text-right py-3 px-4">التليفون</th>
+                  <th className="text-right py-3 px-4">الرقم الضريبي / السجل</th>
+                  <th className="text-right py-3 px-4">العنوان</th>
+                  <th className="text-right py-3 px-4">عدد المستخلصات</th>
+                  <th className="text-right py-3 px-4">المتبقي له</th>
+                  <th className="w-24" />
+                </tr>
+              </thead>
+              <tbody className="divide-y divide-[color:var(--cl-sep)]">
+                {registry.map((r) => {
+                  const pr = partyRows.find((x) => x.name === r.name);
+                  return (
+                    <tr key={r.id} className="hover:bg-[color:var(--cl-sub)] group">
+                      <td className="py-3 px-4 font-semibold text-[color:var(--cl-text)]">{r.name}{r.notes && <span className="block text-[11px] font-normal text-[color:var(--cl-muted)]">{r.notes}</span>}</td>
+                      <td className="py-3 px-4 mono text-[color:var(--cl-soft)]" dir="ltr" style={{ textAlign: "right" }}>{r.phone || "—"}</td>
+                      <td className="py-3 px-4 mono text-[color:var(--cl-soft)]">{r.taxId || "—"}</td>
+                      <td className="py-3 px-4 text-[color:var(--cl-soft)]">{r.address || "—"}</td>
+                      <td className="py-3 px-4 mono">{pr ? pr.sts.length : 0}</td>
+                      <td className={`py-3 px-4 mono font-semibold ${pr && pr.remaining > 0 ? "text-[#D6A23C]" : "text-[color:var(--cl-soft)]"}`}>{pr ? stMoney(pr.remaining) : "—"}</td>
+                      <td className="py-3 px-4">
+                        <div className="flex items-center gap-1 opacity-0 group-hover:opacity-100 transition">
+                          <button title="تعديل" onClick={() => setPartyForm({ ...emptyParty, ...r })} className="p-1.5 rounded-md text-[color:var(--cl-soft)] hover:bg-[color:var(--cl-line)]"><Pencil size={14} /></button>
+                          <button title="حذف" onClick={() => onDeleteParty(r.id)} className="p-1.5 rounded-md text-[color:var(--cl-red)] hover:bg-[#C1453B]/10"><Trash2 size={14} /></button>
+                        </div>
+                      </td>
+                    </tr>
+                  );
+                })}
+                {registry.length === 0 && <tr><td colSpan={7} className="text-center py-8 text-[color:var(--cl-muted)]">لسه مفيش {cfg.partyPlural} مسجلين.</td></tr>}
+              </tbody>
+            </table>
+          </div>
+        </div>
+      )}
+
+      {mode === "worktypes" && registryReady && (
+        <div className="bg-[color:var(--cl-card)] rounded-xl border border-[color:var(--cl-line)] p-4 space-y-4">
+          <div>
+            <div className="font-bold text-sm text-[color:var(--cl-text)]">{cfg.workPlural} المسجلة</div>
+            <div className="text-[11px] text-[color:var(--cl-muted)]">قايمة عامة بتختار منها في أي مستخلص {cfg.partyLabel}</div>
+          </div>
+          <div className="flex items-end gap-2 max-w-md">
+            <div className="flex-1"><Field small label={`${cfg.workLabel} جديد`} value={newWork} onChange={setNewWork} placeholder="مثال: محارة / كهرباء / سباكة" /></div>
+            <button onClick={async () => { const w = await onAddWorkType(kind, newWork); if (w) setNewWork(""); }} className="px-4 py-1.5 rounded-lg bg-[color:var(--cl-accent-bg)] text-[color:var(--cl-on-accent)] text-xs font-bold hover:bg-[color:var(--cl-accent-hover)]">+ إضافة</button>
+          </div>
+          <div className="flex flex-wrap gap-2">
+            {kindWorkTypes.map((w) => {
+              const n = list.filter((s) => s.workType === w.name).length;
+              return (
+                <span key={w.id} className="flex items-center gap-2 text-sm bg-[color:var(--cl-inset)] border border-[color:var(--cl-sep)] rounded-full pr-3 pl-1.5 py-1">
+                  <span className="text-[color:var(--cl-text)]">{w.name}</span>
+                  {n > 0 && <span className="text-[11px] mono text-[color:var(--cl-muted)]">{n}</span>}
+                  <button onClick={() => onDeleteWorkType(w.id)} title="حذف" className="p-0.5 rounded-full text-[color:var(--cl-red)] hover:bg-[#C1453B]/10"><X size={12} /></button>
+                </span>
+              );
+            })}
+            {kindWorkTypes.length === 0 && <div className="text-sm text-[color:var(--cl-muted)]">لسه مفيش {cfg.workPlural} مسجلة.</div>}
+          </div>
+        </div>
+      )}
 
       {mode === "list" && (
         <div className="bg-[color:var(--cl-card)] rounded-xl border border-[color:var(--cl-line)] overflow-hidden">
@@ -5058,6 +5341,7 @@ function StatementsModule({ kind, statements, payments, projects, dbError, onSav
                 <th className="text-right py-3 px-4">{cfg.partyLabel}</th>
                 <th className="text-right py-3 px-4">التاريخ</th>
                 <th className="text-right py-3 px-4">المشروع</th>
+                <th className="text-right py-3 px-4">{cfg.workLabel}</th>
                 <th className="text-right py-3 px-4">الصافي</th>
                 <th className="text-right py-3 px-4">مدفوع عليه</th>
                 <th className="text-right py-3 px-4">الحالة</th>
@@ -5071,6 +5355,7 @@ function StatementsModule({ kind, statements, payments, projects, dbError, onSav
                   <td className="py-3 px-4 font-semibold text-[color:var(--cl-text)]">{s.partyName}</td>
                   <td className="py-3 px-4 mono text-[color:var(--cl-soft)]">{s.date}</td>
                   <td className="py-3 px-4 text-[color:var(--cl-soft)]">{projName(s.projectId) || "—"}</td>
+                  <td className="py-3 px-4 text-[color:var(--cl-soft)]">{s.workType || "—"}</td>
                   <td className="py-3 px-4 mono font-bold">{stMoney(s.netTotal)}</td>
                   <td className="py-3 px-4 mono text-[color:var(--cl-green)]">{paidFor(s) ? stMoney(paidFor(s)) : "—"}</td>
                   <td className="py-3 px-4"><span className={`text-[11px] px-2 py-0.5 rounded-full ${s.status === "معتمد" ? "bg-[color:var(--cl-green)]/15 text-[color:var(--cl-green)]" : "bg-[color:var(--cl-chip)] text-[color:var(--cl-soft)]"}`}>{s.status || "—"}</span></td>
@@ -5083,7 +5368,7 @@ function StatementsModule({ kind, statements, payments, projects, dbError, onSav
                   </td>
                 </tr>
               ))}
-              {filtered.length === 0 && <tr><td colSpan={8} className="text-center py-8 text-[color:var(--cl-muted)]">لا توجد مستخلصات.</td></tr>}
+              {filtered.length === 0 && <tr><td colSpan={9} className="text-center py-8 text-[color:var(--cl-muted)]">لا توجد مستخلصات.</td></tr>}
             </tbody>
           </table>
         </div>
