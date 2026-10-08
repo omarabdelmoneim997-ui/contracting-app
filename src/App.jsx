@@ -4016,7 +4016,7 @@ function TreasuryTab({ pTreasuryEntries, openingBalance, activeProjectId, onAddE
           {editingOpening ? (
             <div className="flex items-center gap-2">
               <input
-                type="number"
+                type="number" step="any" onWheel={(e) => e.currentTarget.blur()}
                 value={openingInput}
                 onChange={(e) => setOpeningInput(e.target.value)}
                 className="border border-[color:var(--cl-line)] rounded-md px-2 py-1.5 text-sm outline-none focus:border-[color:var(--cl-accent-bg)] w-40 mono"
@@ -5388,22 +5388,22 @@ function StatementForm({ cfg, initial, parties, projects, existing, payments, on
                     {it._matched ? (
                       <div title="من المستخلص السابق — ثابتة" className="mono text-sm px-2 py-1.5 rounded-md bg-[color:var(--cl-chip)] text-[color:var(--cl-soft)] border border-[color:var(--cl-sep)]">{stQty(it.qtyPrev)}</div>
                     ) : (
-                      <input type="number" min="0" title="مفيش مستخلص سابق للبند ده — اكتب لو فيه كمية اتنفذت قبل كده" className={stCellInput + " mono"} value={it.prevQtyManual ?? ""} onChange={(e) => setItem(it.id, { prevQtyManual: e.target.value })} />
+                      <input type="number" step="any" onWheel={(e) => e.currentTarget.blur()} min="0" title="مفيش مستخلص سابق للبند ده — اكتب لو فيه كمية اتنفذت قبل كده" className={stCellInput + " mono"} value={it.prevQtyManual ?? ""} onChange={(e) => setItem(it.id, { prevQtyManual: e.target.value })} />
                     )}
                   </td>
                   <td className={`py-2 px-3 mono font-semibold ${negQty ? "text-[color:var(--cl-red)]" : "text-[color:var(--cl-text)]"}`}>{stQty(stCurQty(it))}</td>
-                  <td className="py-2 px-3"><input type="number" min={it.qtyPrev} className={stCellInput + " mono font-bold" + (negQty ? " !border-[color:var(--cl-red)]" : "")} value={it.totalIn ?? ""} placeholder={String(it.qtyPrev || "")} onChange={(e) => setItem(it.id, { totalIn: e.target.value })} /></td>
-                  <td className="py-2 px-3"><input type="number" className={stCellInput + " mono"} value={it.price} onChange={(e) => setItem(it.id, { price: e.target.value })} /></td>
+                  <td className="py-2 px-3"><input type="number" step="any" onWheel={(e) => e.currentTarget.blur()} min={it.qtyPrev} className={stCellInput + " mono font-bold" + (negQty ? " !border-[color:var(--cl-red)]" : "")} value={it.totalIn ?? ""} placeholder={String(it.qtyPrev || "")} onChange={(e) => setItem(it.id, { totalIn: e.target.value })} /></td>
+                  <td className="py-2 px-3"><input type="number" step="any" onWheel={(e) => e.currentTarget.blur()} className={stCellInput + " mono"} value={it.price} onChange={(e) => setItem(it.id, { price: e.target.value })} /></td>
                   <td className="py-2 px-3">
                     {it._matched ? (
                       <div title="من المستخلص السابق — ثابتة" className="mono text-sm px-2 py-1.5 rounded-md bg-[color:var(--cl-chip)] text-[color:var(--cl-soft)] border border-[color:var(--cl-sep)]">{stMoney(it.pctPrev)}٪</div>
                     ) : (
-                      <input type="number" min="0" max="100" title="مفيش مستخلص سابق للبند ده — اكتب لو فيه تنفيذ قبل كده" className={stCellInput + " mono"} value={it.prevPctManual ?? ""} onChange={(e) => { const v = e.target.value; setItem(it.id, { prevPctManual: v !== "" && Number(v) > 100 ? "100" : v }); }} />
+                      <input type="number" step="any" onWheel={(e) => e.currentTarget.blur()} min="0" max="100" title="مفيش مستخلص سابق للبند ده — اكتب لو فيه تنفيذ قبل كده" className={stCellInput + " mono"} value={it.prevPctManual ?? ""} onChange={(e) => { const v = e.target.value; setItem(it.id, { prevPctManual: v !== "" && Number(v) > 100 ? "100" : v }); }} />
                     )}
                   </td>
                   <td className="py-2 px-3">
                     <input
-                      type="number" min="0" max={Math.max(0, 100 - it.pctPrev)}
+                      type="number" step="any" onWheel={(e) => e.currentTarget.blur()} min="0" max={Math.max(0, 100 - it.pctPrev)}
                       disabled={it.pctPrev >= 100}
                       title={it.pctPrev >= 100 ? "البند ده وصل 100٪ في مستخلص سابق" : "لو كتبت أكتر من المتبقي بيتقص على المتبقي لحد 100٪"}
                       className={stCellInput + " mono font-bold" + (it.pctPrev >= 100 ? " opacity-50 cursor-not-allowed" : "")}
@@ -5484,7 +5484,7 @@ function StatementForm({ cfg, initial, parties, projects, existing, payments, on
                       <option value="percent">نسبة ٪</option><option value="amount">مبلغ</option>
                     </select>
                   </td>
-                  <td className="py-2 px-3"><input type="number" className={stCellInput + " mono"} value={a.value} onChange={(e) => setAdj(a.id, { value: e.target.value })} /></td>
+                  <td className="py-2 px-3"><input type="number" step="any" onWheel={(e) => e.currentTarget.blur()} className={stCellInput + " mono"} value={a.value} onChange={(e) => setAdj(a.id, { value: e.target.value })} /></td>
                   <td className="py-2 px-3">
                     <select className={stCellInput} value={a.effect} onChange={(e) => setAdj(a.id, { effect: e.target.value })}>
                       <option value="deduct">خصم (−)</option><option value="add">إضافة (+)</option>
@@ -6061,6 +6061,8 @@ function Field({ label, value, onChange, type = "text", placeholder = "", small 
       <label className="block text-[11px] font-semibold text-[color:var(--cl-soft)] mb-1">{label}</label>
       <input
         type={type}
+        step={type === "number" ? "any" : undefined}
+        onWheel={type === "number" ? (e) => e.currentTarget.blur() : undefined}
         value={value}
         placeholder={placeholder}
         onChange={(e) => onChange(e.target.value)}
