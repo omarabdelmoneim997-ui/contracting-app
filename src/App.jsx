@@ -324,6 +324,9 @@ function ContractingApp({ currentUsername, onLogout }) {
   const [registeredParties, setRegisteredParties] = useState([]); // المقاولين/الموردين المسجلين
   const [workTypes, setWorkTypes] = useState([]); // أنواع الأعمال المسجلة
   const [registryDbError, setRegistryDbError] = useState(null);
+  const [units, setUnits] = useState([]); // قايمة الوحدات (م² / طن / ...)
+  const [unitsReady, setUnitsReady] = useState(false); // جدول units موجود؟
+  const [stCostLinkReady, setStCostLinkReady] = useState(false); // عمود work_item_id في party_statements موجود؟
   const [view, setView] = useState("project"); // 'project' | 'finance' | 'reports' | 'users' | 'contractor_statements' | 'supplier_statements'
   const [loading, setLoading] = useState(true);
   const [dbError, setDbError] = useState(null);
@@ -400,8 +403,11 @@ function ContractingApp({ currentUsername, onLogout }) {
       const err = stRes.error || spRes.error;
       if (err) { setStatementsDbError(err.message); return; }
       setStatementsDbError(null);
-      setStatements((stRes.data || []).map((s) => ({ id: s.id, kind: s.kind, partyName: s.party_name, date: s.statement_date, number: s.number || "", projectId: s.project_id || null, status: s.status || "", notes: s.notes || "", workType: s.work_type || "", items: s.items || [], adjustments: s.adjustments || [], subtotal: Number(s.subtotal), netTotal: Number(s.net_total) })));
+      setStatements((stRes.data || []).map((s) => ({ id: s.id, kind: s.kind, partyName: s.party_name, date: s.statement_date, number: s.number || "", projectId: s.project_id || null, status: s.status || "", notes: s.notes || "", workType: s.work_type || "", workItemId: s.work_item_id || "", items: s.items || [], adjustments: s.adjustments || [], subtotal: Number(s.subtotal), netTotal: Number(s.net_total) })));
       setStatementPayments((spRes.data || []).map((p) => ({ id: p.id, kind: p.kind, partyName: p.party_name, date: p.payment_date, amount: Number(p.amount), method: p.method || "", note: p.note || "", statementId: p.statement_id || null })));
+      // ربط المستخلصات بتكاليف المشروع شغال بس بعد تشغيل statement_costs_migration.sql
+      const probe = await supabase.from("party_statements").select("work_item_id").limit(1);
+      setStCostLinkReady(!probe.error);
     }
     loadStatements();
   }, []);
@@ -421,6 +427,37 @@ function ContractingApp({ currentUsername, onLogout }) {
     }
     loadRegistry();
   }, []);
+
+  useEffect(() => {
+    async function loadUnits() {
+      const { data, error } = await supabase.from("units").select("*").order("name");
+      if (error) { setUnitsReady(false); return; } // الجدول مش موجود → خانات الوحدة بتفضل كتابة حرة
+      setUnits((data || []).map((u) => ({ id: u.id, name: u.name })));
+      setUnitsReady(true);
+    }
+    loadUnits();
+  }, []);
+
+  async function addUnit(name) {
+    const n = String(name || "").trim();
+    if (!n) return null;
+    const exists = units.find((u) => u.name === n);
+    if (exists) return exists;
+    const row = { id: stUid("un_"), name: n };
+    const { error } = await supabase.from("units").insert([row]);
+    if (error) { alert("حصل خطأ أثناء إضافة الوحدة: " + error.message); return null; }
+    setUnits((prev) => [...prev, row].sort((a, b) => a.name.localeCompare(b.name, "ar")));
+    return row;
+  }
+
+  async function deleteUnit(id) {
+    const u = units.find((x) => x.id === id);
+    if (!u) return;
+    if (!window.confirm(`متأكد إنك عايز تمسح الوحدة "${u.name}" من القايمة؟ البنود والتكاليف القديمة هتفضل محتفظة بيها.`)) return;
+    const { error } = await supabase.from("units").delete().eq("id", id);
+    if (error) { alert("حصل خطأ أثناء حذف الوحدة: " + error.message); return; }
+    setUnits((prev) => prev.filter((x) => x.id !== id));
+  }
 
   async function saveParty(p) {
     const name = String(p.name || "").trim();
@@ -495,10 +532,33 @@ function ContractingApp({ currentUsername, onLogout }) {
     const row = { id: st.id, kind: st.kind, party_name: st.partyName, statement_date: st.date, number: st.number, project_id: st.projectId || null, status: st.status, notes: st.notes || null, items: st.items, adjustments: st.adjustments, subtotal: st.subtotal, net_total: st.netTotal };
     // عمود work_type بيتبعت بس لو جداول التسجيل متركّبة (عشان الحفظ ميقعش قبل تشغيل ملف SQL)
     if (!registryDbError) row.work_type = st.workType || null;
+    if (stCostLinkReady) row.work_item_id = st.workItemId || null;
     const { error } = await supabase.from("party_statements").upsert([row]);
     if (error) { alert("حصل خطأ أثناء حفظ المستخلص: " + error.message); return false; }
     setStatements((prev) => (prev.some((x) => x.id === st.id) ? prev.map((x) => (x.id === st.id ? st : x)) : [st, ...prev]));
+    if (stCostLinkReady) await syncStatementCost(st);
     return true;
+  }
+
+  // المستخلص المعتمد المربوط بمشروع وبند عمل = تكلفة واحدة على المشروع (أعمال المستخلص قبل الخصومات)
+  // id التكلفة ثابت: "stc_" + id المستخلص → أي تعديل في المستخلص بيحدّث نفس التكلفة، والرجوع لمسودة/الحذف بيشيلها
+  async function syncStatementCost(st) {
+    const costId = stCostId(st.id);
+    const exists = costs.some((c) => c.id === costId);
+    const amount = stRound(st.subtotal);
+    const want = st.status === "معتمد" && st.projectId && st.workItemId && workItems.some((w) => w.id === st.workItemId) && amount !== 0;
+    if (!want) {
+      if (!exists) return;
+      const { error } = await supabase.from("costs").delete().eq("id", costId);
+      if (error) { alert("اتحفظ المستخلص، بس حصل خطأ أثناء شيل التكلفة المرتبطة بيه من المشروع: " + error.message); return; }
+      setCosts((prev) => prev.filter((c) => c.id !== costId));
+      return;
+    }
+    const c = stCostFromStatement(st);
+    const row = { id: c.id, project_id: c.projectId, work_item_id: c.workItemId, custody_id: null, type: c.type, description: c.desc, cost_level_1: c.costLevel1 || null, cost_level_2: c.costLevel2 || null, qty: c.qty, unit: c.unit, price: c.price, date: c.date };
+    const { error } = await supabase.from("costs").upsert([row]);
+    if (error) { alert("اتحفظ المستخلص، بس حصل خطأ أثناء تسجيله كتكلفة على المشروع: " + error.message); return; }
+    setCosts((prev) => (exists ? prev.map((x) => (x.id === costId ? c : x)) : [...prev, c]));
   }
 
   async function deleteStatement(id) {
@@ -507,6 +567,12 @@ function ContractingApp({ currentUsername, onLogout }) {
     if (error) { alert("حصل خطأ أثناء حذف المستخلص: " + error.message); return; }
     // الدفعات المرتبطة بالمستخلص تفضل كدفعات عامة على الطرف
     await supabase.from("party_payments").update({ statement_id: null }).eq("statement_id", id);
+    // التكلفة المرتبطة بالمستخلص على المشروع بتتشال معاه
+    if (costs.some((c) => c.id === stCostId(id))) {
+      const { error: cErr } = await supabase.from("costs").delete().eq("id", stCostId(id));
+      if (cErr) alert("اتمسح المستخلص، بس حصل خطأ أثناء شيل التكلفة المرتبطة بيه: " + cErr.message);
+      else setCosts((prev) => prev.filter((c) => c.id !== stCostId(id)));
+    }
     setStatements((prev) => prev.filter((x) => x.id !== id));
     setStatementPayments((prev) => prev.map((p) => (p.statementId === id ? { ...p, statementId: null } : p)));
   }
@@ -573,7 +639,13 @@ function ContractingApp({ currentUsername, onLogout }) {
   }
 
   async function deleteWorkItem(id) {
-    if (!window.confirm("متأكد إنك عايز تمسح بند العمل ده؟ هيتمسح معاه أي تكاليف مرتبطة بيه.")) return;
+    const linkedSts = statements.filter((s) => s.workItemId === id);
+    if (!window.confirm("متأكد إنك عايز تمسح بند العمل ده؟ هيتمسح معاه أي تكاليف مرتبطة بيه." + (linkedSts.length ? `\n\nفيه ${linkedSts.length} مستخلص مقاول/مورد مربوط بالبند ده — هيتفك ربطهم وتكلفتهم هتتشال من المشروع لحد ما تختارلهم بند تاني.` : ""))) return;
+    if (linkedSts.length) {
+      const { error: stErr } = await supabase.from("party_statements").update({ work_item_id: null }).eq("work_item_id", id);
+      if (stErr) { alert("حصل خطأ أثناء فك ربط المستخلصات: " + stErr.message); return; }
+      setStatements((prev) => prev.map((s) => (s.workItemId === id ? { ...s, workItemId: "" } : s)));
+    }
     const { error: costsError } = await supabase.from("costs").delete().eq("work_item_id", id);
     if (costsError) { alert("حصل خطأ أثناء حذف التكاليف المرتبطة: " + costsError.message); return; }
     const { error: ecError } = await supabase.from("expected_costs").update({ work_item_id: null }).eq("work_item_id", id);
@@ -1050,6 +1122,12 @@ function ContractingApp({ currentUsername, onLogout }) {
               onImportParties={importPartiesFromStatements}
               onAddWorkType={addWorkType}
               onDeleteWorkType={deleteWorkType}
+              workItems={workItems}
+              costLinkReady={stCostLinkReady}
+              units={units}
+              unitsReady={unitsReady}
+              onAddUnit={addUnit}
+              onDeleteUnit={deleteUnit}
             />
           </div>
         ) : (
@@ -1130,6 +1208,9 @@ function ContractingApp({ currentUsername, onLogout }) {
           )}
           {tab === "costs" && (
             <CostsTab
+              units={units}
+              unitsReady={unitsReady}
+              onAddUnit={addUnit}
               pCosts={pCosts}
               pWorkItems={pWorkItems}
               activeProjectId={activeProjectId}
@@ -3068,7 +3149,7 @@ function CostExcelImportPanel({ pWorkItems, activeProjectId, onImport, onClose }
 
 /* ------------------------------- بنود التكاليف ------------------------------- */
 
-function CostsTab({ pCosts, pWorkItems, activeProjectId, onAddCost, onAddCostsBulk, onUpdateCost, onDeleteCost }) {
+function CostsTab({ pCosts, pWorkItems, activeProjectId, onAddCost, onAddCostsBulk, onUpdateCost, onDeleteCost, units = [], unitsReady = false, onAddUnit }) {
   const [filter, setFilter] = useState("الكل");
   const [open, setOpen] = useState(false);
   const [showImport, setShowImport] = useState(false);
@@ -3277,7 +3358,14 @@ function CostsTab({ pCosts, pWorkItems, activeProjectId, onAddCost, onAddCostsBu
           )}
 
           <Field label="الكمية" value={form.qty} onChange={(v) => setForm((f) => ({ ...f, qty: v }))} type="number" />
-          <Field label="الوحدة" value={form.unit} onChange={(v) => setForm((f) => ({ ...f, unit: v }))} placeholder="طن / دفعة / يوم" />
+          {unitsReady ? (
+            <div>
+              <label className="block text-[11px] font-semibold text-[color:var(--cl-soft)] mb-1">الوحدة</label>
+              <UnitSelect value={form.unit === "-" ? "" : form.unit} onChange={(v) => setForm((f) => ({ ...f, unit: v }))} units={units} onAddUnit={onAddUnit} />
+            </div>
+          ) : (
+            <Field label="الوحدة" value={form.unit} onChange={(v) => setForm((f) => ({ ...f, unit: v }))} placeholder="طن / دفعة / يوم" />
+          )}
           <Field label="سعر الوحدة / القيمة" value={form.price} onChange={(v) => setForm((f) => ({ ...f, price: v }))} type="number" />
           <div className="col-span-3 flex justify-end gap-2">
             {editId && <button onClick={cancelForm} className="px-4 py-2 rounded-lg bg-[color:var(--cl-line)] text-[color:var(--cl-text)] text-sm font-semibold hover:bg-[color:var(--cl-hover)] transition">إلغاء</button>}
@@ -3354,10 +3442,14 @@ function CostsTab({ pCosts, pWorkItems, activeProjectId, onAddCost, onAddCostsBu
                                 </div>
                                 <div className="flex items-center gap-2 shrink-0">
                                   <span className="font-bold mono">{money(c.qty * c.price)}</span>
+                                  {isStatementCost(c) ? (
+                                    <span title="التكلفة دي جاية من مستخلص معتمد — بتتعدل أو تتشال من شاشة المستخلصات" className="text-[10px] px-2 py-0.5 rounded-full bg-[color:var(--cl-chip)] text-[color:var(--cl-soft)] border border-[color:var(--cl-sep)]">من مستخلص</span>
+                                  ) : (
                                   <div className="flex gap-1 opacity-0 group-hover:opacity-100 transition">
                                     <button onClick={() => startEdit(c)} title="تعديل" className="p-1 rounded-md text-[color:var(--cl-soft)] hover:bg-[color:var(--cl-line)] hover:text-[color:var(--cl-text)] transition"><Pencil size={13} /></button>
                                     <button onClick={() => onDeleteCost(c.id)} title="حذف" className="p-1 rounded-md text-[color:var(--cl-red)] hover:bg-[#C1453B]/10 transition"><Trash2 size={13} /></button>
                                   </div>
+                                  )}
                                 </div>
                               </div>
                             ))}
@@ -4572,7 +4664,20 @@ const ST_ADJ_PRESETS = [
 
 const stRound = (n) => Math.round((Number(n) || 0) * 100) / 100;
 const stUid = (p) => p + Math.random().toString(36).slice(2, 8) + Date.now().toString(36).slice(-3);
-const stToday = () => new Date().toISOString().slice(0, 10);
+const stToday = () => { const d = new Date(); return new Date(d.getTime() - d.getTimezoneOffset() * 60000).toISOString().slice(0, 10); }; // تاريخ اليوم بالتوقيت المحلي
+// ربط المستخلص بتكاليف المشروع
+const stCostId = (statementId) => "stc_" + statementId;
+const isStatementCost = (c) => String(c?.id || "").startsWith("stc_");
+function stCostFromStatement(st) {
+  const isContractor = st.kind !== "supplier";
+  return {
+    id: stCostId(st.id), projectId: st.projectId, workItemId: st.workItemId, custodyId: null,
+    type: isContractor ? "مصنعيات" : "مشتريات",
+    desc: `مستخلص ${isContractor ? "مقاول" : "مورد"}: ${st.partyName}`,
+    costLevel1: st.workType || "", costLevel2: `مستخلص رقم ${st.number}`,
+    qty: 1, unit: "مستخلص", price: stRound(st.subtotal), date: st.date,
+  };
+}
 const stEsc = (v) => String(v ?? "").replace(/[&<>"']/g, (c) => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;", "'": "&#39;" }[c]));
 const stMoney = (n) => stRound(n).toLocaleString("en-US", { minimumFractionDigits: 0, maximumFractionDigits: 2 });
 
@@ -4703,8 +4808,9 @@ ${s.notes ? `<p><b>ملاحظات:</b> ${stEsc(s.notes)}</p>` : ""}
 
 const stCellInput = "w-full border border-[color:var(--cl-line)] rounded-md px-2 py-1.5 text-sm outline-none focus:border-[color:var(--cl-accent-bg)] bg-[color:var(--cl-card)] text-[color:var(--cl-text)]";
 
-function StatementForm({ cfg, initial, parties, projects, existing, payments, onCancel, onSave, onAddPayment, onDeletePayment, registry, kindWorkTypes, registryReady, onSaveParty, onAddWorkType }) {
+function StatementForm({ cfg, initial, parties, projects, existing, payments, onCancel, onSave, onAddPayment, onDeletePayment, registry, kindWorkTypes, registryReady, onSaveParty, onAddWorkType, workItems = [], costLinkReady, units = [], unitsReady = false, onAddUnit }) {
   const [partyName, setPartyName] = useState(initial?.partyName || "");
+  const [workItemId, setWorkItemId] = useState(initial?.workItemId || "");
   const [workType, setWorkType] = useState(initial?.workType || "");
   const [quickParty, setQuickParty] = useState(null); // { name, phone } لما تفتح "إضافة سريعة"
   const [quickWork, setQuickWork] = useState(null); // اسم نوع أعمال جديد
@@ -4742,6 +4848,7 @@ function StatementForm({ cfg, initial, parties, projects, existing, payments, on
       : [{ id: stUid("si_"), desc: "", unit: "", price: "", totalIn: "", curPctIn: "", prevQtyManual: "0", prevPctManual: "0" }]
   );
   const [adjustments, setAdjustments] = useState(initial?.adjustments || []);
+  const projWorkItems = useMemo(() => workItems.filter((w) => w.projectId === projectId), [workItems, projectId]);
   const [err, setErr] = useState("");
   const [payForm, setPayForm] = useState({ date: stToday(), amount: "", method: "تحويل بنكي", statementId: "" });
 
@@ -4811,6 +4918,7 @@ function StatementForm({ cfg, initial, parties, projects, existing, payments, on
     if (less) return setErr(`البند "${less.desc}": إجمالي الكمية (${stQty(stTotalQty(less))}) أقل من الكمية السابقة (${stQty(stPrevQty(less))}).`);
     const badPct = cleanItems.find((i) => stPrev(i) < 0 || stPrev(i) > 100 || stCur(i) < 0 || stTotalPct(i) > 100.0001);
     if (badPct) return setErr(`البند "${badPct.desc}": نسبة التنفيذ (سابق ${stMoney(stPrev(badPct))}٪ + حالي ${stMoney(stCur(badPct))}٪) لازم يكون إجماليها بين 0 و 100٪.`);
+    if (costLinkReady && projectId && status === "معتمد" && !workItemId) return setErr("المستخلص معتمد ومربوط بمشروع — اختار بند العمل اللي هتتسجّل عليه التكلفة.");
     let num = number.trim();
     if (!num) {
       const nums = existing.filter((s) => s.partyName === name && s.id !== initial?.id).map((s) => parseInt(s.number, 10)).filter((n) => !isNaN(n));
@@ -4819,7 +4927,7 @@ function StatementForm({ cfg, initial, parties, projects, existing, payments, on
     const c = calcStatement(cleanItems, adjustments);
     onSave({
       id: initial?.id || stUid("st_"), kind: initial?.kind || cfg.kind, partyName: name, date, number: num,
-      projectId: projectId || null, status, notes: notes.trim(), workType: workType || "",
+      projectId: projectId || null, status, notes: notes.trim(), workType: workType || "", workItemId: projectId ? workItemId || "" : "",
       items: cleanItems.map((i) => ({
         id: i.id, ver: 3, desc: i.desc.trim(), unit: i.unit, price: Number(i.price) || 0,
         qtyPrev: stPrevQty(i), qtyCur: stCurQty(i), qtyTotal: stTotalQty(i),
@@ -4870,7 +4978,23 @@ function StatementForm({ cfg, initial, parties, projects, existing, payments, on
             </div>
           </div>
         )}
-        <SelectField label="المشروع (اختياري)" value={projectId} onChange={setProjectId} options={[{ value: "", label: "— بدون مشروع —" }, ...projects.map((p) => ({ value: p.id, label: p.name }))]} />
+        <SelectField label="المشروع (اختياري)" value={projectId} onChange={(v) => { setProjectId(v); if (v !== projectId) setWorkItemId(""); }} options={[{ value: "", label: "— بدون مشروع —" }, ...projects.map((p) => ({ value: p.id, label: p.name }))]} />
+        {costLinkReady && projectId && (
+          <div className="col-span-4 rounded-lg bg-[color:var(--cl-inset)] border border-[color:var(--cl-sep)] p-3 grid grid-cols-4 gap-3 items-end">
+            <SelectField
+              label={`بند العمل في المشروع${status === "معتمد" ? " *" : ""}`}
+              value={workItemId}
+              onChange={setWorkItemId}
+              options={[{ value: "", label: "— اختار بند العمل —" }, ...projWorkItems.map((w) => ({ value: w.id, label: w.name }))]}
+            />
+            <div className="col-span-3 text-[12px] text-[color:var(--cl-soft)] leading-relaxed">
+              {status === "معتمد"
+                ? <>لما تحفظ، <b>أعمال هذا المستخلص ({stMoney(calc.subtotal)} ج.م)</b> هتتسجّل تلقائي كتكلفة <b>{cfg.kind === "supplier" ? "مشتريات" : "مصنعيات"}</b> على بند العمل ده في تكاليف المشروع.</>
+                : <>المستخلص لسه <b>مسودة</b> — مش هيتسجّل كتكلفة على المشروع غير لما تخلّيه <b>معتمد</b>.</>}
+              {projWorkItems.length === 0 && <span className="block text-[color:var(--cl-red)]">المشروع ده مفيهوش بنود أعمال — ضيف بند من تبويب "بنود الأعمال" الأول.</span>}
+            </div>
+          </div>
+        )}
         {registryReady && (
           <div>
             <label className="block text-[11px] font-semibold text-[color:var(--cl-soft)] mb-1">{cfg.workLabel}</label>
@@ -4924,7 +5048,9 @@ function StatementForm({ cfg, initial, parties, projects, existing, payments, on
                 <tr key={it.id}>
                   <td className="py-2 px-3 mono text-[color:var(--cl-muted)]">{i + 1}</td>
                   <td className="py-2 px-3"><input className={stCellInput} value={it.desc} onChange={(e) => setItem(it.id, { desc: e.target.value })} placeholder="وصف البند" /></td>
-                  <td className="py-2 px-3"><input className={stCellInput} value={it.unit} onChange={(e) => setItem(it.id, { unit: e.target.value })} placeholder="م² / طن" /></td>
+                  <td className="py-2 px-3">{unitsReady
+                    ? <UnitSelect compact value={it.unit} onChange={(v) => setItem(it.id, { unit: v })} units={units} onAddUnit={onAddUnit} />
+                    : <input className={stCellInput} value={it.unit} onChange={(e) => setItem(it.id, { unit: e.target.value })} placeholder="م² / طن" />}</td>
                   <td className="py-2 px-3">
                     {it._matched ? (
                       <div title="من المستخلص السابق — ثابتة" className="mono text-sm px-2 py-1.5 rounded-md bg-[color:var(--cl-chip)] text-[color:var(--cl-soft)] border border-[color:var(--cl-sep)]">{stQty(it.qtyPrev)}</div>
@@ -5122,7 +5248,7 @@ function StatementForm({ cfg, initial, parties, projects, existing, payments, on
   );
 }
 
-function StatementsModule({ kind, statements, payments, projects, dbError, onSave, onDelete, onAddPayment, onDeletePayment, registeredParties = [], workTypes = [], registryDbError, onSaveParty, onDeleteParty, onImportParties, onAddWorkType, onDeleteWorkType }) {
+function StatementsModule({ kind, statements, payments, projects, dbError, onSave, onDelete, onAddPayment, onDeletePayment, registeredParties = [], workTypes = [], registryDbError, onSaveParty, onDeleteParty, onImportParties, onAddWorkType, onDeleteWorkType, workItems = [], costLinkReady = false, units = [], unitsReady = false, onAddUnit, onDeleteUnit }) {
   const cfg = { ...ST_KINDS[kind], kind };
   const Icon = cfg.icon;
   const [mode, setMode] = useState("list"); // list | form | parties | registry | worktypes
@@ -5134,6 +5260,7 @@ function StatementsModule({ kind, statements, payments, projects, dbError, onSav
   const emptyParty = { id: "", name: "", phone: "", taxId: "", address: "", notes: "" };
   const [partyForm, setPartyForm] = useState(emptyParty);
   const [newWork, setNewWork] = useState("");
+  const [newUnit, setNewUnit] = useState("");
 
   useEffect(() => { setMode("list"); setEditing(null); setOpenParty(null); setSearch(""); setWorkFilter(""); setPartyForm(emptyParty); setNewWork(""); }, [kind]);
 
@@ -5173,6 +5300,7 @@ function StatementsModule({ kind, statements, payments, projects, dbError, onSav
       <StatementForm
         cfg={cfg} initial={editing} parties={parties} projects={projects} existing={list} payments={pays} onAddPayment={onAddPayment} onDeletePayment={onDeletePayment}
         registry={registry} kindWorkTypes={kindWorkTypes} registryReady={registryReady} onSaveParty={onSaveParty} onAddWorkType={onAddWorkType}
+        workItems={workItems} costLinkReady={costLinkReady} units={units} unitsReady={unitsReady} onAddUnit={onAddUnit}
         onCancel={() => { setMode("list"); setEditing(null); }}
         onSave={async (st) => { const ok = await onSave(st); if (ok !== false) { setMode("list"); setEditing(null); } }}
       />
@@ -5220,6 +5348,7 @@ function StatementsModule({ kind, statements, payments, projects, dbError, onSav
           { k: "parties", l: `كشف حساب ${cfg.partyPlural}` },
           { k: "registry", l: `${cfg.partyPlural} المسجلين` },
           { k: "worktypes", l: cfg.workPlural },
+          { k: "units", l: "الوحدات" },
         ].map((t) => (
           <button key={t.k} onClick={() => setMode(t.k)} className={`px-4 py-2 rounded-lg text-sm font-semibold transition ${mode === t.k ? "bg-[color:var(--cl-ink)] text-white" : "border border-[color:var(--cl-line)] text-[color:var(--cl-soft)] hover:bg-[color:var(--cl-sub)]"}`}>{t.l}</button>
         ))}
@@ -5332,6 +5461,35 @@ function StatementsModule({ kind, statements, payments, projects, dbError, onSav
         </div>
       )}
 
+      {mode === "units" && (
+        unitsReady ? (
+          <div className="bg-[color:var(--cl-card)] rounded-xl border border-[color:var(--cl-line)] p-4 space-y-4">
+            <div>
+              <div className="font-bold text-sm text-[color:var(--cl-text)]">الوحدات</div>
+              <div className="text-[11px] text-[color:var(--cl-muted)]">قايمة واحدة بتظهر في خانة "الوحدة" في بنود المستخلصات وفي تكاليف المشروع</div>
+            </div>
+            <div className="flex items-end gap-2 max-w-md">
+              <div className="flex-1"><Field small label="وحدة جديدة" value={newUnit} onChange={setNewUnit} placeholder="مثال: م² / طن / مقطوعية" /></div>
+              <button onClick={async () => { const u = await onAddUnit(newUnit); if (u) setNewUnit(""); }} className="px-4 py-1.5 rounded-lg bg-[color:var(--cl-accent-bg)] text-[color:var(--cl-on-accent)] text-xs font-bold hover:bg-[color:var(--cl-accent-hover)]">+ إضافة</button>
+            </div>
+            <div className="flex flex-wrap gap-2">
+              {units.map((u) => (
+                <span key={u.id} className="flex items-center gap-2 text-sm bg-[color:var(--cl-inset)] border border-[color:var(--cl-sep)] rounded-full pr-3 pl-1.5 py-1">
+                  <span className="text-[color:var(--cl-text)]">{u.name}</span>
+                  <button onClick={() => onDeleteUnit(u.id)} title="حذف" className="p-0.5 rounded-full text-[color:var(--cl-red)] hover:bg-[#C1453B]/10"><X size={12} /></button>
+                </span>
+              ))}
+              {units.length === 0 && <div className="text-sm text-[color:var(--cl-muted)]">لسه مفيش وحدات مسجلة.</div>}
+            </div>
+          </div>
+        ) : (
+          <div className="bg-[color:var(--cl-card)] rounded-xl border border-[color:var(--cl-red)] p-6 space-y-2">
+            <div className="font-bold text-[color:var(--cl-red)]">جدول الوحدات مش موجود على Supabase</div>
+            <div className="text-sm text-[color:var(--cl-soft)]">شغّل ملف <span className="mono">units_migration.sql</span> في SQL Editor ثم حدّث الصفحة. لحد ما تعمل كده، خانة الوحدة بتفضل كتابة حرة.</div>
+          </div>
+        )
+      )}
+
       {mode === "list" && (
         <div className="bg-[color:var(--cl-card)] rounded-xl border border-[color:var(--cl-line)] overflow-hidden">
           <table className="w-full text-sm">
@@ -5358,7 +5516,13 @@ function StatementsModule({ kind, statements, payments, projects, dbError, onSav
                   <td className="py-3 px-4 text-[color:var(--cl-soft)]">{s.workType || "—"}</td>
                   <td className="py-3 px-4 mono font-bold">{stMoney(s.netTotal)}</td>
                   <td className="py-3 px-4 mono text-[color:var(--cl-green)]">{paidFor(s) ? stMoney(paidFor(s)) : "—"}</td>
-                  <td className="py-3 px-4"><span className={`text-[11px] px-2 py-0.5 rounded-full ${s.status === "معتمد" ? "bg-[color:var(--cl-green)]/15 text-[color:var(--cl-green)]" : "bg-[color:var(--cl-chip)] text-[color:var(--cl-soft)]"}`}>{s.status || "—"}</span></td>
+                  <td className="py-3 px-4"><span className={`text-[11px] px-2 py-0.5 rounded-full ${s.status === "معتمد" ? "bg-[color:var(--cl-green)]/15 text-[color:var(--cl-green)]" : "bg-[color:var(--cl-chip)] text-[color:var(--cl-soft)]"}`}>{s.status || "—"}</span>
+                    {costLinkReady && s.status === "معتمد" && s.projectId && (
+                      s.workItemId && workItems.some((w) => w.id === s.workItemId)
+                        ? <span className="block mt-1 text-[10px] text-[color:var(--cl-green)]" title={"على بند: " + (workItems.find((w) => w.id === s.workItemId)?.name || "")}>✓ في تكاليف المشروع</span>
+                        : <span className="block mt-1 text-[10px] text-[#D6A23C]" title="افتح المستخلص واختار بند العمل عشان يتسجّل كتكلفة">⚠ مش مربوط بالتكاليف</span>
+                    )}
+                  </td>
                   <td className="py-3 px-4">
                     <div className="flex items-center gap-1 opacity-0 group-hover:opacity-100 transition">
                       <button title="طباعة" onClick={() => printStatement(s, cfg, projName(s.projectId), stAccount(s, list, pays))} className="p-1.5 rounded-md text-[color:var(--cl-soft)] hover:bg-[color:var(--cl-line)]"><Printer size={14} /></button>
@@ -5484,6 +5648,42 @@ function NewProjectModal({ onClose, onCreate }) {
 }
 
 /* -------------------------------- form fields ------------------------------- */
+
+// خانة الوحدة: قايمة منسدلة من جدول units + "إضافة وحدة جديدة" من نفس المكان
+function UnitSelect({ value, onChange, units = [], onAddUnit, compact }) {
+  const [adding, setAdding] = useState(false);
+  const [draft, setDraft] = useState("");
+  const names = units.map((u) => u.name);
+  const v = value || "";
+  const cls = compact
+    ? "w-full border border-[color:var(--cl-line)] rounded-md px-2 py-1.5 text-sm outline-none focus:border-[color:var(--cl-accent-bg)] bg-[color:var(--cl-card)] text-[color:var(--cl-text)]"
+    : "w-full border border-[color:var(--cl-line)] rounded-lg px-3 py-2 text-sm outline-none focus:border-[color:var(--cl-accent-bg)] transition bg-[color:var(--cl-card)] text-[color:var(--cl-text)]";
+  const save = async () => {
+    const u = await onAddUnit(draft);
+    if (u) { onChange(u.name); setAdding(false); setDraft(""); }
+  };
+  if (adding) {
+    return (
+      <div className="flex gap-1">
+        <input
+          autoFocus value={draft} onChange={(e) => setDraft(e.target.value)} placeholder="وحدة جديدة"
+          onKeyDown={(e) => { if (e.key === "Enter") save(); if (e.key === "Escape") { setAdding(false); setDraft(""); } }}
+          className={cls + " min-w-0"}
+        />
+        <button type="button" onClick={save} title="حفظ" className="px-2 rounded-md bg-[color:var(--cl-accent-bg)] text-[color:var(--cl-on-accent)] text-xs font-bold shrink-0">✓</button>
+        <button type="button" onClick={() => { setAdding(false); setDraft(""); }} title="إلغاء" className="px-1.5 rounded-md border border-[color:var(--cl-line)] text-[color:var(--cl-soft)] shrink-0"><X size={12} /></button>
+      </div>
+    );
+  }
+  return (
+    <select value={v} onChange={(e) => (e.target.value === "__add" ? setAdding(true) : onChange(e.target.value))} className={cls}>
+      <option value="">— الوحدة —</option>
+      {names.map((n) => <option key={n} value={n}>{n}</option>)}
+      {v && !names.includes(v) && <option value={v}>{v}</option>}
+      <option value="__add">+ إضافة وحدة جديدة…</option>
+    </select>
+  );
+}
 
 function Field({ label, value, onChange, type = "text", placeholder = "", small }) {
   return (
