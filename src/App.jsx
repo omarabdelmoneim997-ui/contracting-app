@@ -945,7 +945,7 @@ function ContractingApp({ currentUsername, onLogout }) {
 
   const navGroups = [
     { title: "نظرة عامة", keys: ["dashboard", "analytics"] },
-    { title: "التخطيط والتنفيذ", keys: ["items", "budget", "costs"] },
+    { title: "التخطيط والتنفيذ", keys: ["items", "budget"] }, // "التكاليف الفعلية" اتنقلت لمركز التقارير
     { title: "المالية والتحصيل", keys: ["extracts", "treasury", "custody"] },
   ];
 
@@ -1151,6 +1151,7 @@ function ContractingApp({ currentUsername, onLogout }) {
               financeTransactions={financeTransactions}
               expectedCosts={expectedCosts}
               defaultProjectId={activeProjectId}
+              costsManager={{ units, unitsReady, onAddUnit: addUnit, onAddCost: addCost, onAddCostsBulk: addCostsBulk, onUpdateCost: updateCost, onDeleteCost: deleteCost }}
             />
           </div>
         ) : view === "finance" ? (
@@ -1387,6 +1388,7 @@ const rTypeLabel = (k) => COST_TYPES.find((t) => t.key === k)?.label || k || "�
 const rOverTone = (v) => (v > 0 ? "text-[color:var(--cl-red)]" : "text-[color:var(--cl-green)]");
 
 const REPORT_LIST = [
+  { key: "costs_manage", title: "التكاليف الفعلية", desc: "شاشة التكاليف الفعلية للمشروع: إضافة وتعديل وحذف التكاليف ورفعها من إكسيل، مع العرض المجمّع حسب بند العمل.", icon: ReceiptText, manage: true },
   { key: "executive", title: "التقرير التنفيذي للمشروع", desc: "قيمة العقد، الأعمال، التكلفة الفعلية والمتوقعة، الربح والهامش، التحصيل وأهم التجاوزات.", icon: LayoutDashboard },
   { key: "costs", title: "تقرير التكاليف التفصيلي", desc: "التكاليف حسب النوع وبند العمل ومستوى التكلفة الأول والثاني (الكمية × السعر).", icon: ReceiptText },
   { key: "bva", title: "تقرير Budget vs Actual", desc: "الميزانية مقابل الفعلي لكل بند مع الفرق ونسبة الانحراف وتحديد البنود المتجاوزة.", icon: Gauge },
@@ -1955,7 +1957,7 @@ function ItemsReport({ s }) {
 }
 
 /* -------- مركز التقارير (الواجهة الرئيسية) -------- */
-function ReportsCenter({ projects, workItems, costs, extracts, collections, treasuryEntries, financePersons, financeTransactions, expectedCosts, defaultProjectId }) {
+function ReportsCenter({ projects, workItems, costs, extracts, collections, treasuryEntries, financePersons, financeTransactions, expectedCosts, defaultProjectId, costsManager }) {
   const [reportKey, setReportKey] = useState(null);
   const [projectId, setProjectId] = useState(defaultProjectId || "all");
   const [from, setFrom] = useState("");
@@ -2021,9 +2023,11 @@ function ReportsCenter({ projects, workItems, costs, extracts, collections, trea
             <button onClick={() => setReportKey(null)} className="px-3 py-2 rounded-lg border border-[color:var(--cl-line)] bg-[color:var(--cl-card)] text-sm font-semibold text-[color:var(--cl-text)] hover:bg-[color:var(--cl-inset)] flex items-center gap-1.5 transition">
               <ChevronRight size={15} /> كل التقارير
             </button>
+            {!current.manage && (
             <button onClick={() => window.print()} className="px-3 py-2 rounded-lg bg-[color:var(--cl-accent-bg)] text-[color:var(--cl-on-accent)] text-sm font-semibold flex items-center gap-1.5 hover:bg-[color:var(--cl-accent-hover)] transition">
               <Printer size={15} /> طباعة / PDF
             </button>
+            )}
           </div>
         )}
       </div>
@@ -2068,6 +2072,31 @@ function ReportsCenter({ projects, workItems, costs, extracts, collections, trea
         </div>
       )}
 
+      {reportKey === "costs_manage" && (
+        projectId === "all" ? (
+          <div className="bg-[color:var(--cl-card)] rounded-xl border border-[color:var(--cl-line)] p-8 text-center space-y-2">
+            <ReceiptText size={28} className="mx-auto text-[color:var(--cl-muted)]" />
+            <div className="font-bold text-[color:var(--cl-text)]">اختار مشروع من فوق</div>
+            <div className="text-sm text-[color:var(--cl-muted)]">التكاليف الفعلية بتتسجّل وتتعدّل لكل مشروع لوحده — اختار المشروع من خانة "المشروع".</div>
+          </div>
+        ) : costsManager ? (
+          <div className="space-y-3">
+            {(from || to) && <div className="no-print text-[12px] text-[color:var(--cl-muted)]">فلتر التاريخ مش بيطبّق على الشاشة دي — بتعرض كل تكاليف المشروع.</div>}
+            <CostsTab
+              units={costsManager.units}
+              unitsReady={costsManager.unitsReady}
+              onAddUnit={costsManager.onAddUnit}
+              pCosts={costs.filter((c) => c.projectId === projectId)}
+              pWorkItems={workItems.filter((w) => w.projectId === projectId)}
+              activeProjectId={projectId}
+              onAddCost={costsManager.onAddCost}
+              onAddCostsBulk={costsManager.onAddCostsBulk}
+              onUpdateCost={costsManager.onUpdateCost}
+              onDeleteCost={costsManager.onDeleteCost}
+            />
+          </div>
+        ) : null
+      )}
       {reportKey === "executive" && <ExecutiveReport s={s} />}
       {reportKey === "costs" && <CostDetailReport s={s} />}
       {reportKey === "bva" && <BudgetVsActualReport s={s} />}
