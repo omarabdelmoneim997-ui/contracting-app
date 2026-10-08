@@ -4920,25 +4920,231 @@ ${s.notes ? `<p><b>ملاحظات:</b> ${stEsc(s.notes)}</p>` : ""}
   w.onload = () => { w.focus(); w.print(); };
 }
 
+/* ---------- مستخلص من إكسيل: نموذج + قراءة ---------- */
+const ST_XL = {
+  head: "بيانات المستخلص", items: "البنود", adj: "الخصومات والإضافات",
+  itemCols: ["البند", "الوحدة", "إجمالي الكمية", "السعر", "نسبة التنفيذ الحالية ٪", "الكمية السابقة", "نسبة التنفيذ السابقة ٪"],
+  adjCols: ["الاسم", "النوع", "القيمة", "الأثر", "تُحسب على"],
+};
+const stXlHeadRows = (cfg) => [
+  [cfg.partyLabel, "اسم " + cfg.partyLabel + " زي ما هو متسجل في البرنامج"],
+  ["التاريخ", "مثال: 2026-10-08"],
+  ["رقم المستخلص", "سيبه فاضي = تلقائي"],
+  ["الحالة", "مسودة أو معتمد"],
+  ["المشروع", "اسم المشروع زي ما هو في البرنامج (اختياري)"],
+  ["بند العمل", "اسم بند العمل في المشروع (لازم لو معتمد ومربوط بمشروع)"],
+  [cfg.workLabel || "نوع الأعمال", "اختياري"],
+  ["ملاحظات", "اختياري"],
+];
+
+function downloadStatementTemplate(cfg) {
+  loadSheetJS()
+    .then((XLSX) => {
+      const wb = XLSX.utils.book_new();
+      const head = XLSX.utils.aoa_to_sheet([["البيان", "القيمة", "توضيح"], ...stXlHeadRows(cfg).map(([k, hint]) => [k, "", hint])]);
+      head["!cols"] = [{ wch: 18 }, { wch: 32 }, { wch: 52 }];
+      const items = XLSX.utils.aoa_to_sheet([ST_XL.itemCols]);
+      items["!cols"] = [{ wch: 40 }, { wch: 10 }, { wch: 14 }, { wch: 12 }, { wch: 22 }, { wch: 16 }, { wch: 22 }];
+      const adj = XLSX.utils.aoa_to_sheet([ST_XL.adjCols]);
+      adj["!cols"] = [{ wch: 28 }, { wch: 10 }, { wch: 10 }, { wch: 10 }, { wch: 24 }];
+      const help = XLSX.utils.aoa_to_sheet([
+        ["طريقة الاستخدام"],
+        [`1) املا شيت "${ST_XL.head}" في عمود القيمة.`],
+        [`2) في شيت "${ST_XL.items}" كل سطر = بند. البند والسعر وإجمالي الكمية مطلوبين.`],
+        ["3) نسبة التنفيذ الحالية: اكتب الرقم بس (30 = 30٪). سيبها فاضية = تكملة البند لـ 100٪."],
+        ["4) الكمية والنسبة السابقة: سيبهم فاضيين والبرنامج هيجيبهم من المستخلص اللي قبله لنفس البند (بنفس الاسم)."],
+        ["5) الخصومات والإضافات اختيارية — النوع: نسبة أو مبلغ | الأثر: خصم أو إضافة | تُحسب على: إجمالي الأعمال أو الإجمالي بعد السابق."],
+        ["6) في البرنامج: رفع مستخلص من إكسيل ← راجع ← حفظ المستخلص."],
+        [],
+        ["مثال لبند:", "محارة داخلي", "م²", 500, 120, 30, "", ""],
+        ["مثال لخصم:", "ضمان أعمال", "نسبة", 5, "خصم", "إجمالي الأعمال"],
+      ]);
+      help["!cols"] = [{ wch: 14 }, { wch: 40 }, { wch: 10 }, { wch: 10 }, { wch: 10 }, { wch: 14 }];
+      XLSX.utils.book_append_sheet(wb, head, ST_XL.head);
+      XLSX.utils.book_append_sheet(wb, items, ST_XL.items);
+      XLSX.utils.book_append_sheet(wb, adj, ST_XL.adj);
+      XLSX.utils.book_append_sheet(wb, help, "تعليمات");
+      wb.Workbook = { Views: [{ RTL: true }] };
+      XLSX.writeFile(wb, `نموذج ${cfg.title}.xlsx`);
+    })
+    .catch((err) => alert(err.message));
+}
+
+// أرقام: بتقبل الأرقام العربية والفواصل وعلامة ٪
+const stXlDigits = (t) => t.replace(/[٠-٩]/g, (d) => String("٠١٢٣٤٥٦٧٨٩".indexOf(d)));
+const stXlNum = (v) => {
+  if (v === null || v === undefined) return "";
+  if (typeof v === "number") return v;
+  const t = stXlDigits(String(v).trim()).replace(/٫/g, ".").replace(/[,،٬\s]/g, "").replace(/[%٪]/g, "");
+  if (t === "") return "";
+  const n = Number(t);
+  return isNaN(n) ? NaN : n;
+};
+// نسبة: لو الخلية متنسّقة نسبة مئوية في إكسيل (0.3) بنحوّلها لـ 30
+const stXlPct = (cell) => {
+  if (!cell || cell.v === "" || cell.v == null) return "";
+  if (typeof cell.v === "number") return /%/.test(cell.z || "") ? stRound(cell.v * 100) : cell.v;
+  return stXlNum(cell.v);
+};
+const stXlDate = (cell) => {
+  if (!cell || cell.v == null || cell.v === "") return "";
+  const v = cell.v;
+  if (v instanceof Date && !isNaN(v)) return new Date(v.getTime() - v.getTimezoneOffset() * 60000).toISOString().slice(0, 10);
+  const s = stXlDigits(String(v).trim());
+  let m = s.match(/^(\d{4})[-/.](\d{1,2})[-/.](\d{1,2})$/);
+  if (m) return `${m[1]}-${m[2].padStart(2, "0")}-${m[3].padStart(2, "0")}`;
+  m = s.match(/^(\d{1,2})[-/.](\d{1,2})[-/.](\d{4})$/); // يوم/شهر/سنة
+  if (m) return `${m[3]}-${m[2].padStart(2, "0")}-${m[1].padStart(2, "0")}`;
+  return "";
+};
+const stXlTxt = (v) => String(v ?? "").trim();
+
+function parseStatementExcel(file, cfg, ctx) {
+  return loadSheetJS().then((XLSX) =>
+    file.arrayBuffer().then((buf) => {
+      const wb = XLSX.read(buf, { type: "array", cellDates: true });
+      const warnings = [];
+      const find = (name) => wb.Sheets[name] || wb.Sheets[wb.SheetNames.find((n) => stNorm(n) === stNorm(name)) || ""];
+      // البنود: شيت "البنود" أو أول شيت أول صف فيه عمود "البند"
+      let itemsWs = find(ST_XL.items);
+      if (!itemsWs) {
+        const n = wb.SheetNames.find((nm) => (XLSX.utils.sheet_to_json(wb.Sheets[nm], { header: 1 })[0] || []).some((h) => stNorm(h) === "البند"));
+        itemsWs = n ? wb.Sheets[n] : null;
+      }
+      if (!itemsWs) return { error: `الملف مفيهوش شيت "${ST_XL.items}". نزّل النموذج من البرنامج واملاه.` };
+
+      // بنقرا الخلايا نفسها (مش النص بس) عشان نعرف النسب المتنسقة ٪ والتواريخ
+      const table = (ws) => {
+        const ref = ws["!ref"];
+        if (!ref) return { cols: {}, rows: [] };
+        const r = XLSX.utils.decode_range(ref);
+        const cols = {};
+        for (let c = r.s.c; c <= r.e.c; c++) { const h = ws[XLSX.utils.encode_cell({ r: r.s.r, c })]; if (h) cols[stNorm(h.v)] = c; }
+        const rows = [];
+        for (let rr = r.s.r + 1; rr <= r.e.r; rr++) {
+          const row = rr;
+          const get = (name) => { const c = cols[stNorm(name)]; return c === undefined ? null : ws[XLSX.utils.encode_cell({ r: row, c })] || null; };
+          rows.push({ excelRow: rr + 1, get });
+        }
+        return { cols, rows };
+      };
+
+      const it = table(itemsWs);
+      ["البند", "السعر"].forEach((h) => { if (it.cols[stNorm(h)] === undefined) warnings.push(`شيت البنود مفيهوش عمود "${h}".`); });
+      const formItems = [];
+      it.rows.forEach(({ excelRow, get }) => {
+        const desc = stXlTxt(get("البند")?.v);
+        const qty = stXlNum((get("إجمالي الكمية") || get("الكمية"))?.v);
+        const price = stXlNum(get("السعر")?.v);
+        if (!desc && (qty === "" || qty === 0) && (price === "" || price === 0)) return; // سطر فاضي
+        if (!desc) { warnings.push(`سطر ${excelRow}: مفيهوش اسم بند — اتجاهل.`); return; }
+        if (qty === "" || isNaN(qty)) warnings.push(`سطر ${excelRow} (${desc}): إجمالي الكمية مش مكتوب أو مش رقم — اكتبها في الشاشة.`);
+        if (price === "" || isNaN(price)) warnings.push(`سطر ${excelRow} (${desc}): السعر مش مكتوب أو مش رقم — اكتبه في الشاشة.`);
+        const cur = stXlPct(get("نسبة التنفيذ الحالية ٪") || get("نسبة التنفيذ الحالية"));
+        const pq = stXlNum(get("الكمية السابقة")?.v);
+        const pp = stXlPct(get("نسبة التنفيذ السابقة ٪") || get("نسبة التنفيذ السابقة"));
+        const hasPq = pq !== "" && !isNaN(pq);
+        const hasPp = pp !== "" && !isNaN(pp);
+        const manualPrev = hasPq || hasPp;
+        formItems.push({
+          id: stUid("si_"), desc, unit: stXlTxt(get("الوحدة")?.v),
+          price: price === "" || isNaN(price) ? "" : String(price),
+          totalIn: qty === "" || isNaN(qty) ? "" : String(qty),
+          curPctIn: cur === "" || isNaN(cur) ? "" : String(Math.max(0, cur)),
+          prevQtyManual: hasPq ? String(pq) : "0",
+          prevPctManual: hasPp ? String(Math.min(100, Math.max(0, pp))) : "0",
+          ...(manualPrev ? { prevSource: "manual" } : {}),
+        });
+      });
+      if (formItems.length === 0) return { error: `شيت "${ST_XL.items}" فاضي — اكتب بند واحد على الأقل.` };
+
+      // بيانات المستخلص: عمود البيان + عمود القيمة
+      const d = { partyName: "", date: "", number: "", status: "مسودة", projectId: "", workItemId: "", workType: "", notes: "" };
+      const headWs = find(ST_XL.head);
+      if (headWs && headWs["!ref"]) {
+        const r = XLSX.utils.decode_range(headWs["!ref"]);
+        const val = {};
+        for (let rr = r.s.r; rr <= r.e.r; rr++) {
+          const k = headWs[XLSX.utils.encode_cell({ r: rr, c: r.s.c })];
+          if (k) val[stNorm(k.v)] = headWs[XLSX.utils.encode_cell({ r: rr, c: r.s.c + 1 })] || null;
+        }
+        const g = (k) => val[stNorm(k)];
+        d.partyName = stXlTxt((g(cfg.partyLabel) || g("المقاول") || g("المورد"))?.v);
+        d.date = stXlDate(g("التاريخ"));
+        if (g("التاريخ")?.v && !d.date) warnings.push(`التاريخ "${g("التاريخ").v}" مش مفهوم — اتحط تاريخ النهارده.`);
+        d.number = stXlTxt(g("رقم المستخلص")?.v);
+        const stt = stXlTxt(g("الحالة")?.v);
+        d.status = stt === "معتمد" ? "معتمد" : "مسودة";
+        if (stt && stt !== "معتمد" && stt !== "مسودة") warnings.push(`الحالة "${stt}" مش معروفة — اتحطت مسودة.`);
+        const pName = stXlTxt(g("المشروع")?.v);
+        if (pName) {
+          const pr = ctx.projects.find((p) => stNorm(p.name) === stNorm(pName));
+          if (pr) d.projectId = pr.id;
+          else warnings.push(`المشروع "${pName}" مش موجود في البرنامج — اختاره من القايمة.`);
+        }
+        const wName = stXlTxt(g("بند العمل")?.v);
+        if (wName) {
+          const wi = ctx.workItems.find((w) => w.projectId === d.projectId && stNorm(w.name) === stNorm(wName));
+          if (wi) d.workItemId = wi.id;
+          else warnings.push(`بند العمل "${wName}" مش موجود في المشروع — اختاره من القايمة.`);
+        }
+        const wt = stXlTxt((g(cfg.workLabel || "نوع الأعمال") || g("نوع الأعمال"))?.v);
+        if (wt) {
+          const m = ctx.kindWorkTypes.find((w) => stNorm(w.name) === stNorm(wt));
+          d.workType = m ? m.name : wt;
+          if (!m) warnings.push(`${cfg.workLabel || "نوع الأعمال"} "${wt}" مش متسجل — ممكن تضيفه من زرار (+).`);
+        }
+        d.notes = stXlTxt(g("ملاحظات")?.v);
+      } else {
+        warnings.push(`مفيش شيت "${ST_XL.head}" — اختار ${cfg.partyLabel} والتاريخ من الشاشة.`);
+      }
+      if (d.partyName && !ctx.registry.some((r) => r.name === d.partyName)) {
+        const m = ctx.registry.find((r) => stNorm(r.name) === stNorm(d.partyName));
+        if (m) d.partyName = m.name;
+        else warnings.push(`${cfg.partyLabel} "${d.partyName}" مش متسجل — سجّله من زرار (+) أو اختار اسم من القايمة.`);
+      }
+      if (!d.partyName) warnings.push(`اسم ${cfg.partyLabel} مش مكتوب في الملف — اختاره من القايمة.`);
+
+      // الخصومات والإضافات (اختياري)
+      const adjustments = [];
+      const adjWs = find(ST_XL.adj);
+      if (adjWs) {
+        table(adjWs).rows.forEach(({ excelRow, get }) => {
+          const name = stXlTxt(get("الاسم")?.v);
+          if (!name) return;
+          const kind = /مبلغ/.test(stXlTxt(get("النوع")?.v)) ? "amount" : "percent";
+          const value = kind === "percent" ? stXlPct(get("القيمة")) : stXlNum(get("القيمة")?.v);
+          if (value === "" || isNaN(value)) warnings.push(`الخصومات سطر ${excelRow} (${name}): القيمة مش رقم — اكتبها في الشاشة.`);
+          const eff = stXlTxt(get("الأثر")?.v);
+          const base = stXlTxt((get("تُحسب على") || get("تحسب على"))?.v);
+          adjustments.push({ id: stUid("sa_"), name, kind, value: value === "" || isNaN(value) ? 0 : value, effect: /ضاف|\+/.test(eff) ? "add" : "deduct", base: /بعد/.test(base) ? "running" : "subtotal" });
+        });
+      }
+      return { ...d, formItems, adjustments, warnings, fileName: file.name };
+    })
+  );
+}
+
 const stCellInput = "w-full border border-[color:var(--cl-line)] rounded-md px-2 py-1.5 text-sm outline-none focus:border-[color:var(--cl-accent-bg)] bg-[color:var(--cl-card)] text-[color:var(--cl-text)]";
 
-function StatementForm({ cfg, initial, parties, projects, existing, payments, onCancel, onSave, onAddPayment, onDeletePayment, registry, kindWorkTypes, registryReady, onSaveParty, onAddWorkType, workItems = [], costLinkReady, units = [], unitsReady = false, onAddUnit, payCostReady = false }) {
-  const [partyName, setPartyName] = useState(initial?.partyName || "");
-  const [workItemId, setWorkItemId] = useState(initial?.workItemId || "");
-  const [workType, setWorkType] = useState(initial?.workType || "");
+function StatementForm({ cfg, initial, parties, projects, existing, payments, onCancel, onSave, onAddPayment, onDeletePayment, registry, kindWorkTypes, registryReady, onSaveParty, onAddWorkType, workItems = [], costLinkReady, units = [], unitsReady = false, onAddUnit, payCostReady = false, draft = null }) {
+  const src = initial || draft; // draft = مستخلص جاي من ملف إكسيل (جديد، لسه متحفظش)
+  const [partyName, setPartyName] = useState(src?.partyName || "");
+  const [workItemId, setWorkItemId] = useState(src?.workItemId || "");
+  const [workType, setWorkType] = useState(src?.workType || "");
   const [quickParty, setQuickParty] = useState(null); // { name, phone } لما تفتح "إضافة سريعة"
   const [quickWork, setQuickWork] = useState(null); // اسم نوع أعمال جديد
   // الأسماء في القايمة: المسجلين + اسم المستخلص الحالي لو قديم ومش متسجل
   const partyOptions = useMemo(() => {
     const names = registry.map((r) => r.name);
-    if (initial?.partyName && !names.includes(initial.partyName)) names.push(initial.partyName);
+    if (src?.partyName && !names.includes(src.partyName)) names.push(src.partyName);
     return names.sort((a, b) => a.localeCompare(b, "ar"));
-  }, [registry, initial?.partyName]);
+  }, [registry, src?.partyName]);
   const workOptions = useMemo(() => {
     const names = kindWorkTypes.map((w) => w.name);
-    if (initial?.workType && !names.includes(initial.workType)) names.push(initial.workType);
+    if (src?.workType && !names.includes(src.workType)) names.push(src.workType);
     return names;
-  }, [kindWorkTypes, initial?.workType]);
+  }, [kindWorkTypes, src?.workType]);
   const saveQuickParty = async () => {
     const id = stUid("rp_");
     const ok = await onSaveParty({ id, kind: cfg.kind, name: quickParty.name, phone: quickParty.phone, taxId: "", address: "", notes: "" });
@@ -4948,20 +5154,22 @@ function StatementForm({ cfg, initial, parties, projects, existing, payments, on
     const w = await onAddWorkType(cfg.kind, quickWork);
     if (w) { setWorkType(w.name); setQuickWork(null); }
   };
-  const [date, setDate] = useState(initial?.date || stToday());
-  const [number, setNumber] = useState(initial?.number || "");
-  const [projectId, setProjectId] = useState(initial?.projectId || "");
-  const [status, setStatus] = useState(initial?.status || "مسودة");
-  const [notes, setNotes] = useState(initial?.notes || "");
+  const [date, setDate] = useState(src?.date || stToday());
+  const [number, setNumber] = useState(src?.number || "");
+  const [projectId, setProjectId] = useState(src?.projectId || "");
+  const [status, setStatus] = useState(src?.status || "مسودة");
+  const [notes, setNotes] = useState(src?.notes || "");
   const [items, setItems] = useState(
-    initial?.items?.length
+    !initial && draft?.formItems?.length
+      ? draft.formItems
+      : initial?.items?.length
       ? initial.items.map((i) => {
           const n = stN(i);
           return { id: i.id, desc: i.desc, unit: i.unit, price: i.price, totalIn: String(n.qtyTotal), curPctIn: String(n.pctCur), prevQtyManual: String(n.qtyPrev), prevPctManual: String(n.pctPrev), prevSource: i.prevSource === "auto" ? "auto" : "manual" };
         })
       : [{ id: stUid("si_"), desc: "", unit: "", price: "", totalIn: "", curPctIn: "", prevQtyManual: "0", prevPctManual: "0" }]
   );
-  const [adjustments, setAdjustments] = useState(initial?.adjustments || []);
+  const [adjustments, setAdjustments] = useState(src?.adjustments || []);
   const projWorkItems = useMemo(() => workItems.filter((w) => w.projectId === projectId), [workItems, projectId]);
   const [err, setErr] = useState("");
   const [payForm, setPayForm] = useState({ date: stToday(), amount: "", method: "تحويل بنكي", statementId: "", projectId: initial?.projectId || "", workItemId: initial?.workItemId || "" });
@@ -5057,9 +5265,16 @@ function StatementForm({ cfg, initial, parties, projects, existing, payments, on
   return (
     <div className="space-y-5">
       <div className="flex items-center justify-between">
-        <h2 className="font-bold text-xl text-[color:var(--cl-text)]">{initial ? "تعديل مستخلص" : "مستخلص جديد"} — {cfg.partyLabel}</h2>
+        <h2 className="font-bold text-xl text-[color:var(--cl-text)]">{initial ? "تعديل مستخلص" : draft ? "مستخلص جديد من إكسيل" : "مستخلص جديد"} — {cfg.partyLabel}</h2>
         <button onClick={onCancel} className="px-3 py-2 rounded-lg border border-[color:var(--cl-line)] text-sm text-[color:var(--cl-soft)] hover:bg-[color:var(--cl-sub)]">رجوع</button>
       </div>
+
+      {!initial && draft && (
+        <div className="rounded-xl border border-[#D6A23C]/50 bg-[#D6A23C]/10 p-4 text-sm space-y-1">
+          <div className="font-bold text-[color:var(--cl-text)]">اتقرا من ملف "{draft.fileName}": {draft.formItems.length} بند{draft.adjustments?.length ? ` و${draft.adjustments.length} خصم/إضافة` : ""} — راجع البيانات ودوس "حفظ المستخلص"</div>
+          {draft.warnings.map((w, i) => <div key={i} className="text-[12px] text-[color:var(--cl-soft)]">⚠ {w}</div>)}
+        </div>
+      )}
 
       <div className="bg-[color:var(--cl-card)] rounded-xl border border-[color:var(--cl-line)] p-4 grid grid-cols-4 gap-3">
         {registryReady ? (
@@ -5380,6 +5595,8 @@ function StatementsModule({ kind, statements, payments, projects, dbError, onSav
   const [partyForm, setPartyForm] = useState(emptyParty);
   const [newWork, setNewWork] = useState("");
   const [newUnit, setNewUnit] = useState("");
+  const [draft, setDraft] = useState(null); // مستخلص مستورد من إكسيل
+  const [importing, setImporting] = useState(false);
 
   useEffect(() => { setMode("list"); setEditing(null); setOpenParty(null); setSearch(""); setWorkFilter(""); setPartyForm(emptyParty); setNewWork(""); }, [kind]);
 
@@ -5419,9 +5636,9 @@ function StatementsModule({ kind, statements, payments, projects, dbError, onSav
       <StatementForm
         cfg={cfg} initial={editing} parties={parties} projects={projects} existing={list} payments={pays} onAddPayment={onAddPayment} onDeletePayment={onDeletePayment}
         registry={registry} kindWorkTypes={kindWorkTypes} registryReady={registryReady} onSaveParty={onSaveParty} onAddWorkType={onAddWorkType}
-        workItems={workItems} costLinkReady={costLinkReady} units={units} unitsReady={unitsReady} onAddUnit={onAddUnit} payCostReady={payCostReady}
-        onCancel={() => { setMode("list"); setEditing(null); }}
-        onSave={async (st) => { const ok = await onSave(st); if (ok !== false) { setMode("list"); setEditing(null); } }}
+        workItems={workItems} costLinkReady={costLinkReady} units={units} unitsReady={unitsReady} onAddUnit={onAddUnit} payCostReady={payCostReady} draft={editing ? null : draft}
+        onCancel={() => { setMode("list"); setEditing(null); setDraft(null); }}
+        onSave={async (st) => { const ok = await onSave(st); if (ok !== false) { setMode("list"); setEditing(null); setDraft(null); } }}
       />
     );
   }
@@ -5441,9 +5658,28 @@ function StatementsModule({ kind, statements, payments, projects, dbError, onSav
           <h2 className="font-bold text-xl text-[color:var(--cl-text)] flex items-center gap-2"><Icon size={20} /> {cfg.title}</h2>
           <p className="text-[12px] text-[color:var(--cl-muted)] mt-1">مستقلة عن المشاريع والعقود — اربط بمشروع لو حابب فقط</p>
         </div>
-        <button onClick={() => { setEditing(null); setMode("form"); }} className="px-3 py-2 rounded-lg bg-[color:var(--cl-accent-bg)] text-[color:var(--cl-on-accent)] text-sm font-semibold flex items-center gap-1.5 hover:bg-[color:var(--cl-accent-hover)] transition">
+        <div className="flex items-center gap-2">
+        <button onClick={() => downloadStatementTemplate(cfg)} title="نموذج إكسيل فاضي تملاه وترفعه" className="px-3 py-2 rounded-lg border border-[color:var(--cl-line)] text-[color:var(--cl-text)] text-sm font-semibold flex items-center gap-1.5 hover:bg-[color:var(--cl-sub)] transition">
+          <FileStack size={15} /> نموذج إكسيل
+        </button>
+        <label className={`px-3 py-2 rounded-lg border border-[color:var(--cl-line)] text-[color:var(--cl-text)] text-sm font-semibold flex items-center gap-1.5 hover:bg-[color:var(--cl-sub)] transition cursor-pointer ${importing ? "opacity-60 pointer-events-none" : ""}`}>
+          {importing ? <Loader2 size={15} className="animate-spin" /> : <Upload size={15} />} رفع مستخلص من إكسيل
+          <input type="file" accept=".xlsx,.xls" className="hidden" onChange={async (e) => {
+            const f = e.target.files?.[0]; e.target.value = "";
+            if (!f) return;
+            setImporting(true);
+            try {
+              const d = await parseStatementExcel(f, cfg, { projects, workItems, registry, kindWorkTypes });
+              if (d.error) { alert(d.error); return; }
+              setEditing(null); setDraft(d); setMode("form");
+            } catch (err) { alert("حصل خطأ أثناء قراءة الملف: " + (err?.message || err)); }
+            finally { setImporting(false); }
+          }} />
+        </label>
+        <button onClick={() => { setEditing(null); setDraft(null); setMode("form"); }} className="px-3 py-2 rounded-lg bg-[color:var(--cl-accent-bg)] text-[color:var(--cl-on-accent)] text-sm font-semibold flex items-center gap-1.5 hover:bg-[color:var(--cl-accent-hover)] transition">
           <Plus size={15} /> مستخلص جديد
         </button>
+        </div>
       </div>
 
       <div className="grid grid-cols-3 gap-3">
@@ -5645,7 +5881,7 @@ function StatementsModule({ kind, statements, payments, projects, dbError, onSav
                   <td className="py-3 px-4">
                     <div className="flex items-center gap-1 opacity-0 group-hover:opacity-100 transition">
                       <button title="طباعة" onClick={() => printStatement(s, cfg, projName(s.projectId), stAccount(s, list, pays))} className="p-1.5 rounded-md text-[color:var(--cl-soft)] hover:bg-[color:var(--cl-line)]"><Printer size={14} /></button>
-                      <button title="تعديل" onClick={() => { setEditing(s); setMode("form"); }} className="p-1.5 rounded-md text-[color:var(--cl-soft)] hover:bg-[color:var(--cl-line)]"><Pencil size={14} /></button>
+                      <button title="تعديل" onClick={() => { setEditing(s); setDraft(null); setMode("form"); }} className="p-1.5 rounded-md text-[color:var(--cl-soft)] hover:bg-[color:var(--cl-line)]"><Pencil size={14} /></button>
                       <button title="حذف" onClick={() => onDelete(s.id)} className="p-1.5 rounded-md text-[color:var(--cl-red)] hover:bg-[#C1453B]/10"><Trash2 size={14} /></button>
                     </div>
                   </td>
