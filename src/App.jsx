@@ -326,7 +326,8 @@ function ContractingApp({ currentUsername, onLogout }) {
   const [registryDbError, setRegistryDbError] = useState(null);
   const [units, setUnits] = useState([]); // قايمة الوحدات (م² / طن / ...)
   const [unitsReady, setUnitsReady] = useState(false); // جدول units موجود؟
-  const [stCostLinkReady, setStCostLinkReady] = useState(false); // عمود work_item_id في party_statements موجود؟
+  const [stCostLinkReady, setStCostLinkReady] = useState(false);
+  const [payCostReady, setPayCostReady] = useState(false); // أعمدة project_id/work_item_id في party_payments موجودة؟ (الدفعات → تكاليف فعلية) // عمود work_item_id في party_statements موجود؟
   const [view, setView] = useState("project"); // 'project' | 'finance' | 'reports' | 'users' | 'contractor_statements' | 'supplier_statements'
   const [loading, setLoading] = useState(true);
   const [dbError, setDbError] = useState(null);
@@ -404,7 +405,9 @@ function ContractingApp({ currentUsername, onLogout }) {
       if (err) { setStatementsDbError(err.message); return; }
       setStatementsDbError(null);
       setStatements((stRes.data || []).map((s) => ({ id: s.id, kind: s.kind, partyName: s.party_name, date: s.statement_date, number: s.number || "", projectId: s.project_id || null, status: s.status || "", notes: s.notes || "", workType: s.work_type || "", workItemId: s.work_item_id || "", items: s.items || [], adjustments: s.adjustments || [], subtotal: Number(s.subtotal), netTotal: Number(s.net_total) })));
-      setStatementPayments((spRes.data || []).map((p) => ({ id: p.id, kind: p.kind, partyName: p.party_name, date: p.payment_date, amount: Number(p.amount), method: p.method || "", note: p.note || "", statementId: p.statement_id || null })));
+      setStatementPayments((spRes.data || []).map((p) => ({ id: p.id, kind: p.kind, partyName: p.party_name, date: p.payment_date, amount: Number(p.amount), method: p.method || "", note: p.note || "", statementId: p.statement_id || null, projectId: p.project_id || null, workItemId: p.work_item_id || null })));
+      const payProbe = await supabase.from("party_payments").select("project_id,work_item_id").limit(1);
+      setPayCostReady(!payProbe.error);
       // ربط المستخلصات بتكاليف المشروع شغال بس بعد تشغيل statement_costs_migration.sql
       const probe = await supabase.from("party_statements").select("work_item_id").limit(1);
       setStCostLinkReady(!probe.error);
@@ -536,8 +539,44 @@ function ContractingApp({ currentUsername, onLogout }) {
     const { error } = await supabase.from("party_statements").upsert([row]);
     if (error) { alert("حصل خطأ أثناء حفظ المستخلص: " + error.message); return false; }
     setStatements((prev) => (prev.some((x) => x.id === st.id) ? prev.map((x) => (x.id === st.id ? st : x)) : [st, ...prev]));
-    if (stCostLinkReady) await syncStatementCost(st);
+    if (stCostLinkReady) {
+      if (payCostReady) {
+        // النظام الجديد: المستخلص نفسه مش تكلفة فعلية (بيتحسب "مستحق")، والدفعات هي اللي بتتسجّل كتكاليف فعلية
+        await removeLegacyStatementCost(st.id);
+        for (const p of statementPayments.filter((x) => x.statementId === st.id)) await syncPaymentCost(p, st);
+      } else {
+        await syncStatementCost(st);
+      }
+    }
     return true;
+  }
+
+  async function removeLegacyStatementCost(statementId) {
+    const costId = stCostId(statementId);
+    if (!costs.some((c) => c.id === costId)) return;
+    const { error } = await supabase.from("costs").delete().eq("id", costId);
+    if (!error) setCosts((prev) => prev.filter((c) => c.id !== costId));
+  }
+
+  // الدفعة = تكلفة فعلية على المشروع (id ثابت "spc_" + id الدفعة)
+  // المشروع/البند: من المستخلص لو الدفعة عليه، أو من اختيار الدفعة العامة
+  async function syncPaymentCost(p, stOverride) {
+    const st = stOverride && stOverride.id === p.statementId ? stOverride : statements.find((x) => x.id === p.statementId);
+    const costId = payCostId(p.id);
+    const exists = costs.some((c) => c.id === costId);
+    const c = payCostFromPayment(p, st);
+    const want = c.projectId && projects.some((pr) => pr.id === c.projectId) && Number(p.amount) > 0;
+    if (!want) {
+      if (!exists) return;
+      const { error } = await supabase.from("costs").delete().eq("id", costId);
+      if (!error) setCosts((prev) => prev.filter((x) => x.id !== costId));
+      return;
+    }
+    if (c.workItemId && !workItems.some((w) => w.id === c.workItemId)) c.workItemId = null;
+    const row = { id: c.id, project_id: c.projectId, work_item_id: c.workItemId || null, custody_id: null, type: c.type, description: c.desc, cost_level_1: c.costLevel1 || null, cost_level_2: c.costLevel2 || null, qty: c.qty, unit: c.unit, price: c.price, date: c.date };
+    const { error } = await supabase.from("costs").upsert([row]);
+    if (error) { alert("اتسجلت الدفعة، بس حصل خطأ أثناء تسجيلها كتكلفة فعلية على المشروع: " + error.message); return; }
+    setCosts((prev) => (exists ? prev.map((x) => (x.id === costId ? c : x)) : [...prev, c]));
   }
 
   // المستخلص المعتمد المربوط بمشروع وبند عمل = تكلفة واحدة على المشروع (أعمال المستخلص قبل الخصومات)
@@ -566,7 +605,13 @@ function ContractingApp({ currentUsername, onLogout }) {
     const { error } = await supabase.from("party_statements").delete().eq("id", id);
     if (error) { alert("حصل خطأ أثناء حذف المستخلص: " + error.message); return; }
     // الدفعات المرتبطة بالمستخلص تفضل كدفعات عامة على الطرف
-    await supabase.from("party_payments").update({ statement_id: null }).eq("statement_id", id);
+    const stDel = statements.find((x) => x.id === id);
+    if (payCostReady && stDel) {
+      // الدفعات اللي كانت على المستخلص بتفضل دفعات عامة على نفس المشروع/البند (وتكلفتها الفعلية مش بتتشال)
+      await supabase.from("party_payments").update({ statement_id: null, project_id: stDel.projectId || null, work_item_id: stDel.workItemId || null }).eq("statement_id", id);
+    } else {
+      await supabase.from("party_payments").update({ statement_id: null }).eq("statement_id", id);
+    }
     // التكلفة المرتبطة بالمستخلص على المشروع بتتشال معاه
     if (costs.some((c) => c.id === stCostId(id))) {
       const { error: cErr } = await supabase.from("costs").delete().eq("id", stCostId(id));
@@ -574,13 +619,17 @@ function ContractingApp({ currentUsername, onLogout }) {
       else setCosts((prev) => prev.filter((c) => c.id !== stCostId(id)));
     }
     setStatements((prev) => prev.filter((x) => x.id !== id));
-    setStatementPayments((prev) => prev.map((p) => (p.statementId === id ? { ...p, statementId: null } : p)));
+    setStatementPayments((prev) => prev.map((p) => (p.statementId === id ? (payCostReady && stDel ? { ...p, statementId: null, projectId: stDel.projectId || null, workItemId: stDel.workItemId || null } : { ...p, statementId: null }) : p)));
   }
 
   async function addStatementPayment(p) {
-    const { error } = await supabase.from("party_payments").insert([{ id: p.id, kind: p.kind, party_name: p.partyName, payment_date: p.date, amount: p.amount, method: p.method || null, note: p.note || null, statement_id: p.statementId || null }]);
+    const row = { id: p.id, kind: p.kind, party_name: p.partyName, payment_date: p.date, amount: p.amount, method: p.method || null, note: p.note || null, statement_id: p.statementId || null };
+    if (payCostReady) { row.project_id = p.statementId ? null : p.projectId || null; row.work_item_id = p.statementId ? null : p.workItemId || null; }
+    const { error } = await supabase.from("party_payments").insert([row]);
     if (error) { alert("حصل خطأ أثناء تسجيل الدفعة: " + error.message); return; }
-    setStatementPayments((prev) => [...prev, p]);
+    const saved = { ...p, projectId: row.project_id || null, workItemId: row.work_item_id || null };
+    setStatementPayments((prev) => [...prev, saved]);
+    if (payCostReady) await syncPaymentCost(saved);
   }
 
   async function deleteStatementPayment(id) {
@@ -588,6 +637,11 @@ function ContractingApp({ currentUsername, onLogout }) {
     const { error } = await supabase.from("party_payments").delete().eq("id", id);
     if (error) { alert("حصل خطأ أثناء حذف الدفعة: " + error.message); return; }
     setStatementPayments((prev) => prev.filter((p) => p.id !== id));
+    if (costs.some((c) => c.id === payCostId(id))) {
+      const { error: cErr } = await supabase.from("costs").delete().eq("id", payCostId(id));
+      if (cErr) alert("اتمسحت الدفعة، بس حصل خطأ أثناء شيل تكلفتها الفعلية من المشروع: " + cErr.message);
+      else setCosts((prev) => prev.filter((c) => c.id !== payCostId(id)));
+    }
   }
 
   async function addProject(p) {
@@ -646,14 +700,21 @@ function ContractingApp({ currentUsername, onLogout }) {
       if (stErr) { alert("حصل خطأ أثناء فك ربط المستخلصات: " + stErr.message); return; }
       setStatements((prev) => prev.map((s) => (s.workItemId === id ? { ...s, workItemId: "" } : s)));
     }
-    const { error: costsError } = await supabase.from("costs").delete().eq("work_item_id", id);
+    // تكاليف الدفعات (فلوس اتصرفت فعلًا) مش بتتمسح — بتتفك من البند بس
+    if (costs.some((c) => c.workItemId === id && isPaymentCost(c))) {
+      const { error: pcErr } = await supabase.from("costs").update({ work_item_id: null }).eq("work_item_id", id).like("id", "spc_%");
+      if (pcErr) { alert("حصل خطأ أثناء فك ربط تكاليف الدفعات: " + pcErr.message); return; }
+      if (payCostReady) await supabase.from("party_payments").update({ work_item_id: null }).eq("work_item_id", id);
+    }
+    const { error: costsError } = await supabase.from("costs").delete().eq("work_item_id", id).not("id", "like", "spc_%");
     if (costsError) { alert("حصل خطأ أثناء حذف التكاليف المرتبطة: " + costsError.message); return; }
     const { error: ecError } = await supabase.from("expected_costs").update({ work_item_id: null }).eq("work_item_id", id);
     if (ecError) { alert("حصل خطأ أثناء فك ربط المصاريف المتوقعة: " + ecError.message); return; }
     const { error } = await supabase.from("work_items").delete().eq("id", id);
     if (error) { alert("حصل خطأ أثناء حذف بند العمل: " + error.message); return; }
     setWorkItems((prev) => prev.filter((w) => w.id !== id));
-    setCosts((prev) => prev.filter((c) => c.workItemId !== id));
+    setCosts((prev) => prev.filter((c) => c.workItemId !== id || isPaymentCost(c)).map((c) => (c.workItemId === id ? { ...c, workItemId: null } : c)));
+    setStatementPayments((prev) => prev.map((p) => (p.workItemId === id ? { ...p, workItemId: null } : p)));
     setExpectedCosts((prev) => prev.map((e) => (e.workItemId === id ? { ...e, workItemId: null } : e)));
   }
 
@@ -854,6 +915,9 @@ function ContractingApp({ currentUsername, onLogout }) {
   const pCollections = collections.filter((c) => c.projectId === activeProjectId);
   const pExpectedCosts = expectedCosts.filter((e) => e.projectId === activeProjectId);
 
+  // المستحق للمقاولين/الموردين على المشروع = أعمال المستخلصات المعتمدة − الدفعات (لكل مقاول وبند عمل)
+  const partyDue = useMemo(() => stProjectDue(activeProjectId, statements, statementPayments), [activeProjectId, statements, statementPayments]);
+
   const totals = useMemo(() => {
     const budgetTotal = pWorkItems.reduce((s, w) => s + w.qty * w.price, 0);
     const actualTotal = pCosts.reduce((s, c) => s + c.qty * c.price, 0);
@@ -861,9 +925,12 @@ function ContractingApp({ currentUsername, onLogout }) {
     const collectedTotal = pCollections.reduce((s, c) => s + c.amount, 0);
     const netProfit = collectedTotal - actualTotal;
     const expectedCostsTotal = pExpectedCosts.reduce((s, e) => s + e.amount, 0);
-    const projectedNetProfit = netProfit - expectedCostsTotal;
-    return { budgetTotal, actualTotal, extractsTotal, collectedTotal, netProfit, expectedCostsTotal, projectedNetProfit };
-  }, [pWorkItems, pCosts, pExtracts, pCollections, pExpectedCosts]);
+    const partyDueTotal = payCostReady ? partyDue.due : 0;
+    const partyCommitted = payCostReady ? partyDue.committed : 0;
+    const totalProjectCost = actualTotal + partyDueTotal; // اللي اتصرف + المستحق للمقاولين/الموردين
+    const projectedNetProfit = netProfit - expectedCostsTotal - partyDueTotal;
+    return { budgetTotal, actualTotal, extractsTotal, collectedTotal, netProfit, expectedCostsTotal, projectedNetProfit, partyDueTotal, partyCommitted, totalProjectCost, partyDueByWI: payCostReady ? partyDue.byWorkItem : {} };
+  }, [pWorkItems, pCosts, pExtracts, pCollections, pExpectedCosts, partyDue, payCostReady]);
 
   const tabs = [
     { key: "dashboard", label: "ملخص المشروع", icon: LayoutDashboard },
@@ -1128,6 +1195,7 @@ function ContractingApp({ currentUsername, onLogout }) {
               unitsReady={unitsReady}
               onAddUnit={addUnit}
               onDeleteUnit={deleteUnit}
+              payCostReady={payCostReady}
             />
           </div>
         ) : (
@@ -1165,11 +1233,19 @@ function ContractingApp({ currentUsername, onLogout }) {
             />
           </div>
 
-          {pExpectedCosts.length > 0 && (
+          {(totals.partyCommitted > 0 || totals.partyDueTotal > 0) && (
+            <div className="grid grid-cols-3 gap-3 mt-3">
+              <StatCard label="اتصرف فعلًا (التكاليف الفعلية)" value={money(totals.actualTotal)} icon={ReceiptText} color="#6B5CA5" />
+              <StatCard label="مستحق للمقاولين والموردين (لسه متصرفش)" value={money(totals.partyDueTotal)} icon={Hourglass} color="#D6A23C" />
+              <StatCard label="إجمالي تكلفة المشروع (المصروف + المستحق)" value={money(totals.totalProjectCost)} icon={Wallet} color="#E8672C" />
+            </div>
+          )}
+
+          {(pExpectedCosts.length > 0 || totals.partyDueTotal > 0) && (
             <div className="grid grid-cols-2 gap-3 mt-3">
               <StatCard label="مصاريف متوقعة مستقبلية (لسه هتتصرف)" value={money(totals.expectedCostsTotal)} icon={Clock} color="#D6A23C" />
               <StatCard
-                label="صافي الربح المتوقع (بعد المصاريف المستقبلية)"
+                label="صافي الربح المتوقع (بعد المستحقات والمصاريف المستقبلية)"
                 value={money(totals.projectedNetProfit)}
                 icon={totals.projectedNetProfit >= 0 ? TrendingUp : TrendingDown}
                 color={totals.projectedNetProfit >= 0 ? "#3F7D63" : "#C1453B"}
@@ -2520,7 +2596,8 @@ function KpiCard({ label, value, sub, icon: Icon, color, tone }) {
 }
 
 function DashboardKpis({ contractValue, treasuryBalance, totals }) {
-  const forecastCost = totals.actualTotal + totals.expectedCostsTotal;
+  const due = totals.partyDueTotal || 0;
+  const forecastCost = totals.actualTotal + due + totals.expectedCostsTotal;
   const expectedProfit = contractValue - forecastCost;
   const margin = contractValue > 0 ? (expectedProfit / contractValue) * 100 : null;
   const pctOfContract = (v) => (contractValue > 0 ? `${fmt((v / contractValue) * 100, 1)}٪ من قيمة العقد` : "—");
@@ -2538,8 +2615,8 @@ function DashboardKpis({ contractValue, treasuryBalance, totals }) {
         <KpiCard label="قيمة الأعمال / المستخلصات" value={money(totals.extractsTotal)} sub={pctOfContract(totals.extractsTotal)} icon={FileCheck2} color="#E8672C" />
         <KpiCard label="إجمالي التكلفة الفعلية" value={money(totals.actualTotal)} sub={pctOfContract(totals.actualTotal)} icon={ReceiptText}
                  color={totals.actualTotal > totals.budgetTotal && totals.budgetTotal > 0 ? bad : "#6B5CA5"} />
-        <KpiCard label="التكلفة المتوقعة" value={money(totals.expectedCostsTotal)} sub="مصاريف لسه هتتصرف" icon={Hourglass} color="#D6A23C" />
-        <KpiCard label="الربح المتوقع" value={money(expectedProfit)} sub="قيمة العقد − (الفعلي + المتوقع)" icon={expectedProfit >= 0 ? TrendingUp : TrendingDown}
+        <KpiCard label="لسه هيتصرف" value={money(due + totals.expectedCostsTotal)} sub={due ? `مستحق مقاولين/موردين ${money(due)} + متوقع ${money(totals.expectedCostsTotal)}` : "مصاريف متوقعة مستقبلية"} icon={Hourglass} color="#D6A23C" />
+        <KpiCard label="الربح المتوقع" value={money(expectedProfit)} sub={due ? "قيمة العقد − (الفعلي + المستحق + المتوقع)" : "قيمة العقد − (الفعلي + المتوقع)"} icon={expectedProfit >= 0 ? TrendingUp : TrendingDown}
                  color={expectedProfit >= 0 ? good : bad} tone={expectedProfit >= 0 ? good : bad} />
         <KpiCard label="نسبة الربح المتوقعة" value={margin === null ? "—" : `${fmt(margin, 1)}٪`} sub="من قيمة العقد" icon={Percent}
                  color={margin !== null && margin < 0 ? bad : good} tone={margin !== null && margin < 0 ? bad : good} />
@@ -2556,7 +2633,9 @@ function DashboardKpis({ contractValue, treasuryBalance, totals }) {
 function BudgetActualForecast({ totals, pWorkItems, pCosts, pExpectedCosts }) {
   const budget = totals.budgetTotal;
   const actual = totals.actualTotal;
-  const expected = totals.expectedCostsTotal;
+  const due = totals.partyDueTotal || 0;
+  const dueBy = totals.partyDueByWI || {};
+  const expected = totals.expectedCostsTotal + due; // كل اللي لسه هيتصرف: مستحقات المقاولين/الموردين + المصاريف المتوقعة
   const forecast = actual + expected;
   const max = Math.max(budget, forecast, 1);
   const w = (v) => `${Math.min(100, (v / max) * 100)}%`;
@@ -2574,12 +2653,12 @@ function BudgetActualForecast({ totals, pWorkItems, pCosts, pExpectedCosts }) {
 
   const rows = pWorkItems.map((wi) => {
     const a = pCosts.filter((c) => c.workItemId === wi.id).reduce((s, c) => s + c.qty * c.price, 0);
-    const e = pExpectedCosts.filter((x) => x.workItemId === wi.id).reduce((s, x) => s + x.amount, 0);
+    const e = pExpectedCosts.filter((x) => x.workItemId === wi.id).reduce((s, x) => s + x.amount, 0) + (dueBy[wi.id] || 0);
     const b = wi.qty * wi.price;
     return { id: wi.id, name: wi.name, budget: b, actual: a, forecast: a + e };
   });
   const ua = pCosts.filter((c) => !c.workItemId).reduce((s, c) => s + c.qty * c.price, 0);
-  const ue = pExpectedCosts.filter((x) => !x.workItemId).reduce((s, x) => s + x.amount, 0);
+  const ue = pExpectedCosts.filter((x) => !x.workItemId).reduce((s, x) => s + x.amount, 0) + (dueBy[""] || 0);
   if (ua > 0 || ue > 0) rows.push({ id: "_none", name: "غير مرتبط ببند", budget: 0, actual: ua, forecast: ua + ue });
 
   return (
@@ -2587,7 +2666,7 @@ function BudgetActualForecast({ totals, pWorkItems, pCosts, pExpectedCosts }) {
       <div className="flex items-start justify-between gap-3 mb-5">
         <div>
           <h2 className="font-bold text-[color:var(--cl-text)] flex items-center gap-2"><Gauge size={16} className="text-[color:var(--cl-accent)]" /> الميزانية × الفعلي × المتوقع</h2>
-          <p className="text-[12px] text-[color:var(--cl-muted)] mt-1">المتوقع عند الإنجاز = التكلفة الفعلية + المصاريف المتوقعة المستقبلية</p>
+          <p className="text-[12px] text-[color:var(--cl-muted)] mt-1">المتوقع عند الإنجاز = اللي اتصرف + المستحق للمقاولين والموردين + المصاريف المتوقعة المستقبلية</p>
         </div>
         <span className="text-[11px] font-bold rounded-full px-3 py-1 shrink-0" style={{ color: status.color, backgroundColor: status.color + "18" }}>{status.label}</span>
       </div>
@@ -2609,7 +2688,7 @@ function BudgetActualForecast({ totals, pWorkItems, pCosts, pExpectedCosts }) {
           </div>
           <div className="flex gap-4 mt-1.5 text-[11px] text-[color:var(--cl-muted)]">
             <span className="flex items-center gap-1"><span className="w-2 h-2 rounded-sm bg-[color:var(--cl-accent-bg)]" /> فعلي</span>
-            <span className="flex items-center gap-1"><span className="w-2 h-2 rounded-sm bg-[#D6A23C]" /> متوقع مستقبلي ({money(expected)})</span>
+            <span className="flex items-center gap-1"><span className="w-2 h-2 rounded-sm bg-[#D6A23C]" /> لسه هيتصرف ({money(expected)}{due ? ` — منها مستحق مقاولين/موردين ${money(due)}` : ""})</span>
           </div>
         </div>
       </div>
@@ -3443,7 +3522,7 @@ function CostsTab({ pCosts, pWorkItems, activeProjectId, onAddCost, onAddCostsBu
                                 <div className="flex items-center gap-2 shrink-0">
                                   <span className="font-bold mono">{money(c.qty * c.price)}</span>
                                   {isStatementCost(c) ? (
-                                    <span title="التكلفة دي جاية من مستخلص معتمد — بتتعدل أو تتشال من شاشة المستخلصات" className="text-[10px] px-2 py-0.5 rounded-full bg-[color:var(--cl-chip)] text-[color:var(--cl-soft)] border border-[color:var(--cl-sep)]">من مستخلص</span>
+                                    <span title={isPaymentCost(c) ? "دفعة اتصرفت لمقاول/مورد — بتتعدل أو تتشال من شاشة المستخلصات" : "التكلفة دي جاية من مستخلص معتمد — بتتعدل أو تتشال من شاشة المستخلصات"} className="text-[10px] px-2 py-0.5 rounded-full bg-[color:var(--cl-chip)] text-[color:var(--cl-soft)] border border-[color:var(--cl-sep)]">{isPaymentCost(c) ? "دفعة مقاول/مورد" : "من مستخلص"}</span>
                                   ) : (
                                   <div className="flex gap-1 opacity-0 group-hover:opacity-100 transition">
                                     <button onClick={() => startEdit(c)} title="تعديل" className="p-1 rounded-md text-[color:var(--cl-soft)] hover:bg-[color:var(--cl-line)] hover:text-[color:var(--cl-text)] transition"><Pencil size={13} /></button>
@@ -4667,7 +4746,42 @@ const stUid = (p) => p + Math.random().toString(36).slice(2, 8) + Date.now().toS
 const stToday = () => { const d = new Date(); return new Date(d.getTime() - d.getTimezoneOffset() * 60000).toISOString().slice(0, 10); }; // تاريخ اليوم بالتوقيت المحلي
 // ربط المستخلص بتكاليف المشروع
 const stCostId = (statementId) => "stc_" + statementId;
-const isStatementCost = (c) => String(c?.id || "").startsWith("stc_");
+const isStatementCost = (c) => String(c?.id || "").startsWith("stc_") || String(c?.id || "").startsWith("spc_");
+const payCostId = (paymentId) => "spc_" + paymentId;
+const isPaymentCost = (c) => String(c?.id || "").startsWith("spc_");
+// المشروع/البند اللي الدفعة بتتحسب عليه
+const stPayTarget = (p, st) => (p.statementId && st ? { projectId: st.projectId || null, workItemId: st.workItemId || null } : { projectId: p.projectId || null, workItemId: p.workItemId || null });
+function payCostFromPayment(p, st) {
+  const isContractor = p.kind !== "supplier";
+  const t = stPayTarget(p, st);
+  return {
+    id: payCostId(p.id), projectId: t.projectId, workItemId: t.workItemId, custodyId: null,
+    type: isContractor ? "مصنعيات" : "مشتريات",
+    desc: `${isContractor ? "مقاول" : "مورد"}: ${p.partyName}`,
+    costLevel1: st?.workType || "", costLevel2: st ? `دفعة على مستخلص رقم ${st.number}` : "دفعة عامة",
+    qty: 1, unit: "دفعة", price: stRound(p.amount), date: p.date,
+  };
+}
+// المستحق على مشروع: لكل (مقاول/مورد + بند عمل) = أعمال المستخلصات المعتمدة − المدفوع (مش أقل من صفر)
+function stProjectDue(projectId, statements, payments) {
+  const out = { committed: 0, paid: 0, due: 0, byWorkItem: {} };
+  if (!projectId) return out;
+  const stById = new Map(statements.map((s) => [s.id, s]));
+  const groups = new Map();
+  const g = (kind, party, wi) => { const k = kind + "\u0000" + party + "\u0000" + (wi || ""); if (!groups.has(k)) groups.set(k, { wi: wi || "", c: 0, p: 0 }); return groups.get(k); };
+  statements.filter((s) => s.projectId === projectId && s.status === "معتمد").forEach((s) => { g(s.kind, s.partyName, s.workItemId).c += Number(s.subtotal) || 0; });
+  payments.forEach((p) => {
+    const t = stPayTarget(p, stById.get(p.statementId));
+    if (t.projectId === projectId) g(p.kind, p.partyName, t.workItemId).p += Number(p.amount) || 0;
+  });
+  groups.forEach((x) => {
+    const d = Math.max(0, stRound(x.c - x.p));
+    out.committed += x.c; out.paid += x.p; out.due += d;
+    if (d) out.byWorkItem[x.wi] = stRound((out.byWorkItem[x.wi] || 0) + d);
+  });
+  out.committed = stRound(out.committed); out.paid = stRound(out.paid); out.due = stRound(out.due);
+  return out;
+}
 function stCostFromStatement(st) {
   const isContractor = st.kind !== "supplier";
   return {
@@ -4808,7 +4922,7 @@ ${s.notes ? `<p><b>ملاحظات:</b> ${stEsc(s.notes)}</p>` : ""}
 
 const stCellInput = "w-full border border-[color:var(--cl-line)] rounded-md px-2 py-1.5 text-sm outline-none focus:border-[color:var(--cl-accent-bg)] bg-[color:var(--cl-card)] text-[color:var(--cl-text)]";
 
-function StatementForm({ cfg, initial, parties, projects, existing, payments, onCancel, onSave, onAddPayment, onDeletePayment, registry, kindWorkTypes, registryReady, onSaveParty, onAddWorkType, workItems = [], costLinkReady, units = [], unitsReady = false, onAddUnit }) {
+function StatementForm({ cfg, initial, parties, projects, existing, payments, onCancel, onSave, onAddPayment, onDeletePayment, registry, kindWorkTypes, registryReady, onSaveParty, onAddWorkType, workItems = [], costLinkReady, units = [], unitsReady = false, onAddUnit, payCostReady = false }) {
   const [partyName, setPartyName] = useState(initial?.partyName || "");
   const [workItemId, setWorkItemId] = useState(initial?.workItemId || "");
   const [workType, setWorkType] = useState(initial?.workType || "");
@@ -4850,7 +4964,7 @@ function StatementForm({ cfg, initial, parties, projects, existing, payments, on
   const [adjustments, setAdjustments] = useState(initial?.adjustments || []);
   const projWorkItems = useMemo(() => workItems.filter((w) => w.projectId === projectId), [workItems, projectId]);
   const [err, setErr] = useState("");
-  const [payForm, setPayForm] = useState({ date: stToday(), amount: "", method: "تحويل بنكي", statementId: "" });
+  const [payForm, setPayForm] = useState({ date: stToday(), amount: "", method: "تحويل بنكي", statementId: "", projectId: initial?.projectId || "", workItemId: initial?.workItemId || "" });
 
   // السابق: آخر إجمالي كمية وإجمالي نسبة تنفيذ لنفس البند (بنفس الوصف) في مستخلصات سابقة لنفس الطرف
   const prevMap = useMemo(() => {
@@ -4893,7 +5007,9 @@ function StatementForm({ cfg, initial, parties, projects, existing, payments, on
   const addPay = async () => {
     const amount = Number(payForm.amount);
     if (!partyKey || !amount || amount <= 0) return;
-    await onAddPayment({ id: stUid("sp_"), kind: cfg.kind, partyName: partyKey, date: payForm.date || stToday(), amount, method: payForm.method, note: "", statementId: payForm.statementId || null });
+    const perr = stPayTargetError(payForm, payCostReady);
+    if (perr) { alert(perr); return; }
+    await onAddPayment({ id: stUid("sp_"), kind: cfg.kind, partyName: partyKey, date: payForm.date || stToday(), amount, method: payForm.method, note: "", statementId: payForm.statementId || null, projectId: payForm.statementId ? null : payForm.projectId || null, workItemId: payForm.statementId ? null : payForm.workItemId || null });
     setPayForm((f) => ({ ...f, amount: "", statementId: "" }));
   };
 
@@ -4989,7 +5105,9 @@ function StatementForm({ cfg, initial, parties, projects, existing, payments, on
             />
             <div className="col-span-3 text-[12px] text-[color:var(--cl-soft)] leading-relaxed">
               {status === "معتمد"
-                ? <>لما تحفظ، <b>أعمال هذا المستخلص ({stMoney(calc.subtotal)} ج.م)</b> هتتسجّل تلقائي كتكلفة <b>{cfg.kind === "supplier" ? "مشتريات" : "مصنعيات"}</b> على بند العمل ده في تكاليف المشروع.</>
+                ? (payCostReady
+                  ? <>لما تحفظ، <b>أعمال هذا المستخلص ({stMoney(calc.subtotal)} ج.م)</b> هتدخل في <b>إجمالي تكلفة المشروع</b> كمستحق لـ{cfg.partyLabel}، وكل دفعة تتصرف له بتنزل في <b>التكاليف الفعلية</b> على بند العمل ده وتقلل المستحق.</>
+                  : <>لما تحفظ، <b>أعمال هذا المستخلص ({stMoney(calc.subtotal)} ج.م)</b> هتتسجّل تلقائي كتكلفة <b>{cfg.kind === "supplier" ? "مشتريات" : "مصنعيات"}</b> على بند العمل ده في تكاليف المشروع.</>)
                 : <>المستخلص لسه <b>مسودة</b> — مش هيتسجّل كتكلفة على المشروع غير لما تخلّيه <b>معتمد</b>.</>}
               {projWorkItems.length === 0 && <span className="block text-[color:var(--cl-red)]">المشروع ده مفيهوش بنود أعمال — ضيف بند من تبويب "بنود الأعمال" الأول.</span>}
             </div>
@@ -5218,9 +5336,10 @@ function StatementForm({ cfg, initial, parties, projects, existing, payments, on
               <Field small label="المبلغ المصروف" type="number" value={payForm.amount} onChange={(v) => setPayForm((f) => ({ ...f, amount: v }))} />
               <SelectField small label="الطريقة" value={payForm.method} onChange={(v) => setPayForm((f) => ({ ...f, method: v }))} options={["تحويل بنكي", "نقدي", "شيك"].map((m) => ({ value: m, label: m }))} />
               <SelectField small label="على مستخلص (اختياري)" value={payForm.statementId} onChange={(v) => setPayForm((f) => ({ ...f, statementId: v }))} options={[{ value: "", label: "— دفعة عامة —" }, ...partySts.map((s) => ({ value: s.id, label: "#" + s.number + " — " + s.date }))]} />
+              {payCostReady && !payForm.statementId && <PayTargetFields form={payForm} setForm={setPayForm} projects={projects} workItems={workItems} />}
               <button onClick={addPay} className="px-3 py-1.5 rounded-lg bg-[color:var(--cl-accent-bg)] text-[color:var(--cl-on-accent)] text-xs font-bold hover:bg-[color:var(--cl-accent-hover)]">+ تسجيل دفعة</button>
             </div>
-            <div className="text-[11px] text-[color:var(--cl-muted)]">الدفعة بتتحفظ فورًا (مش محتاجة "حفظ المستخلص").</div>
+            <div className="text-[11px] text-[color:var(--cl-muted)]">الدفعة بتتحفظ فورًا (مش محتاجة "حفظ المستخلص").{payCostReady && " وبتنزل تكلفة فعلية على المشروع: الدفعة على مستخلص بتاخد مشروعه وبنده، والدفعة العامة على المشروع/البند اللي تختاره."}</div>
           </div>
         </div>
       )}
@@ -5248,7 +5367,7 @@ function StatementForm({ cfg, initial, parties, projects, existing, payments, on
   );
 }
 
-function StatementsModule({ kind, statements, payments, projects, dbError, onSave, onDelete, onAddPayment, onDeletePayment, registeredParties = [], workTypes = [], registryDbError, onSaveParty, onDeleteParty, onImportParties, onAddWorkType, onDeleteWorkType, workItems = [], costLinkReady = false, units = [], unitsReady = false, onAddUnit, onDeleteUnit }) {
+function StatementsModule({ kind, statements, payments, projects, dbError, onSave, onDelete, onAddPayment, onDeletePayment, registeredParties = [], workTypes = [], registryDbError, onSaveParty, onDeleteParty, onImportParties, onAddWorkType, onDeleteWorkType, workItems = [], costLinkReady = false, units = [], unitsReady = false, onAddUnit, onDeleteUnit, payCostReady = false }) {
   const cfg = { ...ST_KINDS[kind], kind };
   const Icon = cfg.icon;
   const [mode, setMode] = useState("list"); // list | form | parties | registry | worktypes
@@ -5256,7 +5375,7 @@ function StatementsModule({ kind, statements, payments, projects, dbError, onSav
   const [search, setSearch] = useState("");
   const [workFilter, setWorkFilter] = useState("");
   const [openParty, setOpenParty] = useState(null);
-  const [payForm, setPayForm] = useState({ date: stToday(), amount: "", method: "تحويل بنكي", note: "", statementId: "" });
+  const [payForm, setPayForm] = useState({ date: stToday(), amount: "", method: "تحويل بنكي", note: "", statementId: "", projectId: "", workItemId: "" });
   const emptyParty = { id: "", name: "", phone: "", taxId: "", address: "", notes: "" };
   const [partyForm, setPartyForm] = useState(emptyParty);
   const [newWork, setNewWork] = useState("");
@@ -5300,7 +5419,7 @@ function StatementsModule({ kind, statements, payments, projects, dbError, onSav
       <StatementForm
         cfg={cfg} initial={editing} parties={parties} projects={projects} existing={list} payments={pays} onAddPayment={onAddPayment} onDeletePayment={onDeletePayment}
         registry={registry} kindWorkTypes={kindWorkTypes} registryReady={registryReady} onSaveParty={onSaveParty} onAddWorkType={onAddWorkType}
-        workItems={workItems} costLinkReady={costLinkReady} units={units} unitsReady={unitsReady} onAddUnit={onAddUnit}
+        workItems={workItems} costLinkReady={costLinkReady} units={units} unitsReady={unitsReady} onAddUnit={onAddUnit} payCostReady={payCostReady}
         onCancel={() => { setMode("list"); setEditing(null); }}
         onSave={async (st) => { const ok = await onSave(st); if (ok !== false) { setMode("list"); setEditing(null); } }}
       />
@@ -5519,7 +5638,7 @@ function StatementsModule({ kind, statements, payments, projects, dbError, onSav
                   <td className="py-3 px-4"><span className={`text-[11px] px-2 py-0.5 rounded-full ${s.status === "معتمد" ? "bg-[color:var(--cl-green)]/15 text-[color:var(--cl-green)]" : "bg-[color:var(--cl-chip)] text-[color:var(--cl-soft)]"}`}>{s.status || "—"}</span>
                     {costLinkReady && s.status === "معتمد" && s.projectId && (
                       s.workItemId && workItems.some((w) => w.id === s.workItemId)
-                        ? <span className="block mt-1 text-[10px] text-[color:var(--cl-green)]" title={"على بند: " + (workItems.find((w) => w.id === s.workItemId)?.name || "")}>✓ في تكاليف المشروع</span>
+                        ? <span className="block mt-1 text-[10px] text-[color:var(--cl-green)]" title={"على بند: " + (workItems.find((w) => w.id === s.workItemId)?.name || "")}>✓ في تكاليف المشروع{payCostReady && paidFor(s) < s.subtotal ? ` · مستحق ${stMoney(stRound(s.subtotal - paidFor(s)))}` : ""}</span>
                         : <span className="block mt-1 text-[10px] text-[#D6A23C]" title="افتح المستخلص واختار بند العمل عشان يتسجّل كتكلفة">⚠ مش مربوط بالتكاليف</span>
                     )}
                   </td>
@@ -5599,10 +5718,13 @@ function StatementsModule({ kind, statements, payments, projects, dbError, onSav
                             <Field small label="المبلغ" type="number" value={payForm.amount} onChange={(v) => setPayForm((f) => ({ ...f, amount: v }))} />
                             <SelectField small label="الطريقة" value={payForm.method} onChange={(v) => setPayForm((f) => ({ ...f, method: v }))} options={["تحويل بنكي", "نقدي", "شيك"].map((m) => ({ value: m, label: m }))} />
                             <SelectField small label="على مستخلص (اختياري)" value={payForm.statementId} onChange={(v) => setPayForm((f) => ({ ...f, statementId: v }))} options={[{ value: "", label: "— عام —" }, ...p.sts.map((s) => ({ value: s.id, label: "#" + s.number }))]} />
+                            {payCostReady && !payForm.statementId && <PayTargetFields form={payForm} setForm={setPayForm} projects={projects} workItems={workItems} />}
                             <button
                               onClick={async () => {
                                 if (!payForm.amount || Number(payForm.amount) <= 0) return;
-                                await onAddPayment({ id: stUid("sp_"), kind, partyName: p.name, date: payForm.date || stToday(), amount: Number(payForm.amount), method: payForm.method, note: payForm.note, statementId: payForm.statementId || null });
+                                const perr = stPayTargetError(payForm, payCostReady);
+                                if (perr) { alert(perr); return; }
+                                await onAddPayment({ id: stUid("sp_"), kind, partyName: p.name, date: payForm.date || stToday(), amount: Number(payForm.amount), method: payForm.method, note: payForm.note, statementId: payForm.statementId || null, projectId: payForm.statementId ? null : payForm.projectId || null, workItemId: payForm.statementId ? null : payForm.workItemId || null });
                                 setPayForm((f) => ({ ...f, amount: "", statementId: "" }));
                               }}
                               className="px-3 py-1.5 rounded-lg bg-[color:var(--cl-accent-bg)] text-[color:var(--cl-on-accent)] text-xs font-bold hover:bg-[color:var(--cl-accent-hover)]">+ تسجيل دفعة</button>
@@ -5648,6 +5770,18 @@ function NewProjectModal({ onClose, onCreate }) {
 }
 
 /* -------------------------------- form fields ------------------------------- */
+
+// الدفعة العامة (مش على مستخلص): تختار المشروع والبند اللي تتحسب عليه كتكلفة فعلية
+const stPayTargetError = (f, ready) => (ready && !f.statementId && f.projectId && !f.workItemId ? "اختار بند العمل اللي الدفعة هتتحسب عليه في المشروع." : "");
+function PayTargetFields({ form, setForm, projects = [], workItems = [] }) {
+  const wis = workItems.filter((w) => w.projectId === form.projectId);
+  return (
+    <>
+      <SelectField small label="على مشروع (اختياري)" value={form.projectId || ""} onChange={(v) => setForm((f) => ({ ...f, projectId: v, workItemId: v === f.projectId ? f.workItemId : "" }))} options={[{ value: "", label: "— بدون مشروع —" }, ...projects.map((p) => ({ value: p.id, label: p.name }))]} />
+      {form.projectId && <SelectField small label="بند العمل *" value={form.workItemId || ""} onChange={(v) => setForm((f) => ({ ...f, workItemId: v }))} options={[{ value: "", label: "— اختار —" }, ...wis.map((w) => ({ value: w.id, label: w.name }))]} />}
+    </>
+  );
+}
 
 // خانة الوحدة: قايمة منسدلة من جدول units + "إضافة وحدة جديدة" من نفس المكان
 function UnitSelect({ value, onChange, units = [], onAddUnit, compact }) {
