@@ -5053,7 +5053,6 @@ const stXlHeadRows = (cfg) => [
   ["المشروع", "اسم المشروع زي ما هو في البرنامج (اختياري)"],
   ["بند العمل", "اسم بند العمل في المشروع (لازم لو معتمد ومربوط بمشروع)"],
   ["البند الفرعي", "اختياري — من البنود الفرعية تحت بند العمل (مثال: مصنعيات المباني تحت مباني)"],
-  [cfg.workLabel || "نوع الأعمال", "اختياري"],
   ["ملاحظات", "اختياري"],
 ];
 
@@ -5184,7 +5183,7 @@ function buildStatementTemplate(cfg, ctx) {
   lists.lvKey = lvPairs.map((x) => x[0]);
   lists.lvName = lvPairs.map((x) => x[1]);
   const L = "قوائم";
-  const listCols = [["parties", cfg.partyPlural], ["projects", "المشروعات"], ["works", "بنود الأعمال"], ["workTypes", cfg.workPlural || "أنواع الأعمال"], ["units", "الوحدات"], ["items", "البنود"], ["adj", "الخصومات"], ["pairProj", "مشروع البند"], ["pairWork", "بند العمل"], ["lvKey", "المشروع › البند"], ["lvName", "البند الفرعي"]];
+  const listCols = [["parties", cfg.partyPlural], ["projects", "المشروعات"], ["works", "بنود الأعمال"], ["units", "الوحدات"], ["items", "البنود"], ["adj", "الخصومات"], ["pairProj", "مشروع البند"], ["pairWork", "بند العمل"], ["lvKey", "المشروع › البند"], ["lvName", "البند الفرعي"]];
   const ref = (key) => {
     const i = listCols.findIndex(([k]) => k === key);
     const n = lists[key].length;
@@ -5227,7 +5226,6 @@ function buildStatementTemplate(cfg, ctx) {
     const lvList = `IF(OR(${projCell}="",$B$${rowOf("بند العمل")}=""),'${L}'!$${nc}$2:$${nc}$${ln + 1},IF(ISNA(MATCH(${key},'${L}'!$${kc}$2:$${kc}$${ln + 1},0)),'${L}'!$${nc}$${maxLen + 3},OFFSET('${L}'!$${nc}$2,MATCH(${key},'${L}'!$${kc}$2:$${kc}$${ln + 1},0)-1,0,MAX(1,COUNTIF('${L}'!$${kc}$2:$${kc}$${ln + 1},${key})),1)))`;
     addHeadList("البند الفرعي", lvList, "اختار البند الفرعي من القايمة — فيها البنود الفرعية لبند العمل اللي اخترته بس. لو مش موجود ضيفه من البرنامج (الأعمال والمقايسة).");
   }
-  addHeadList(cfg.workLabel || "نوع الأعمال", ref("workTypes"), strictMsg(cfg.workLabel || "نوع الأعمال"));
 
   const N = 200;
   const itemRows = [ST_XL.itemCols.map((h) => ({ v: h, s: 1 }))];
@@ -5642,25 +5640,7 @@ function StatementForm({ cfg, initial, parties, projects, existing, payments, on
             </div>
           </div>
         )}
-        {registryReady && (
-          <div>
-            <label className="block text-[11px] font-semibold text-[color:var(--cl-soft)] mb-1">{cfg.workLabel}</label>
-            <div className="flex gap-1.5">
-              <select value={workType} onChange={(e) => setWorkType(e.target.value)} className="flex-1 min-w-0 border border-[color:var(--cl-line)] rounded-lg px-3 py-2 text-sm outline-none focus:border-[color:var(--cl-accent-bg)] bg-[color:var(--cl-card)] text-[color:var(--cl-text)]">
-                <option value="">— اختار —</option>
-                {workOptions.map((n) => <option key={n} value={n}>{n}</option>)}
-              </select>
-              <button type="button" title={`إضافة ${cfg.workLabel} جديد`} onClick={() => setQuickWork(quickWork === null ? "" : null)} className="px-2.5 rounded-lg border border-[color:var(--cl-line)] text-[color:var(--cl-soft)] hover:bg-[color:var(--cl-sub)]"><Plus size={15} /></button>
-            </div>
-            {quickWork !== null && (
-              <div className="flex gap-1.5 mt-1.5">
-                <input autoFocus value={quickWork} onChange={(e) => setQuickWork(e.target.value)} onKeyDown={(e) => e.key === "Enter" && saveQuickWork()} placeholder="مثال: محارة" className="flex-1 min-w-0 border border-[color:var(--cl-line)] rounded-lg px-2 py-1.5 text-xs outline-none focus:border-[color:var(--cl-accent-bg)] bg-[color:var(--cl-card)]" />
-                <button type="button" onClick={saveQuickWork} className="px-2.5 rounded-lg bg-[color:var(--cl-accent-bg)] text-[color:var(--cl-on-accent)] text-xs font-bold">حفظ</button>
-              </div>
-            )}
-          </div>
-        )}
-        <div className={registryReady ? "col-span-2" : "col-span-3"}><Field label="ملاحظات (اختياري)" value={notes} onChange={setNotes} /></div>
+        <div className="col-span-3"><Field label="ملاحظات (اختياري)" value={notes} onChange={setNotes} /></div>
       </div>
 
       {/* البنود */}
@@ -5942,7 +5922,6 @@ function StatementsModule({ kind, statements, payments, projects, dbError, onSav
   const q = search.trim();
   const filtered = list
     .filter((s) => !q || s.partyName.includes(q) || String(s.number).includes(q) || projName(s.projectId).includes(q) || (s.workType || "").includes(q))
-    .filter((s) => !workFilter || s.workType === workFilter)
     .sort((a, b) => (b.date || "").localeCompare(a.date || ""));
 
   const paidFor = (s) => stRound(pays.filter((p) => p.statementId === s.id).reduce((x, p) => x + p.amount, 0));
@@ -5982,7 +5961,7 @@ function StatementsModule({ kind, statements, payments, projects, dbError, onSav
         <div className="bg-[color:var(--cl-card)] rounded-xl border border-[color:var(--cl-accent-bg)] p-4 space-y-3">
           <div>
             <div className="font-bold text-sm text-[color:var(--cl-text)]">نموذج إكسيل بقوايم منسدلة</div>
-            <div className="text-[11px] text-[color:var(--cl-muted)]">النموذج بيطلع فيه قوايم تختار منها: {cfg.partyPlural} المسجلين، المشروعات، بنود الأعمال، {cfg.workPlural}، الوحدات، والبنود اللي اتكتبت قبل كده. اختار المشروع عشان قايمة بنود الأعمال تبقى بتاعته بس.</div>
+            <div className="text-[11px] text-[color:var(--cl-muted)]">النموذج بيطلع فيه قوايم تختار منها: {cfg.partyPlural} المسجلين، المشروعات، بنود الأعمال، البنود الفرعية، الوحدات، والبنود اللي اتكتبت قبل كده. اختار المشروع عشان قايمة بنود الأعمال تبقى بتاعته بس.</div>
           </div>
           <div className="grid grid-cols-4 gap-3 items-end">
             <SelectField small label="المشروع (اختياري)" value={tpl.projectId} onChange={(v) => setTpl((t) => ({ ...t, projectId: v }))} options={[{ value: "", label: "— كل المشروعات —" }, ...projects.map((p) => ({ value: p.id, label: p.name }))]} />
@@ -6017,25 +5996,18 @@ function StatementsModule({ kind, statements, payments, projects, dbError, onSav
           { k: "list", l: "كل المستخلصات" },
           { k: "parties", l: `كشف حساب ${cfg.partyPlural}` },
           { k: "registry", l: `${cfg.partyPlural} المسجلين` },
-          { k: "worktypes", l: cfg.workPlural },
           { k: "units", l: "الوحدات" },
         ].map((t) => (
           <button key={t.k} onClick={() => setMode(t.k)} className={`px-4 py-2 rounded-lg text-sm font-semibold transition ${mode === t.k ? "bg-[color:var(--cl-ink)] text-white" : "border border-[color:var(--cl-line)] text-[color:var(--cl-soft)] hover:bg-[color:var(--cl-sub)]"}`}>{t.l}</button>
         ))}
         {mode === "list" && (
           <div className="mr-auto flex items-center gap-2">
-            {registryReady && kindWorkTypes.length > 0 && (
-              <select value={workFilter} onChange={(e) => setWorkFilter(e.target.value)} className="border border-[color:var(--cl-line)] rounded-lg px-3 py-2 text-sm bg-[color:var(--cl-card)] text-[color:var(--cl-text)]">
-                <option value="">كل {cfg.workPlural}</option>
-                {kindWorkTypes.map((w) => <option key={w.id} value={w.name}>{w.name}</option>)}
-              </select>
-            )}
             <input value={search} onChange={(e) => setSearch(e.target.value)} placeholder={`بحث بالاسم / الرقم / المشروع`} className="w-72 border border-[color:var(--cl-line)] rounded-lg px-3 py-2 text-sm outline-none focus:border-[color:var(--cl-accent-bg)] bg-[color:var(--cl-card)]" />
           </div>
         )}
       </div>
 
-      {(mode === "registry" || mode === "worktypes") && !registryReady && (
+      {mode === "registry" && !registryReady && (
         <div className="bg-[color:var(--cl-card)] rounded-xl border border-[color:var(--cl-red)] p-6 space-y-2">
           <div className="font-bold text-[color:var(--cl-red)]">جداول التسجيل مش موجودة على Supabase</div>
           <div className="text-sm text-[color:var(--cl-soft)]">شغّل ملف <span className="mono">registry_migration.sql</span> في SQL Editor ثم حدّث الصفحة. لحد ما تعمل كده، المستخلصات شغالة عادي بكتابة الاسم يدوي.</div>
@@ -6105,32 +6077,6 @@ function StatementsModule({ kind, statements, payments, projects, dbError, onSav
         </div>
       )}
 
-      {mode === "worktypes" && registryReady && (
-        <div className="bg-[color:var(--cl-card)] rounded-xl border border-[color:var(--cl-line)] p-4 space-y-4">
-          <div>
-            <div className="font-bold text-sm text-[color:var(--cl-text)]">{cfg.workPlural} المسجلة</div>
-            <div className="text-[11px] text-[color:var(--cl-muted)]">قايمة عامة بتختار منها في أي مستخلص {cfg.partyLabel}</div>
-          </div>
-          <div className="flex items-end gap-2 max-w-md">
-            <div className="flex-1"><Field small label={`${cfg.workLabel} جديد`} value={newWork} onChange={setNewWork} placeholder="مثال: محارة / كهرباء / سباكة" /></div>
-            <button onClick={async () => { const w = await onAddWorkType(kind, newWork); if (w) setNewWork(""); }} className="px-4 py-1.5 rounded-lg bg-[color:var(--cl-accent-bg)] text-[color:var(--cl-on-accent)] text-xs font-bold hover:bg-[color:var(--cl-accent-hover)]">+ إضافة</button>
-          </div>
-          <div className="flex flex-wrap gap-2">
-            {kindWorkTypes.map((w) => {
-              const n = list.filter((s) => s.workType === w.name).length;
-              return (
-                <span key={w.id} className="flex items-center gap-2 text-sm bg-[color:var(--cl-inset)] border border-[color:var(--cl-sep)] rounded-full pr-3 pl-1.5 py-1">
-                  <span className="text-[color:var(--cl-text)]">{w.name}</span>
-                  {n > 0 && <span className="text-[11px] mono text-[color:var(--cl-muted)]">{n}</span>}
-                  <button onClick={() => onDeleteWorkType(w.id)} title="حذف" className="p-0.5 rounded-full text-[color:var(--cl-red)] hover:bg-[#C1453B]/10"><X size={12} /></button>
-                </span>
-              );
-            })}
-            {kindWorkTypes.length === 0 && <div className="text-sm text-[color:var(--cl-muted)]">لسه مفيش {cfg.workPlural} مسجلة.</div>}
-          </div>
-        </div>
-      )}
-
       {mode === "units" && (
         unitsReady ? (
           <div className="bg-[color:var(--cl-card)] rounded-xl border border-[color:var(--cl-line)] p-4 space-y-4">
@@ -6169,7 +6115,6 @@ function StatementsModule({ kind, statements, payments, projects, dbError, onSav
                 <th className="text-right py-3 px-4">{cfg.partyLabel}</th>
                 <th className="text-right py-3 px-4">التاريخ</th>
                 <th className="text-right py-3 px-4">المشروع</th>
-                <th className="text-right py-3 px-4">{cfg.workLabel}</th>
                 <th className="text-right py-3 px-4">الصافي</th>
                 <th className="text-right py-3 px-4">مدفوع عليه</th>
                 <th className="text-right py-3 px-4">الحالة</th>
@@ -6183,7 +6128,6 @@ function StatementsModule({ kind, statements, payments, projects, dbError, onSav
                   <td className="py-3 px-4 font-semibold text-[color:var(--cl-text)]">{s.partyName}</td>
                   <td className="py-3 px-4 mono text-[color:var(--cl-soft)]">{s.date}</td>
                   <td className="py-3 px-4 text-[color:var(--cl-soft)]">{projName(s.projectId) || "—"}</td>
-                  <td className="py-3 px-4 text-[color:var(--cl-soft)]">{s.workType || "—"}</td>
                   <td className="py-3 px-4 mono font-bold">{stMoney(s.netTotal)}</td>
                   <td className="py-3 px-4 mono text-[color:var(--cl-green)]">{paidFor(s) ? stMoney(paidFor(s)) : "—"}</td>
                   <td className="py-3 px-4"><span className={`text-[11px] px-2 py-0.5 rounded-full ${s.status === "معتمد" ? "bg-[color:var(--cl-green)]/15 text-[color:var(--cl-green)]" : "bg-[color:var(--cl-chip)] text-[color:var(--cl-soft)]"}`}>{s.status || "—"}</span>
@@ -6202,7 +6146,7 @@ function StatementsModule({ kind, statements, payments, projects, dbError, onSav
                   </td>
                 </tr>
               ))}
-              {filtered.length === 0 && <tr><td colSpan={9} className="text-center py-8 text-[color:var(--cl-muted)]">لا توجد مستخلصات.</td></tr>}
+              {filtered.length === 0 && <tr><td colSpan={8} className="text-center py-8 text-[color:var(--cl-muted)]">لا توجد مستخلصات.</td></tr>}
             </tbody>
           </table>
         </div>
