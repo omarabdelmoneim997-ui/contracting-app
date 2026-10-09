@@ -324,6 +324,8 @@ function ContractingApp({ currentUsername, onLogout }) {
   const [registeredParties, setRegisteredParties] = useState([]); // المقاولين/الموردين المسجلين
   const [workTypes, setWorkTypes] = useState([]); // أنواع الأعمال المسجلة
   const [registryDbError, setRegistryDbError] = useState(null);
+  const [wiLevels, setWiLevels] = useState([]); // البنود الفرعية تحت كل بند عمل (مباني ← مصنعيات المباني)
+  const [levelsReady, setLevelsReady] = useState(false); // جدول work_item_levels موجود؟
   const [units, setUnits] = useState([]); // قايمة الوحدات (م² / طن / ...)
   const [unitsReady, setUnitsReady] = useState(false); // جدول units موجود؟
   const [stCostLinkReady, setStCostLinkReady] = useState(false);
@@ -404,7 +406,7 @@ function ContractingApp({ currentUsername, onLogout }) {
       const err = stRes.error || spRes.error;
       if (err) { setStatementsDbError(err.message); return; }
       setStatementsDbError(null);
-      setStatements((stRes.data || []).map((s) => ({ id: s.id, kind: s.kind, partyName: s.party_name, date: s.statement_date, number: s.number || "", projectId: s.project_id || null, status: s.status || "", notes: s.notes || "", workType: s.work_type || "", workItemId: s.work_item_id || "", items: s.items || [], adjustments: s.adjustments || [], subtotal: Number(s.subtotal), netTotal: Number(s.net_total) })));
+      setStatements((stRes.data || []).map((s) => ({ id: s.id, kind: s.kind, partyName: s.party_name, date: s.statement_date, number: s.number || "", projectId: s.project_id || null, status: s.status || "", notes: s.notes || "", workType: s.work_type || "", workItemId: s.work_item_id || "", workItemLevel: s.work_item_level || "", items: s.items || [], adjustments: s.adjustments || [], subtotal: Number(s.subtotal), netTotal: Number(s.net_total) })));
       setStatementPayments((spRes.data || []).map((p) => ({ id: p.id, kind: p.kind, partyName: p.party_name, date: p.payment_date, amount: Number(p.amount), method: p.method || "", note: p.note || "", statementId: p.statement_id || null, projectId: p.project_id || null, workItemId: p.work_item_id || null })));
       const payProbe = await supabase.from("party_payments").select("project_id,work_item_id").limit(1);
       setPayCostReady(!payProbe.error);
@@ -440,6 +442,39 @@ function ContractingApp({ currentUsername, onLogout }) {
     }
     loadUnits();
   }, []);
+
+  useEffect(() => {
+    async function loadLevels() {
+      const { data, error } = await supabase.from("work_item_levels").select("*").order("created_at");
+      if (error) { setLevelsReady(false); return; } // الجدول مش موجود → الخانة بتفضل كتابة حرة
+      setWiLevels((data || []).map((l) => ({ id: l.id, workItemId: l.work_item_id, name: l.name })));
+      setLevelsReady(true);
+    }
+    loadLevels();
+  }, []);
+
+  async function addLevel(workItemId, name) {
+    const n = String(name || "").trim();
+    if (!workItemId || !n) return null;
+    const exists = wiLevels.find((l) => l.workItemId === workItemId && l.name === n);
+    if (exists) return exists;
+    const row = { id: stUid("wl_"), work_item_id: workItemId, name: n };
+    const { error } = await supabase.from("work_item_levels").insert([row]);
+    if (error) { alert("حصل خطأ أثناء إضافة البند الفرعي: " + error.message); return null; }
+    const saved = { id: row.id, workItemId, name: n };
+    setWiLevels((prev) => [...prev, saved]);
+    return saved;
+  }
+
+  async function deleteLevel(id) {
+    const l = wiLevels.find((x) => x.id === id);
+    if (!l) return;
+    const used = costs.filter((c) => c.workItemId === l.workItemId && c.costLevel1 === l.name).length;
+    if (!window.confirm(used ? `"${l.name}" مستخدم في ${used} تكلفة — التكاليف دي هتفضل محتفظة بالاسم، بس مش هيظهر في القايمة تاني. متأكد؟` : `متأكد إنك عايز تمسح "${l.name}"؟`)) return;
+    const { error } = await supabase.from("work_item_levels").delete().eq("id", id);
+    if (error) { alert("حصل خطأ أثناء الحذف: " + error.message); return; }
+    setWiLevels((prev) => prev.filter((x) => x.id !== id));
+  }
 
   async function addUnit(name) {
     const n = String(name || "").trim();
@@ -536,6 +571,7 @@ function ContractingApp({ currentUsername, onLogout }) {
     // عمود work_type بيتبعت بس لو جداول التسجيل متركّبة (عشان الحفظ ميقعش قبل تشغيل ملف SQL)
     if (!registryDbError) row.work_type = st.workType || null;
     if (stCostLinkReady) row.work_item_id = st.workItemId || null;
+    if (levelsReady) row.work_item_level = st.workItemLevel || null;
     const { error } = await supabase.from("party_statements").upsert([row]);
     if (error) { alert("حصل خطأ أثناء حفظ المستخلص: " + error.message); return false; }
     setStatements((prev) => (prev.some((x) => x.id === st.id) ? prev.map((x) => (x.id === st.id ? st : x)) : [st, ...prev]));
@@ -712,6 +748,7 @@ function ContractingApp({ currentUsername, onLogout }) {
     if (ecError) { alert("حصل خطأ أثناء فك ربط المصاريف المتوقعة: " + ecError.message); return; }
     const { error } = await supabase.from("work_items").delete().eq("id", id);
     if (error) { alert("حصل خطأ أثناء حذف بند العمل: " + error.message); return; }
+    if (levelsReady) { await supabase.from("work_item_levels").delete().eq("work_item_id", id); setWiLevels((prev) => prev.filter((l) => l.workItemId !== id)); }
     setWorkItems((prev) => prev.filter((w) => w.id !== id));
     setCosts((prev) => prev.filter((c) => c.workItemId !== id || isPaymentCost(c)).map((c) => (c.workItemId === id ? { ...c, workItemId: null } : c)));
     setStatementPayments((prev) => prev.map((p) => (p.workItemId === id ? { ...p, workItemId: null } : p)));
@@ -1151,7 +1188,7 @@ function ContractingApp({ currentUsername, onLogout }) {
               financeTransactions={financeTransactions}
               expectedCosts={expectedCosts}
               defaultProjectId={activeProjectId}
-              costsManager={{ units, unitsReady, onAddUnit: addUnit, onAddCost: addCost, onAddCostsBulk: addCostsBulk, onUpdateCost: updateCost, onDeleteCost: deleteCost }}
+              costsManager={{ wiLevels, levelsReady, onAddLevel: addLevel, units, unitsReady, onAddUnit: addUnit, onAddCost: addCost, onAddCostsBulk: addCostsBulk, onUpdateCost: updateCost, onDeleteCost: deleteCost }}
             />
           </div>
         ) : view === "finance" ? (
@@ -1197,6 +1234,9 @@ function ContractingApp({ currentUsername, onLogout }) {
               onAddUnit={addUnit}
               onDeleteUnit={deleteUnit}
               payCostReady={payCostReady}
+              wiLevels={wiLevels}
+              levelsReady={levelsReady}
+              onAddLevel={addLevel}
             />
           </div>
         ) : (
@@ -1275,6 +1315,10 @@ function ContractingApp({ currentUsername, onLogout }) {
           )}
           {tab === "items" && (
             <WorkItemsTab
+              wiLevels={wiLevels}
+              levelsReady={levelsReady}
+              onAddLevel={addLevel}
+              onDeleteLevel={deleteLevel}
               pWorkItems={pWorkItems}
               pCosts={pCosts}
               activeProjectId={activeProjectId}
@@ -1285,6 +1329,9 @@ function ContractingApp({ currentUsername, onLogout }) {
           )}
           {tab === "costs" && (
             <CostsTab
+              wiLevels={wiLevels}
+              levelsReady={levelsReady}
+              onAddLevel={addLevel}
               units={units}
               unitsReady={unitsReady}
               onAddUnit={addUnit}
@@ -2083,6 +2130,9 @@ function ReportsCenter({ projects, workItems, costs, extracts, collections, trea
           <div className="space-y-3">
             {(from || to) && <div className="no-print text-[12px] text-[color:var(--cl-muted)]">فلتر التاريخ مش بيطبّق على الشاشة دي — بتعرض كل تكاليف المشروع.</div>}
             <CostsTab
+              wiLevels={costsManager.wiLevels}
+              levelsReady={costsManager.levelsReady}
+              onAddLevel={costsManager.onAddLevel}
               units={costsManager.units}
               unitsReady={costsManager.unitsReady}
               onAddUnit={costsManager.onAddUnit}
@@ -3008,7 +3058,8 @@ function Dashboard({ contractValue, treasuryBalance, totals, pWorkItems, pCosts,
 
 /* ------------------------------- work items -------------------------------- */
 
-function WorkItemsTab({ pWorkItems, pCosts, activeProjectId, onAddWorkItem, onUpdateWorkItem, onDeleteWorkItem }) {
+function WorkItemsTab({ pWorkItems, pCosts, activeProjectId, onAddWorkItem, onUpdateWorkItem, onDeleteWorkItem, wiLevels = [], levelsReady = false, onAddLevel, onDeleteLevel }) {
+  const [lvDraft, setLvDraft] = useState({}); // { [workItemId]: "اسم بند فرعي جديد" }
   const [form, setForm] = useState({ name: "" });
   const [open, setOpen] = useState(false);
   const [editId, setEditId] = useState(null);
@@ -3046,7 +3097,7 @@ function WorkItemsTab({ pWorkItems, pCosts, activeProjectId, onAddWorkItem, onUp
       <div className="flex items-center justify-between">
         <div>
           <h2 className="font-bold text-[color:var(--cl-text)] text-lg">بنود الأعمال</h2>
-          <p className="text-xs text-[color:var(--cl-muted)] mt-1">دليل البنود التي يتم اختيارها عند تسجيل التكاليف</p>
+          <p className="text-xs text-[color:var(--cl-muted)] mt-1">دليل البنود التي يتم اختيارها عند تسجيل التكاليف{levelsReady ? " — وتحت كل بند البنود الفرعية بتاعته (مثال: مباني ← مصنعيات المباني، خامات المباني)" : ""}</p>
         </div>
         <button onClick={() => setOpen((o) => !o)} className="px-3 py-2 rounded-lg bg-[color:var(--cl-ink)] text-white text-sm font-semibold flex items-center gap-1.5 hover:bg-[color:var(--cl-ink-hover)] transition">
           <Plus size={15} /> إضافة بند عمل
@@ -3069,6 +3120,7 @@ function WorkItemsTab({ pWorkItems, pCosts, activeProjectId, onAddWorkItem, onUp
           <thead>
             <tr className="bg-[color:var(--cl-inset)] text-[color:var(--cl-soft)] text-[12px]">
               <th className="text-right py-3 px-4 font-semibold">بند العمل</th>
+              {levelsReady && <th className="text-right py-3 px-4 font-semibold">البنود الفرعية</th>}
               <th className="text-right py-3 px-4 font-semibold">التكلفة الفعلية</th>
               <th className="text-right py-3 px-4 font-semibold w-20"></th>
             </tr>
@@ -3083,6 +3135,7 @@ function WorkItemsTab({ pWorkItems, pCosts, activeProjectId, onAddWorkItem, onUp
                     <td className="py-2 px-2">
                       <input value={editForm.name} onChange={(e) => setEditForm({ name: e.target.value })} className="w-full border border-[color:var(--cl-line)] rounded-md px-2 py-1.5 text-sm outline-none focus:border-[color:var(--cl-accent-bg)]" />
                     </td>
+                    {levelsReady && <td />}
                     <td className="py-3 px-4 mono text-[color:var(--cl-muted)]">{money(actual)}</td>
                     <td className="py-2 px-2">
                       <div className="flex gap-1.5 justify-end">
@@ -3095,8 +3148,31 @@ function WorkItemsTab({ pWorkItems, pCosts, activeProjectId, onAddWorkItem, onUp
               }
               return (
                 <tr key={w.id} className="hover:bg-[color:var(--cl-sub)] transition group">
-                  <td className="py-3 px-4 font-semibold text-[color:var(--cl-text)]">{w.name}</td>
-                  <td className="py-3 px-4 mono font-bold">{money(actual)}</td>
+                  <td className="py-3 px-4 font-semibold text-[color:var(--cl-text)] align-top">{w.name}</td>
+                  {levelsReady && (
+                    <td className="py-2.5 px-4">
+                      <div className="flex flex-wrap items-center gap-1.5">
+                        {wiLevels.filter((l) => l.workItemId === w.id).map((l) => {
+                          const lvCost = pCosts.filter((c) => c.workItemId === w.id && c.costLevel1 === l.name).reduce((s, c) => s + c.qty * c.price, 0);
+                          return (
+                            <span key={l.id} className="flex items-center gap-1.5 text-[12px] bg-[color:var(--cl-inset)] border border-[color:var(--cl-sep)] rounded-full pr-2.5 pl-1 py-0.5">
+                              <span className="text-[color:var(--cl-text)]">{l.name}</span>
+                              {lvCost > 0 && <span className="mono text-[10px] text-[color:var(--cl-muted)]">{money(lvCost)}</span>}
+                              <button onClick={() => onDeleteLevel(l.id)} title="حذف" className="p-0.5 rounded-full text-[color:var(--cl-red)] hover:bg-[#C1453B]/10"><X size={11} /></button>
+                            </span>
+                          );
+                        })}
+                        <input
+                          value={lvDraft[w.id] || ""}
+                          onChange={(e) => setLvDraft((d) => ({ ...d, [w.id]: e.target.value }))}
+                          onKeyDown={async (e) => { if (e.key === "Enter") { const l = await onAddLevel(w.id, lvDraft[w.id]); if (l) setLvDraft((d) => ({ ...d, [w.id]: "" })); } }}
+                          placeholder="+ بند فرعي (Enter)"
+                          className="w-36 border border-dashed border-[color:var(--cl-line)] rounded-full px-2.5 py-0.5 text-[12px] outline-none focus:border-[color:var(--cl-accent-bg)] bg-transparent"
+                        />
+                      </div>
+                    </td>
+                  )}
+                  <td className="py-3 px-4 mono font-bold align-top">{money(actual)}</td>
                   <td className="py-3 px-4">
                     <div className="flex gap-1 justify-end opacity-0 group-hover:opacity-100 transition">
                       <button onClick={() => startEdit(w)} title="تعديل" className="p-1.5 rounded-md text-[color:var(--cl-soft)] hover:bg-[color:var(--cl-line)] hover:text-[color:var(--cl-text)] transition"><Pencil size={14} /></button>
@@ -3107,7 +3183,7 @@ function WorkItemsTab({ pWorkItems, pCosts, activeProjectId, onAddWorkItem, onUp
               );
             })}
             {pWorkItems.length === 0 && (
-              <tr><td colSpan={3} className="text-center py-8 text-[color:var(--cl-muted)]">لا توجد بنود أعمال بعد.</td></tr>
+              <tr><td colSpan={levelsReady ? 4 : 3} className="text-center py-8 text-[color:var(--cl-muted)]">لا توجد بنود أعمال بعد.</td></tr>
             )}
           </tbody>
         </table>
@@ -3257,7 +3333,7 @@ function CostExcelImportPanel({ pWorkItems, activeProjectId, onImport, onClose }
 
 /* ------------------------------- بنود التكاليف ------------------------------- */
 
-function CostsTab({ pCosts, pWorkItems, activeProjectId, onAddCost, onAddCostsBulk, onUpdateCost, onDeleteCost, units = [], unitsReady = false, onAddUnit }) {
+function CostsTab({ pCosts, pWorkItems, activeProjectId, onAddCost, onAddCostsBulk, onUpdateCost, onDeleteCost, units = [], unitsReady = false, onAddUnit, wiLevels = [], levelsReady = false, onAddLevel }) {
   const [filter, setFilter] = useState("الكل");
   const [open, setOpen] = useState(false);
   const [showImport, setShowImport] = useState(false);
@@ -3436,10 +3512,17 @@ function CostsTab({ pCosts, pWorkItems, activeProjectId, onAddCost, onAddCostsBu
           <SelectField
             label="بند العمل (اختياري)"
             value={form.workItemId}
-            onChange={(v) => setForm((f) => ({ ...f, workItemId: v }))}
+            onChange={(v) => setForm((f) => ({ ...f, workItemId: v, costLevel1: v === f.workItemId ? f.costLevel1 : "" }))}
             options={[{ value: "", label: "— غير مرتبط ببند —" }, ...pWorkItems.map((w) => ({ value: w.id, label: w.name }))]}
           />
-          <Field label="المستوى الأول للتكلفة" value={form.costLevel1} onChange={(v) => setForm((f) => ({ ...f, costLevel1: v }))} placeholder="مثال: كهرباء" />
+          {levelsReady && form.workItemId ? (
+            <div>
+              <label className="block text-[11px] font-semibold text-[color:var(--cl-soft)] mb-1">البند الفرعي (تحت بند العمل)</label>
+              <ListSelect value={form.costLevel1} onChange={(v) => setForm((f) => ({ ...f, costLevel1: v }))} options={wiLevels.filter((l) => l.workItemId === form.workItemId).map((l) => l.name)} onAdd={async (n) => { const l = await onAddLevel(form.workItemId, n); return l?.name || null; }} placeholder="— البند الفرعي —" addLabel="+ بند فرعي جديد…" />
+            </div>
+          ) : (
+            <Field label={levelsReady ? "البند الفرعي (اختار بند العمل الأول)" : "المستوى الأول للتكلفة"} value={form.costLevel1} onChange={(v) => setForm((f) => ({ ...f, costLevel1: v }))} placeholder="مثال: كهرباء" />
+          )}
           <Field label="المستوى الثاني للتكلفة" value={form.costLevel2} onChange={(v) => setForm((f) => ({ ...f, costLevel2: v }))} placeholder="مثال: كابلات" />
           <Field label="التاريخ" value={form.date} onChange={(v) => setForm((f) => ({ ...f, date: v }))} type="date" />
 
@@ -4787,7 +4870,7 @@ function payCostFromPayment(p, st) {
     id: payCostId(p.id), projectId: t.projectId, workItemId: t.workItemId, custodyId: null,
     type: isContractor ? "مصنعيات" : "مشتريات",
     desc: `${isContractor ? "مقاول" : "مورد"}: ${p.partyName}`,
-    costLevel1: st?.workType || "", costLevel2: st ? `دفعة على مستخلص رقم ${st.number}` : "دفعة عامة",
+    costLevel1: st?.workItemLevel || st?.workType || "", costLevel2: st ? `دفعة على مستخلص رقم ${st.number}` : "دفعة عامة",
     qty: 1, unit: "دفعة", price: stRound(p.amount), date: p.date,
   };
 }
@@ -4817,7 +4900,7 @@ function stCostFromStatement(st) {
     id: stCostId(st.id), projectId: st.projectId, workItemId: st.workItemId, custodyId: null,
     type: isContractor ? "مصنعيات" : "مشتريات",
     desc: `مستخلص ${isContractor ? "مقاول" : "مورد"}: ${st.partyName}`,
-    costLevel1: st.workType || "", costLevel2: `مستخلص رقم ${st.number}`,
+    costLevel1: st.workItemLevel || st.workType || "", costLevel2: `مستخلص رقم ${st.number}`,
     qty: 1, unit: "مستخلص", price: stRound(st.subtotal), date: st.date,
   };
 }
@@ -4969,6 +5052,7 @@ const stXlHeadRows = (cfg) => [
   ["الحالة", "مسودة أو معتمد"],
   ["المشروع", "اسم المشروع زي ما هو في البرنامج (اختياري)"],
   ["بند العمل", "اسم بند العمل في المشروع (لازم لو معتمد ومربوط بمشروع)"],
+  ["البند الفرعي", "اختياري — من البنود الفرعية تحت بند العمل (مثال: مصنعيات المباني تحت مباني)"],
   [cfg.workLabel || "نوع الأعمال", "اختياري"],
   ["ملاحظات", "اختياري"],
 ];
@@ -5094,8 +5178,13 @@ function buildStatementTemplate(cfg, ctx) {
   ctx.projects.forEach((pr) => uniq(ctx.workItems.filter((w) => w.projectId === pr.id).map((w) => w.name)).forEach((w) => pairs.push([pr.name, w])));
   lists.pairProj = pairs.map((x) => x[0]);
   lists.pairWork = pairs.map((x) => x[1]);
+  // جدول (مشروع › بند | بند فرعي) — عشان قايمة البند الفرعي تبقى بتاعة بند العمل المختار بس
+  const lvPairs = [];
+  ctx.projects.forEach((pr) => ctx.workItems.filter((w) => w.projectId === pr.id).forEach((w) => uniq((ctx.wiLevels || []).filter((l) => l.workItemId === w.id).map((l) => l.name)).forEach((n) => lvPairs.push([pr.name + " › " + w.name, n]))));
+  lists.lvKey = lvPairs.map((x) => x[0]);
+  lists.lvName = lvPairs.map((x) => x[1]);
   const L = "قوائم";
-  const listCols = [["parties", cfg.partyPlural], ["projects", "المشروعات"], ["works", "بنود الأعمال"], ["workTypes", cfg.workPlural || "أنواع الأعمال"], ["units", "الوحدات"], ["items", "البنود"], ["adj", "الخصومات"], ["pairProj", "مشروع البند"], ["pairWork", "بند العمل"]];
+  const listCols = [["parties", cfg.partyPlural], ["projects", "المشروعات"], ["works", "بنود الأعمال"], ["workTypes", cfg.workPlural || "أنواع الأعمال"], ["units", "الوحدات"], ["items", "البنود"], ["adj", "الخصومات"], ["pairProj", "مشروع البند"], ["pairWork", "بند العمل"], ["lvKey", "المشروع › البند"], ["lvName", "البند الفرعي"]];
   const ref = (key) => {
     const i = listCols.findIndex(([k]) => k === key);
     const n = lists[key].length;
@@ -5128,6 +5217,16 @@ function buildStatementTemplate(cfg, ctx) {
     ? `IF(${projCell}="",'${L}'!$${wc}$2:$${wc}$${pn + 1},OFFSET('${L}'!$${wc}$2,MATCH(${projCell},'${L}'!$${pc}$2:$${pc}$${pn + 1},0)-1,0,MAX(1,COUNTIF('${L}'!$${pc}$2:$${pc}$${pn + 1},${projCell})),1))`
     : null;
   addHeadList("بند العمل", proj ? ref("works") : depList, "اختار بند العمل من القايمة — القايمة فيها بنود المشروع اللي اخترته بس. اختار المشروع الأول.");
+  // البند الفرعي: بتاع (المشروع › بند العمل) المختارين
+  const ln = lists.lvKey.length;
+  if (ln) {
+    const kc = xwCol(listCols.findIndex(([k]) => k === "lvKey"));
+    const nc = xwCol(listCols.findIndex(([k]) => k === "lvName"));
+    const key = `${projCell}&" › "&$B$${rowOf("بند العمل")}`;
+    // بند عمل مالوش بنود فرعية → قايمة فاضية (خلية فاضية تحت القايمة) بدل #N/A
+    const lvList = `IF(OR(${projCell}="",$B$${rowOf("بند العمل")}=""),'${L}'!$${nc}$2:$${nc}$${ln + 1},IF(ISNA(MATCH(${key},'${L}'!$${kc}$2:$${kc}$${ln + 1},0)),'${L}'!$${nc}$${maxLen + 3},OFFSET('${L}'!$${nc}$2,MATCH(${key},'${L}'!$${kc}$2:$${kc}$${ln + 1},0)-1,0,MAX(1,COUNTIF('${L}'!$${kc}$2:$${kc}$${ln + 1},${key})),1)))`;
+    addHeadList("البند الفرعي", lvList, "اختار البند الفرعي من القايمة — فيها البنود الفرعية لبند العمل اللي اخترته بس. لو مش موجود ضيفه من البرنامج (الأعمال والمقايسة).");
+  }
   addHeadList(cfg.workLabel || "نوع الأعمال", ref("workTypes"), strictMsg(cfg.workLabel || "نوع الأعمال"));
 
   const N = 200;
@@ -5299,6 +5398,12 @@ function parseStatementExcel(file, cfg, ctx) {
           if (wi) d.workItemId = wi.id;
           else warnings.push(`بند العمل "${wName}" مش موجود في المشروع — اختاره من القايمة.`);
         }
+        const lName = stXlTxt(g("البند الفرعي")?.v);
+        if (lName) {
+          const lv = (ctx.wiLevels || []).find((l) => l.workItemId === d.workItemId && stNorm(l.name) === stNorm(lName));
+          if (lv) d.workItemLevel = lv.name;
+          else if (d.workItemId) warnings.push(`البند الفرعي "${lName}" مش متسجل تحت بند العمل — اختاره أو ضيفه من الشاشة.`);
+        }
         const wt = stXlTxt((g(cfg.workLabel || "نوع الأعمال") || g("نوع الأعمال"))?.v);
         if (wt) {
           const m = ctx.kindWorkTypes.find((w) => stNorm(w.name) === stNorm(wt));
@@ -5338,10 +5443,11 @@ function parseStatementExcel(file, cfg, ctx) {
 
 const stCellInput = "w-full border border-[color:var(--cl-line)] rounded-md px-2 py-1.5 text-sm outline-none focus:border-[color:var(--cl-accent-bg)] bg-[color:var(--cl-card)] text-[color:var(--cl-text)]";
 
-function StatementForm({ cfg, initial, parties, projects, existing, payments, onCancel, onSave, onAddPayment, onDeletePayment, registry, kindWorkTypes, registryReady, onSaveParty, onAddWorkType, workItems = [], costLinkReady, units = [], unitsReady = false, onAddUnit, payCostReady = false, draft = null }) {
+function StatementForm({ cfg, initial, parties, projects, existing, payments, onCancel, onSave, onAddPayment, onDeletePayment, registry, kindWorkTypes, registryReady, onSaveParty, onAddWorkType, workItems = [], costLinkReady, units = [], unitsReady = false, onAddUnit, payCostReady = false, draft = null, wiLevels = [], levelsReady = false, onAddLevel }) {
   const src = initial || draft; // draft = مستخلص جاي من ملف إكسيل (جديد، لسه متحفظش)
   const [partyName, setPartyName] = useState(src?.partyName || "");
   const [workItemId, setWorkItemId] = useState(src?.workItemId || "");
+  const [workItemLevel, setWorkItemLevel] = useState(src?.workItemLevel || "");
   const [workType, setWorkType] = useState(src?.workType || "");
   const [quickParty, setQuickParty] = useState(null); // { name, phone } لما تفتح "إضافة سريعة"
   const [quickWork, setQuickWork] = useState(null); // اسم نوع أعمال جديد
@@ -5451,7 +5557,7 @@ function StatementForm({ cfg, initial, parties, projects, existing, payments, on
     const c = calcStatement(cleanItems, adjustments);
     onSave({
       id: initial?.id || stUid("st_"), kind: initial?.kind || cfg.kind, partyName: name, date, number: num,
-      projectId: projectId || null, status, notes: notes.trim(), workType: workType || "", workItemId: projectId ? workItemId || "" : "",
+      projectId: projectId || null, status, notes: notes.trim(), workType: workType || "", workItemId: projectId ? workItemId || "" : "", workItemLevel: projectId && workItemId ? workItemLevel || "" : "",
       items: cleanItems.map((i) => ({
         id: i.id, ver: 3, desc: i.desc.trim(), unit: i.unit, price: Number(i.price) || 0,
         qtyPrev: stPrevQty(i), qtyCur: stCurQty(i), qtyTotal: stTotalQty(i),
@@ -5509,16 +5615,24 @@ function StatementForm({ cfg, initial, parties, projects, existing, payments, on
             </div>
           </div>
         )}
-        <SelectField label="المشروع (اختياري)" value={projectId} onChange={(v) => { setProjectId(v); if (v !== projectId) setWorkItemId(""); }} options={[{ value: "", label: "— بدون مشروع —" }, ...projects.map((p) => ({ value: p.id, label: p.name }))]} />
+        <SelectField label="المشروع (اختياري)" value={projectId} onChange={(v) => { setProjectId(v); if (v !== projectId) { setWorkItemId(""); setWorkItemLevel(""); } }} options={[{ value: "", label: "— بدون مشروع —" }, ...projects.map((p) => ({ value: p.id, label: p.name }))]} />
         {costLinkReady && projectId && (
           <div className="col-span-4 rounded-lg bg-[color:var(--cl-inset)] border border-[color:var(--cl-sep)] p-3 grid grid-cols-4 gap-3 items-end">
             <SelectField
               label={`بند العمل في المشروع${status === "معتمد" ? " *" : ""}`}
               value={workItemId}
-              onChange={setWorkItemId}
+              onChange={(v) => { setWorkItemId(v); if (v !== workItemId) setWorkItemLevel(""); }}
               options={[{ value: "", label: "— اختار بند العمل —" }, ...projWorkItems.map((w) => ({ value: w.id, label: w.name }))]}
             />
-            <div className="col-span-3 text-[12px] text-[color:var(--cl-soft)] leading-relaxed">
+            {levelsReady && (
+              <div>
+                <label className="block text-[11px] font-semibold text-[color:var(--cl-soft)] mb-1">البند الفرعي</label>
+                {workItemId
+                  ? <ListSelect value={workItemLevel} onChange={setWorkItemLevel} options={wiLevels.filter((l) => l.workItemId === workItemId).map((l) => l.name)} onAdd={async (n) => { const l = await onAddLevel(workItemId, n); return l?.name || null; }} placeholder="— البند الفرعي —" addLabel="+ بند فرعي جديد…" />
+                  : <div className="text-[11px] text-[color:var(--cl-muted)] py-2">اختار بند العمل الأول</div>}
+              </div>
+            )}
+            <div className={`${levelsReady ? "col-span-2" : "col-span-3"} text-[12px] text-[color:var(--cl-soft)] leading-relaxed`}>
               {status === "معتمد"
                 ? (payCostReady
                   ? <>لما تحفظ، <b>أعمال هذا المستخلص ({stMoney(calc.subtotal)} ج.م)</b> هتدخل في <b>إجمالي تكلفة المشروع</b> كمستحق لـ{cfg.partyLabel}، وكل دفعة تتصرف له بتنزل في <b>التكاليف الفعلية</b> على بند العمل ده وتقلل المستحق.</>
@@ -5761,7 +5875,7 @@ function StatementForm({ cfg, initial, parties, projects, existing, payments, on
   );
 }
 
-function StatementsModule({ kind, statements, payments, projects, dbError, onSave, onDelete, onAddPayment, onDeletePayment, registeredParties = [], workTypes = [], registryDbError, onSaveParty, onDeleteParty, onImportParties, onAddWorkType, onDeleteWorkType, workItems = [], costLinkReady = false, units = [], unitsReady = false, onAddUnit, onDeleteUnit, payCostReady = false }) {
+function StatementsModule({ kind, statements, payments, projects, dbError, onSave, onDelete, onAddPayment, onDeletePayment, registeredParties = [], workTypes = [], registryDbError, onSaveParty, onDeleteParty, onImportParties, onAddWorkType, onDeleteWorkType, workItems = [], costLinkReady = false, units = [], unitsReady = false, onAddUnit, onDeleteUnit, payCostReady = false, wiLevels = [], levelsReady = false, onAddLevel }) {
   const cfg = { ...ST_KINDS[kind], kind };
   const Icon = cfg.icon;
   const [mode, setMode] = useState("list"); // list | form | parties | registry | worktypes
@@ -5818,6 +5932,7 @@ function StatementsModule({ kind, statements, payments, projects, dbError, onSav
         cfg={cfg} initial={editing} parties={parties} projects={projects} existing={list} payments={pays} onAddPayment={onAddPayment} onDeletePayment={onDeletePayment}
         registry={registry} kindWorkTypes={kindWorkTypes} registryReady={registryReady} onSaveParty={onSaveParty} onAddWorkType={onAddWorkType}
         workItems={workItems} costLinkReady={costLinkReady} units={units} unitsReady={unitsReady} onAddUnit={onAddUnit} payCostReady={payCostReady} draft={editing ? null : draft}
+        wiLevels={wiLevels} levelsReady={levelsReady} onAddLevel={onAddLevel}
         onCancel={() => { setMode("list"); setEditing(null); setDraft(null); }}
         onSave={async (st) => { const ok = await onSave(st); if (ok !== false) { setMode("list"); setEditing(null); setDraft(null); } }}
       />
@@ -5850,7 +5965,7 @@ function StatementsModule({ kind, statements, payments, projects, dbError, onSav
             if (!f) return;
             setImporting(true);
             try {
-              const d = await parseStatementExcel(f, cfg, { projects, workItems, registry, kindWorkTypes });
+              const d = await parseStatementExcel(f, cfg, { projects, workItems, registry, kindWorkTypes, wiLevels });
               if (d.error) { alert(d.error); return; }
               setEditing(null); setDraft(d); setMode("form");
             } catch (err) { alert("حصل خطأ أثناء قراءة الملف: " + (err?.message || err)); }
@@ -5873,7 +5988,7 @@ function StatementsModule({ kind, statements, payments, projects, dbError, onSav
             <SelectField small label="المشروع (اختياري)" value={tpl.projectId} onChange={(v) => setTpl((t) => ({ ...t, projectId: v }))} options={[{ value: "", label: "— كل المشروعات —" }, ...projects.map((p) => ({ value: p.id, label: p.name }))]} />
             <SelectField small label={`${cfg.partyLabel} (اختياري)`} value={tpl.partyName} onChange={(v) => setTpl((t) => ({ ...t, partyName: v }))} options={[{ value: "", label: "— أي حد —" }, ...registry.map((r) => ({ value: r.name, label: r.name }))]} />
             <button
-              onClick={() => downloadStatementTemplate(cfg, { registry, projects, workItems, kindWorkTypes, units, statements: list, projectId: tpl.projectId, partyName: tpl.partyName })}
+              onClick={() => downloadStatementTemplate(cfg, { registry, projects, workItems, kindWorkTypes, units, wiLevels, statements: list, projectId: tpl.projectId, partyName: tpl.partyName })}
               className="px-4 py-1.5 rounded-lg bg-[color:var(--cl-accent-bg)] text-[color:var(--cl-on-accent)] text-xs font-bold hover:bg-[color:var(--cl-accent-hover)] flex items-center justify-center gap-1.5">
               <FileStack size={14} /> تنزيل النموذج
             </button>
@@ -6216,6 +6331,32 @@ function PayTargetFields({ form, setForm, projects = [], workItems = [] }) {
       <SelectField small label="على مشروع (اختياري)" value={form.projectId || ""} onChange={(v) => setForm((f) => ({ ...f, projectId: v, workItemId: v === f.projectId ? f.workItemId : "" }))} options={[{ value: "", label: "— بدون مشروع —" }, ...projects.map((p) => ({ value: p.id, label: p.name }))]} />
       {form.projectId && <SelectField small label="بند العمل *" value={form.workItemId || ""} onChange={(v) => setForm((f) => ({ ...f, workItemId: v }))} options={[{ value: "", label: "— اختار —" }, ...wis.map((w) => ({ value: w.id, label: w.name }))]} />}
     </>
+  );
+}
+
+// قايمة منسدلة عامة + "إضافة جديد" من نفس الخانة (onAdd بترجع الاسم المحفوظ أو null)
+function ListSelect({ value, onChange, options = [], onAdd, placeholder = "— اختار —", addLabel = "+ إضافة جديد…" }) {
+  const [adding, setAdding] = useState(false);
+  const [draft, setDraft] = useState("");
+  const v = value || "";
+  const cls = "w-full border border-[color:var(--cl-line)] rounded-lg px-3 py-2 text-sm outline-none focus:border-[color:var(--cl-accent-bg)] transition bg-[color:var(--cl-card)] text-[color:var(--cl-text)]";
+  const save = async () => { const n = await onAdd(draft); if (n) { onChange(n); setAdding(false); setDraft(""); } };
+  if (adding) {
+    return (
+      <div className="flex gap-1">
+        <input autoFocus value={draft} onChange={(e) => setDraft(e.target.value)} placeholder="الاسم" onKeyDown={(e) => { if (e.key === "Enter") save(); if (e.key === "Escape") { setAdding(false); setDraft(""); } }} className={cls + " min-w-0"} />
+        <button type="button" onClick={save} title="حفظ" className="px-2 rounded-md bg-[color:var(--cl-accent-bg)] text-[color:var(--cl-on-accent)] text-xs font-bold shrink-0">✓</button>
+        <button type="button" onClick={() => { setAdding(false); setDraft(""); }} title="إلغاء" className="px-1.5 rounded-md border border-[color:var(--cl-line)] text-[color:var(--cl-soft)] shrink-0"><X size={12} /></button>
+      </div>
+    );
+  }
+  return (
+    <select value={v} onChange={(e) => (e.target.value === "__add" ? setAdding(true) : onChange(e.target.value))} className={cls}>
+      <option value="">{placeholder}</option>
+      {options.map((n) => <option key={n} value={n}>{n}</option>)}
+      {v && !options.includes(v) && <option value={v}>{v}</option>}
+      {onAdd && <option value="__add">{addLabel}</option>}
+    </select>
   );
 }
 
