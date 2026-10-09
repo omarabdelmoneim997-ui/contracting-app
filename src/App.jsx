@@ -4973,37 +4973,197 @@ const stXlHeadRows = (cfg) => [
   ["ملاحظات", "اختياري"],
 ];
 
-function downloadStatementTemplate(cfg) {
-  loadSheetJS()
-    .then((XLSX) => {
-      const wb = XLSX.utils.book_new();
-      const head = XLSX.utils.aoa_to_sheet([["البيان", "القيمة", "توضيح"], ...stXlHeadRows(cfg).map(([k, hint]) => [k, "", hint])]);
-      head["!cols"] = [{ wch: 18 }, { wch: 32 }, { wch: 52 }];
-      const items = XLSX.utils.aoa_to_sheet([ST_XL.itemCols]);
-      items["!cols"] = [{ wch: 40 }, { wch: 10 }, { wch: 14 }, { wch: 12 }, { wch: 22 }, { wch: 16 }, { wch: 22 }];
-      const adj = XLSX.utils.aoa_to_sheet([ST_XL.adjCols]);
-      adj["!cols"] = [{ wch: 28 }, { wch: 10 }, { wch: 10 }, { wch: 10 }, { wch: 24 }];
-      const help = XLSX.utils.aoa_to_sheet([
-        ["طريقة الاستخدام"],
-        [`1) املا شيت "${ST_XL.head}" في عمود القيمة.`],
-        [`2) في شيت "${ST_XL.items}" كل سطر = بند. البند والسعر وإجمالي الكمية مطلوبين.`],
-        ["3) نسبة التنفيذ الحالية: اكتب الرقم بس (30 = 30٪). سيبها فاضية = تكملة البند لـ 100٪."],
-        ["4) الكمية والنسبة السابقة: سيبهم فاضيين والبرنامج هيجيبهم من المستخلص اللي قبله لنفس البند (بنفس الاسم)."],
-        ["5) الخصومات والإضافات اختيارية — النوع: نسبة أو مبلغ | الأثر: خصم أو إضافة | تُحسب على: إجمالي الأعمال أو الإجمالي بعد السابق."],
-        ["6) في البرنامج: رفع مستخلص من إكسيل ← راجع ← حفظ المستخلص."],
-        [],
-        ["مثال لبند:", "محارة داخلي", "م²", 500, 120, 30, "", ""],
-        ["مثال لخصم:", "ضمان أعمال", "نسبة", 5, "خصم", "إجمالي الأعمال"],
-      ]);
-      help["!cols"] = [{ wch: 14 }, { wch: 40 }, { wch: 10 }, { wch: 10 }, { wch: 10 }, { wch: 14 }];
-      XLSX.utils.book_append_sheet(wb, head, ST_XL.head);
-      XLSX.utils.book_append_sheet(wb, items, ST_XL.items);
-      XLSX.utils.book_append_sheet(wb, adj, ST_XL.adj);
-      XLSX.utils.book_append_sheet(wb, help, "تعليمات");
-      wb.Workbook = { Views: [{ RTL: true }] };
-      XLSX.writeFile(wb, `نموذج ${cfg.title}.xlsx`);
-    })
-    .catch((err) => alert(err.message));
+/* ---------- كاتب إكسيل صغير (بدون مكتبات): شيتات + تنسيق + قوايم منسدلة ---------- */
+// sheet = { name, rows: [[cell]], cols: [عرض], rtl, hidden, freeze, validations: [{ sqref, list | decimal:[min,max], strict }] }
+// cell = قيمة (نص/رقم) أو { v, s } — s رقم الستايل: 0 عادي، 1 عنوان، 2 خانة إدخال، 3 عنوان بيان، 4 توضيح، 5 نص كبير
+const XW_CRC = (() => { const t = new Uint32Array(256); for (let n = 0; n < 256; n++) { let c = n; for (let k = 0; k < 8; k++) c = c & 1 ? 0xedb88320 ^ (c >>> 1) : c >>> 1; t[n] = c >>> 0; } return t; })();
+const xwCrc32 = (u8) => { let c = 0xffffffff; for (let i = 0; i < u8.length; i++) c = XW_CRC[(c ^ u8[i]) & 0xff] ^ (c >>> 8); return (c ^ 0xffffffff) >>> 0; };
+const xwEsc = (v) => String(v ?? "").replace(/[&<>"]/g, (c) => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;" }[c])).replace(/[\u0000-\u0008\u000B\u000C\u000E-\u001F]/g, "");
+const xwCol = (i) => { let s = ""; i++; while (i) { const m = (i - 1) % 26; s = String.fromCharCode(65 + m) + s; i = Math.floor((i - 1) / 26); } return s; };
+
+// zip بدون ضغط (stored) — كفاية لملف إكسيل صغير وبيفتح عادي في إكسيل
+function xwZip(files) {
+  const enc = new TextEncoder();
+  const parts = [], central = [];
+  let offset = 0;
+  const u16 = (n) => [n & 255, (n >>> 8) & 255];
+  const u32 = (n) => [n & 255, (n >>> 8) & 255, (n >>> 16) & 255, (n >>> 24) & 255];
+  files.forEach(({ name, data }) => {
+    const nameB = enc.encode(name), dataB = typeof data === "string" ? enc.encode(data) : data;
+    const crc = xwCrc32(dataB);
+    const head = [...u32(0x04034b50), ...u16(20), ...u16(0x0800), ...u16(0), ...u16(0), ...u16(0x21), ...u32(crc), ...u32(dataB.length), ...u32(dataB.length), ...u16(nameB.length), ...u16(0)];
+    parts.push(new Uint8Array(head), nameB, dataB);
+    central.push(new Uint8Array([...u32(0x02014b50), ...u16(20), ...u16(20), ...u16(0x0800), ...u16(0), ...u16(0), ...u16(0x21), ...u32(crc), ...u32(dataB.length), ...u32(dataB.length), ...u16(nameB.length), ...u16(0), ...u16(0), ...u16(0), ...u16(0), ...u32(0), ...u32(offset)]), nameB);
+    offset += head.length + nameB.length + dataB.length;
+  });
+  const cdSize = central.reduce((a, b) => a + b.length, 0);
+  const end = new Uint8Array([...u32(0x06054b50), ...u16(0), ...u16(0), ...u16(files.length), ...u16(files.length), ...u32(cdSize), ...u32(offset), ...u16(0)]);
+  const all = [...parts, ...central, end];
+  const out = new Uint8Array(all.reduce((a, b) => a + b.length, 0));
+  let p = 0; all.forEach((b) => { out.set(b, p); p += b.length; });
+  return out;
+}
+
+const XW_STYLES = `<?xml version="1.0" encoding="UTF-8" standalone="yes"?>
+<styleSheet xmlns="http://schemas.openxmlformats.org/spreadsheetml/2006/main">
+<fonts count="5"><font><sz val="11"/><name val="Arial"/></font><font><b/><sz val="11"/><color rgb="FFFFFFFF"/><name val="Arial"/></font><font><b/><sz val="11"/><name val="Arial"/></font><font><i/><sz val="10"/><color rgb="FF6B7280"/><name val="Arial"/></font><font><b/><sz val="13"/><name val="Arial"/></font></fonts>
+<fills count="4"><fill><patternFill patternType="none"/></fill><fill><patternFill patternType="gray125"/></fill><fill><patternFill patternType="solid"><fgColor rgb="FF1F2937"/><bgColor indexed="64"/></patternFill></fill><fill><patternFill patternType="solid"><fgColor rgb="FFFFF7D6"/><bgColor indexed="64"/></patternFill></fill></fills>
+<borders count="2"><border><left/><right/><top/><bottom/><diagonal/></border><border><left style="thin"><color rgb="FFC9C2B0"/></left><right style="thin"><color rgb="FFC9C2B0"/></right><top style="thin"><color rgb="FFC9C2B0"/></top><bottom style="thin"><color rgb="FFC9C2B0"/></bottom><diagonal/></border></borders>
+<cellStyleXfs count="1"><xf numFmtId="0" fontId="0" fillId="0" borderId="0"/></cellStyleXfs>
+<cellXfs count="6">
+<xf numFmtId="0" fontId="0" fillId="0" borderId="0" xfId="0"/>
+<xf numFmtId="0" fontId="1" fillId="2" borderId="1" xfId="0" applyFont="1" applyFill="1" applyBorder="1" applyAlignment="1"><alignment horizontal="center" vertical="center" wrapText="1"/></xf>
+<xf numFmtId="0" fontId="0" fillId="3" borderId="1" xfId="0" applyFill="1" applyBorder="1" applyAlignment="1"><alignment horizontal="right" vertical="center"/></xf>
+<xf numFmtId="0" fontId="2" fillId="0" borderId="1" xfId="0" applyFont="1" applyBorder="1" applyAlignment="1"><alignment horizontal="right" vertical="center"/></xf>
+<xf numFmtId="0" fontId="3" fillId="0" borderId="1" xfId="0" applyFont="1" applyBorder="1" applyAlignment="1"><alignment horizontal="right" vertical="center"/></xf>
+<xf numFmtId="0" fontId="4" fillId="0" borderId="0" xfId="0" applyFont="1"/>
+</cellXfs>
+<cellStyles count="1"><cellStyle name="Normal" xfId="0" builtinId="0"/></cellStyles>
+</styleSheet>`;
+
+function xwSheetXml(sh) {
+  const rows = sh.rows.map((r, ri) => {
+    const cells = r.map((c, ci) => {
+      if (c === null || c === undefined) return "";
+      const o = typeof c === "object" ? c : { v: c };
+      const ref = xwCol(ci) + (ri + 1);
+      const s = o.s ? ` s="${o.s}"` : "";
+      if (o.v === "" || o.v === null || o.v === undefined) return o.s ? `<c r="${ref}"${s}/>` : "";
+      if (typeof o.v === "number" && isFinite(o.v)) return `<c r="${ref}"${s}><v>${o.v}</v></c>`;
+      return `<c r="${ref}"${s} t="inlineStr"><is><t xml:space="preserve">${xwEsc(o.v)}</t></is></c>`;
+    }).join("");
+    return `<row r="${ri + 1}"${sh.rowHeight ? ` ht="${sh.rowHeight}" customHeight="1"` : ""}>${cells}</row>`;
+  }).join("");
+  const pane = sh.freeze ? `<pane ySplit="${sh.freeze}" topLeftCell="A${sh.freeze + 1}" activePane="bottomLeft" state="frozen"/>` : "";
+  const cols = sh.cols?.length ? `<cols>${sh.cols.map((w, i) => `<col min="${i + 1}" max="${i + 1}" width="${w}" customWidth="1"/>`).join("")}</cols>` : "";
+  const dvs = (sh.validations || []).filter((d) => d.list || d.decimal);
+  const dvXml = dvs.length
+    ? `<dataValidations count="${dvs.length}">${dvs.map((d) => d.list
+        ? `<dataValidation type="list" allowBlank="1" showInputMessage="1" showErrorMessage="${d.strict ? 1 : 0}"${d.strict ? "" : ' errorStyle="information"'} sqref="${d.sqref}"><formula1>${xwEsc(d.list)}</formula1></dataValidation>`
+        : `<dataValidation type="decimal" operator="between" allowBlank="1" showErrorMessage="1" errorTitle="${xwEsc(d.errorTitle || "")}" error="${xwEsc(d.error || "")}" sqref="${d.sqref}"><formula1>${d.decimal[0]}</formula1><formula2>${d.decimal[1]}</formula2></dataValidation>`).join("")}</dataValidations>`
+    : "";
+  return `<?xml version="1.0" encoding="UTF-8" standalone="yes"?>
+<worksheet xmlns="http://schemas.openxmlformats.org/spreadsheetml/2006/main" xmlns:r="http://schemas.openxmlformats.org/officeDocument/2006/relationships"><sheetViews><sheetView workbookViewId="0"${sh.rtl ? ' rightToLeft="1"' : ""}${sh.active ? ' tabSelected="1"' : ""}>${pane}</sheetView></sheetViews><sheetFormatPr defaultRowHeight="15"/>${cols}<sheetData>${rows}</sheetData>${dvXml}</worksheet>`;
+}
+
+function xwBuildXlsx(sheets) {
+  const files = [];
+  files.push({ name: "[Content_Types].xml", data: `<?xml version="1.0" encoding="UTF-8" standalone="yes"?>
+<Types xmlns="http://schemas.openxmlformats.org/package/2006/content-types"><Default Extension="rels" ContentType="application/vnd.openxmlformats-package.relationships+xml"/><Default Extension="xml" ContentType="application/xml"/><Override PartName="/xl/workbook.xml" ContentType="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet.main+xml"/><Override PartName="/xl/styles.xml" ContentType="application/vnd.openxmlformats-officedocument.spreadsheetml.styles+xml"/>${sheets.map((_, i) => `<Override PartName="/xl/worksheets/sheet${i + 1}.xml" ContentType="application/vnd.openxmlformats-officedocument.spreadsheetml.worksheet+xml"/>`).join("")}</Types>` });
+  files.push({ name: "_rels/.rels", data: `<?xml version="1.0" encoding="UTF-8" standalone="yes"?>
+<Relationships xmlns="http://schemas.openxmlformats.org/package/2006/relationships"><Relationship Id="rId1" Type="http://schemas.openxmlformats.org/officeDocument/2006/relationships/officeDocument" Target="xl/workbook.xml"/></Relationships>` });
+  files.push({ name: "xl/workbook.xml", data: `<?xml version="1.0" encoding="UTF-8" standalone="yes"?>
+<workbook xmlns="http://schemas.openxmlformats.org/spreadsheetml/2006/main" xmlns:r="http://schemas.openxmlformats.org/officeDocument/2006/relationships"><bookViews><workbookView activeTab="0"/></bookViews><sheets>${sheets.map((s, i) => `<sheet name="${xwEsc(s.name)}" sheetId="${i + 1}"${s.hidden ? ' state="hidden"' : ""} r:id="rId${i + 1}"/>`).join("")}</sheets></workbook>` });
+  files.push({ name: "xl/_rels/workbook.xml.rels", data: `<?xml version="1.0" encoding="UTF-8" standalone="yes"?>
+<Relationships xmlns="http://schemas.openxmlformats.org/package/2006/relationships">${sheets.map((_, i) => `<Relationship Id="rId${i + 1}" Type="http://schemas.openxmlformats.org/officeDocument/2006/relationships/worksheet" Target="worksheets/sheet${i + 1}.xml"/>`).join("")}<Relationship Id="rId${sheets.length + 1}" Type="http://schemas.openxmlformats.org/officeDocument/2006/relationships/styles" Target="styles.xml"/></Relationships>` });
+  files.push({ name: "xl/styles.xml", data: XW_STYLES });
+  sheets.forEach((s, i) => files.push({ name: `xl/worksheets/sheet${i + 1}.xml`, data: xwSheetXml(s) }));
+  return xwZip(files);
+}
+
+function xwDownload(bytes, fileName) {
+  const blob = new Blob([bytes], { type: "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet" });
+  const url = URL.createObjectURL(blob);
+  const a = document.createElement("a");
+  a.href = url; a.download = fileName;
+  document.body.appendChild(a); a.click(); a.remove();
+  setTimeout(() => URL.revokeObjectURL(url), 2000);
+}
+
+/* ---------- نموذج مستخلص بقوايم منسدلة من بيانات البرنامج ---------- */
+// ctx: { registry, projects, workItems, kindWorkTypes, units, statements, projectId, partyName }
+function buildStatementTemplate(cfg, ctx) {
+  const uniq = (arr) => Array.from(new Set(arr.map((x) => String(x ?? "").trim()).filter(Boolean)));
+  const proj = ctx.projects.find((p) => p.id === ctx.projectId) || null;
+  const lists = {
+    parties: uniq(ctx.registry.map((r) => r.name)).sort((a, b) => a.localeCompare(b, "ar")),
+    projects: uniq(ctx.projects.map((p) => p.name)),
+    works: uniq(ctx.workItems.filter((w) => !proj || w.projectId === proj.id).map((w) => w.name)),
+    workTypes: uniq(ctx.kindWorkTypes.map((w) => w.name)),
+    units: uniq(ctx.units.map((u) => u.name)),
+    // البنود: بنود الأعمال + أسماء البنود اللي اتكتبت قبل كده في مستخلصات (عشان السابق يتجاب تلقائي)
+    items: uniq([
+      ...ctx.workItems.filter((w) => !proj || w.projectId === proj.id).map((w) => w.name),
+      ...ctx.statements.filter((s) => (!ctx.partyName || s.partyName === ctx.partyName) && (!proj || s.projectId === proj.id)).flatMap((s) => (s.items || []).map((i) => i.desc)),
+    ]),
+    adj: ST_ADJ_PRESETS.map((p) => p.name),
+  };
+  const L = "قوائم";
+  const listCols = [["parties", cfg.partyPlural], ["projects", "المشروعات"], ["works", "بنود الأعمال"], ["workTypes", cfg.workPlural || "أنواع الأعمال"], ["units", "الوحدات"], ["items", "البنود"], ["adj", "الخصومات"]];
+  const ref = (key) => {
+    const i = listCols.findIndex(([k]) => k === key);
+    const n = lists[key].length;
+    return n ? `'${L}'!$${xwCol(i)}$2:$${xwCol(i)}$${n + 1}` : null;
+  };
+  const maxLen = Math.max(1, ...listCols.map(([k]) => lists[k].length));
+  const listRows = [listCols.map(([, h]) => ({ v: h, s: 1 }))];
+  for (let r = 0; r < maxLen; r++) listRows.push(listCols.map(([k]) => lists[k][r] ?? ""));
+
+  const inp = (v = "") => ({ v, s: 2 });
+  const headRows = stXlHeadRows(cfg);
+  const pre = { [cfg.partyLabel]: ctx.partyName || "", "الحالة": "مسودة", "المشروع": proj?.name || "" };
+  const head = {
+    name: ST_XL.head, rtl: true, active: true, freeze: 1, cols: [20, 36, 56], rowHeight: 22,
+    rows: [[{ v: "البيان", s: 1 }, { v: "القيمة", s: 1 }, { v: "توضيح", s: 1 }], ...headRows.map(([k, hint]) => [{ v: k, s: 3 }, inp(pre[k] || ""), { v: hint, s: 4 }])],
+    validations: [],
+  };
+  const rowOf = (label) => headRows.findIndex(([k]) => k === label) + 2;
+  const addHeadList = (label, r, strict) => { if (r) head.validations.push({ sqref: `B${rowOf(label)}`, list: r, strict }); };
+  addHeadList(cfg.partyLabel, ref("parties"), false);
+  addHeadList("الحالة", `"مسودة,معتمد"`, true);
+  addHeadList("المشروع", ref("projects"), false);
+  addHeadList("بند العمل", ref("works"), false);
+  addHeadList(cfg.workLabel || "نوع الأعمال", ref("workTypes"), false);
+
+  const N = 200;
+  const itemRows = [ST_XL.itemCols.map((h) => ({ v: h, s: 1 }))];
+  for (let r = 0; r < N; r++) itemRows.push(ST_XL.itemCols.map(() => inp()));
+  const items = {
+    name: ST_XL.items, rtl: true, freeze: 1, cols: [42, 12, 15, 13, 22, 16, 22], rows: itemRows,
+    validations: [
+      ref("items") && { sqref: `A2:A${N + 1}`, list: ref("items") },
+      ref("units") && { sqref: `B2:B${N + 1}`, list: ref("units") },
+      { sqref: `C2:D${N + 1} F2:F${N + 1}`, decimal: [0, 999999999999], errorTitle: "رقم غلط", error: "اكتب رقم (ينفع بكسور زي 0.5)" },
+      { sqref: `E2:E${N + 1} G2:G${N + 1}`, decimal: [0, 100], errorTitle: "نسبة غلط", error: "اكتب رقم من 0 لـ 100 (30 = 30٪)" },
+    ].filter(Boolean),
+  };
+  const adjRows = [ST_XL.adjCols.map((h) => ({ v: h, s: 1 }))];
+  for (let r = 0; r < 20; r++) adjRows.push(ST_XL.adjCols.map(() => inp()));
+  const adj = {
+    name: ST_XL.adj, rtl: true, freeze: 1, cols: [30, 11, 11, 11, 26], rows: adjRows,
+    validations: [
+      { sqref: "A2:A21", list: ref("adj") },
+      { sqref: "B2:B21", list: `"نسبة,مبلغ"`, strict: true },
+      { sqref: "D2:D21", list: `"خصم,إضافة"`, strict: true },
+      { sqref: "E2:E21", list: `"إجمالي الأعمال,الإجمالي بعد السابق"`, strict: true },
+    ],
+  };
+  const help = {
+    name: "تعليمات", rtl: true, cols: [110],
+    rows: [
+      [{ v: "طريقة الاستخدام", s: 5 }],
+      ["1) املا الخانات الصفرا بس. الخانات اللي فيها سهم ▾ بتختار منها من القايمة (المقاولين وبنود الأعمال والوحدات جاية من البرنامج)."],
+      [`2) شيت "${ST_XL.head}": اختار ${cfg.partyLabel} والمشروع وبند العمل من القايمة، واكتب التاريخ (مثال 2026-10-08).`],
+      [`3) شيت "${ST_XL.items}": كل سطر = بند. اختار البند من القايمة أو اكتب اسم جديد. البند والسعر وإجمالي الكمية مطلوبين.`],
+      ["4) إجمالي الكمية = الكمية التراكمية لحد المستخلص ده. الأرقام بتقبل كسور (0.5)."],
+      ["5) نسبة التنفيذ الحالية: اكتب الرقم بس (30 = 30٪). فاضية = تكملة البند لـ 100٪."],
+      ["6) الكمية والنسبة السابقة: سيبهم فاضيين — البرنامج بيجيبهم من المستخلص اللي قبله لنفس البند (بنفس الاسم)."],
+      ["7) في البرنامج: رفع مستخلص من إكسيل ← راجع البيانات ← حفظ المستخلص."],
+      ["متغيّرش أسماء الشيتات ولا عناوين الأعمدة. القوايم محفوظة في شيت مخفي اسمه \"قوائم\"."],
+    ],
+  };
+  const listSheet = { name: L, hidden: true, rtl: true, cols: listCols.map(() => 28), rows: listRows };
+  return xwBuildXlsx([head, items, adj, help, listSheet]);
+}
+
+function downloadStatementTemplate(cfg, ctx) {
+  try {
+    const bytes = buildStatementTemplate(cfg, ctx);
+    const proj = ctx.projects.find((p) => p.id === ctx.projectId);
+    xwDownload(bytes, `نموذج ${cfg.title}${proj ? " - " + proj.name : ""}${ctx.partyName ? " - " + ctx.partyName : ""}.xlsx`);
+  } catch (e) {
+    alert("حصل خطأ أثناء تجهيز النموذج: " + (e?.message || e));
+  }
 }
 
 // أرقام: بتقبل الأرقام العربية والفواصل وعلامة ٪
@@ -5600,6 +5760,8 @@ function StatementsModule({ kind, statements, payments, projects, dbError, onSav
   const [newWork, setNewWork] = useState("");
   const [newUnit, setNewUnit] = useState("");
   const [draft, setDraft] = useState(null); // مستخلص مستورد من إكسيل
+  const [tplOpen, setTplOpen] = useState(false);
+  const [tpl, setTpl] = useState({ projectId: "", partyName: "" });
   const [importing, setImporting] = useState(false);
 
   useEffect(() => { setMode("list"); setEditing(null); setOpenParty(null); setSearch(""); setWorkFilter(""); setPartyForm(emptyParty); setNewWork(""); }, [kind]);
@@ -5663,7 +5825,7 @@ function StatementsModule({ kind, statements, payments, projects, dbError, onSav
           <p className="text-[12px] text-[color:var(--cl-muted)] mt-1">مستقلة عن المشاريع والعقود — اربط بمشروع لو حابب فقط</p>
         </div>
         <div className="flex items-center gap-2">
-        <button onClick={() => downloadStatementTemplate(cfg)} title="نموذج إكسيل فاضي تملاه وترفعه" className="px-3 py-2 rounded-lg border border-[color:var(--cl-line)] text-[color:var(--cl-text)] text-sm font-semibold flex items-center gap-1.5 hover:bg-[color:var(--cl-sub)] transition">
+        <button onClick={() => setTplOpen((v) => !v)} title="نموذج إكسيل بقوايم منسدلة من البرنامج تملاه وترفعه" className={`px-3 py-2 rounded-lg border text-sm font-semibold flex items-center gap-1.5 transition ${tplOpen ? "border-[color:var(--cl-accent-bg)] text-[color:var(--cl-accent)]" : "border-[color:var(--cl-line)] text-[color:var(--cl-text)] hover:bg-[color:var(--cl-sub)]"}`}>
           <FileStack size={15} /> نموذج إكسيل
         </button>
         <label className={`px-3 py-2 rounded-lg border border-[color:var(--cl-line)] text-[color:var(--cl-text)] text-sm font-semibold flex items-center gap-1.5 hover:bg-[color:var(--cl-sub)] transition cursor-pointer ${importing ? "opacity-60 pointer-events-none" : ""}`}>
@@ -5685,6 +5847,25 @@ function StatementsModule({ kind, statements, payments, projects, dbError, onSav
         </button>
         </div>
       </div>
+
+      {tplOpen && (
+        <div className="bg-[color:var(--cl-card)] rounded-xl border border-[color:var(--cl-accent-bg)] p-4 space-y-3">
+          <div>
+            <div className="font-bold text-sm text-[color:var(--cl-text)]">نموذج إكسيل بقوايم منسدلة</div>
+            <div className="text-[11px] text-[color:var(--cl-muted)]">النموذج بيطلع فيه قوايم تختار منها: {cfg.partyPlural} المسجلين، المشروعات، بنود الأعمال، {cfg.workPlural}، الوحدات، والبنود اللي اتكتبت قبل كده. اختار المشروع عشان قايمة بنود الأعمال تبقى بتاعته بس.</div>
+          </div>
+          <div className="grid grid-cols-4 gap-3 items-end">
+            <SelectField small label="المشروع (اختياري)" value={tpl.projectId} onChange={(v) => setTpl((t) => ({ ...t, projectId: v }))} options={[{ value: "", label: "— كل المشروعات —" }, ...projects.map((p) => ({ value: p.id, label: p.name }))]} />
+            <SelectField small label={`${cfg.partyLabel} (اختياري)`} value={tpl.partyName} onChange={(v) => setTpl((t) => ({ ...t, partyName: v }))} options={[{ value: "", label: "— أي حد —" }, ...registry.map((r) => ({ value: r.name, label: r.name }))]} />
+            <button
+              onClick={() => downloadStatementTemplate(cfg, { registry, projects, workItems, kindWorkTypes, units, statements: list, projectId: tpl.projectId, partyName: tpl.partyName })}
+              className="px-4 py-1.5 rounded-lg bg-[color:var(--cl-accent-bg)] text-[color:var(--cl-on-accent)] text-xs font-bold hover:bg-[color:var(--cl-accent-hover)] flex items-center justify-center gap-1.5">
+              <FileStack size={14} /> تنزيل النموذج
+            </button>
+          </div>
+          {(!registryReady || registry.length === 0) && <div className="text-[11px] text-[#D6A23C]">⚠ مفيش {cfg.partyPlural} مسجلين — سجّلهم من تبويب "{cfg.partyPlural} المسجلين" عشان يظهروا في القايمة.</div>}
+        </div>
+      )}
 
       <div className="grid grid-cols-3 gap-3">
         <div className="bg-[color:var(--cl-card)] rounded-xl border border-[color:var(--cl-line)] p-4">
