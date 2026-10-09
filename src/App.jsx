@@ -5039,7 +5039,7 @@ function xwSheetXml(sh) {
   const dvs = (sh.validations || []).filter((d) => d.list || d.decimal);
   const dvXml = dvs.length
     ? `<dataValidations count="${dvs.length}">${dvs.map((d) => d.list
-        ? `<dataValidation type="list" allowBlank="1" showInputMessage="1" showErrorMessage="${d.strict ? 1 : 0}"${d.strict ? "" : ' errorStyle="information"'} sqref="${d.sqref}"><formula1>${xwEsc(d.list)}</formula1></dataValidation>`
+        ? `<dataValidation type="list" allowBlank="1" showInputMessage="1" showErrorMessage="${d.strict || d.warn ? 1 : 0}"${d.warn ? ' errorStyle="warning"' : d.strict ? "" : ' errorStyle="information"'}${d.error ? ` errorTitle="${xwEsc(d.errorTitle || "قيمة مش في القايمة")}" error="${xwEsc(d.error)}"` : ""} sqref="${d.sqref}"><formula1>${xwEsc(d.list)}</formula1></dataValidation>`
         : `<dataValidation type="decimal" operator="between" allowBlank="1" showErrorMessage="1" errorTitle="${xwEsc(d.errorTitle || "")}" error="${xwEsc(d.error || "")}" sqref="${d.sqref}"><formula1>${d.decimal[0]}</formula1><formula2>${d.decimal[1]}</formula2></dataValidation>`).join("")}</dataValidations>`
     : "";
   return `<?xml version="1.0" encoding="UTF-8" standalone="yes"?>
@@ -5076,7 +5076,8 @@ function buildStatementTemplate(cfg, ctx) {
   const uniq = (arr) => Array.from(new Set(arr.map((x) => String(x ?? "").trim()).filter(Boolean)));
   const proj = ctx.projects.find((p) => p.id === ctx.projectId) || null;
   const lists = {
-    parties: uniq(ctx.registry.map((r) => r.name)).sort((a, b) => a.localeCompare(b, "ar")),
+    // المسجلين في البرنامج (ولو مفيش مسجلين: الأسماء اللي في المستخلصات القديمة)
+    parties: (ctx.registry.length ? uniq(ctx.registry.map((r) => r.name)) : uniq(ctx.statements.map((s) => s.partyName))).sort((a, b) => a.localeCompare(b, "ar")),
     projects: uniq(ctx.projects.map((p) => p.name)),
     works: uniq(ctx.workItems.filter((w) => !proj || w.projectId === proj.id).map((w) => w.name)),
     workTypes: uniq(ctx.kindWorkTypes.map((w) => w.name)),
@@ -5088,8 +5089,13 @@ function buildStatementTemplate(cfg, ctx) {
     ]),
     adj: ST_ADJ_PRESETS.map((p) => p.name),
   };
+  // جدول (المشروع | بند العمل) مترتب حسب المشروع — عشان قايمة بند العمل تبقى بنود المشروع المختار بس
+  const pairs = [];
+  ctx.projects.forEach((pr) => uniq(ctx.workItems.filter((w) => w.projectId === pr.id).map((w) => w.name)).forEach((w) => pairs.push([pr.name, w])));
+  lists.pairProj = pairs.map((x) => x[0]);
+  lists.pairWork = pairs.map((x) => x[1]);
   const L = "قوائم";
-  const listCols = [["parties", cfg.partyPlural], ["projects", "المشروعات"], ["works", "بنود الأعمال"], ["workTypes", cfg.workPlural || "أنواع الأعمال"], ["units", "الوحدات"], ["items", "البنود"], ["adj", "الخصومات"]];
+  const listCols = [["parties", cfg.partyPlural], ["projects", "المشروعات"], ["works", "بنود الأعمال"], ["workTypes", cfg.workPlural || "أنواع الأعمال"], ["units", "الوحدات"], ["items", "البنود"], ["adj", "الخصومات"], ["pairProj", "مشروع البند"], ["pairWork", "بند العمل"]];
   const ref = (key) => {
     const i = listCols.findIndex(([k]) => k === key);
     const n = lists[key].length;
@@ -5108,12 +5114,21 @@ function buildStatementTemplate(cfg, ctx) {
     validations: [],
   };
   const rowOf = (label) => headRows.findIndex(([k]) => k === label) + 2;
-  const addHeadList = (label, r, strict) => { if (r) head.validations.push({ sqref: `B${rowOf(label)}`, list: r, strict }); };
-  addHeadList(cfg.partyLabel, ref("parties"), false);
-  addHeadList("الحالة", `"مسودة,معتمد"`, true);
-  addHeadList("المشروع", ref("projects"), false);
-  addHeadList("بند العمل", ref("works"), false);
-  addHeadList(cfg.workLabel || "نوع الأعمال", ref("workTypes"), false);
+  const strictMsg = (what) => `اختار ${what} من القايمة بس — لازم يكون متسجل في البرنامج. لو مش موجود، سجّله في البرنامج ونزّل النموذج تاني.`;
+  const addHeadList = (label, r, error) => { if (r) head.validations.push({ sqref: `B${rowOf(label)}`, list: r, strict: true, error }); };
+  addHeadList(cfg.partyLabel, ref("parties"), strictMsg(cfg.partyLabel));
+  addHeadList("الحالة", `"مسودة,معتمد"`, "اختار مسودة أو معتمد.");
+  addHeadList("المشروع", ref("projects"), strictMsg("المشروع"));
+  // بند العمل: بنود المشروع المكتوب في خانة المشروع (OFFSET/MATCH)، ولو المشروع فاضي: كل البنود
+  const pn = lists.pairProj.length;
+  const projCell = `$B$${rowOf("المشروع")}`;
+  const pc = xwCol(listCols.findIndex(([k]) => k === "pairProj"));
+  const wc = xwCol(listCols.findIndex(([k]) => k === "pairWork"));
+  const depList = pn
+    ? `IF(${projCell}="",'${L}'!$${wc}$2:$${wc}$${pn + 1},OFFSET('${L}'!$${wc}$2,MATCH(${projCell},'${L}'!$${pc}$2:$${pc}$${pn + 1},0)-1,0,MAX(1,COUNTIF('${L}'!$${pc}$2:$${pc}$${pn + 1},${projCell})),1))`
+    : null;
+  addHeadList("بند العمل", proj ? ref("works") : depList, "اختار بند العمل من القايمة — القايمة فيها بنود المشروع اللي اخترته بس. اختار المشروع الأول.");
+  addHeadList(cfg.workLabel || "نوع الأعمال", ref("workTypes"), strictMsg(cfg.workLabel || "نوع الأعمال"));
 
   const N = 200;
   const itemRows = [ST_XL.itemCols.map((h) => ({ v: h, s: 1 }))];
@@ -5121,8 +5136,8 @@ function buildStatementTemplate(cfg, ctx) {
   const items = {
     name: ST_XL.items, rtl: true, freeze: 1, cols: [42, 12, 15, 13, 22, 16, 22], rows: itemRows,
     validations: [
-      ref("items") && { sqref: `A2:A${N + 1}`, list: ref("items") },
-      ref("units") && { sqref: `B2:B${N + 1}`, list: ref("units") },
+      ref("items") && { sqref: `A2:A${N + 1}`, list: ref("items"), warn: true, errorTitle: "بند جديد؟", error: "البند ده مش في القايمة. لو ده بند جديد دوس Yes، ولو غلطة في الكتابة دوس No واختاره من القايمة (لازم نفس الاسم عشان الكمية والنسبة السابقة تتجاب لوحدها)." },
+      ref("units") && { sqref: `B2:B${N + 1}`, list: ref("units"), strict: true, error: "اختار الوحدة من القايمة. لو مش موجودة ضيفها من البرنامج (تبويب الوحدات)." },
       { sqref: `C2:D${N + 1} F2:F${N + 1}`, decimal: [0, 999999999999], errorTitle: "رقم غلط", error: "اكتب رقم (ينفع بكسور زي 0.5)" },
       { sqref: `E2:E${N + 1} G2:G${N + 1}`, decimal: [0, 100], errorTitle: "نسبة غلط", error: "اكتب رقم من 0 لـ 100 (30 = 30٪)" },
     ].filter(Boolean),
@@ -5142,9 +5157,9 @@ function buildStatementTemplate(cfg, ctx) {
     name: "تعليمات", rtl: true, cols: [110],
     rows: [
       [{ v: "طريقة الاستخدام", s: 5 }],
-      ["1) املا الخانات الصفرا بس. الخانات اللي فيها سهم ▾ بتختار منها من القايمة (المقاولين وبنود الأعمال والوحدات جاية من البرنامج)."],
-      [`2) شيت "${ST_XL.head}": اختار ${cfg.partyLabel} والمشروع وبند العمل من القايمة، واكتب التاريخ (مثال 2026-10-08).`],
-      [`3) شيت "${ST_XL.items}": كل سطر = بند. اختار البند من القايمة أو اكتب اسم جديد. البند والسعر وإجمالي الكمية مطلوبين.`],
+      ["1) املا الخانات الصفرا بس. دوس على الخانة هيظهر سهم ▾ — اختار منه. المقاول والمشروع وبند العمل ونوع الأعمال والوحدة مينفعش يتكتبوا بإيدك؛ لازم تختار من القايمة (جاية من البرنامج) عشان يطابقوا البرنامج."],
+      [`2) شيت "${ST_XL.head}": اختار ${cfg.partyLabel}، وبعدين المشروع، وبعدين بند العمل (قايمته بتتغير حسب المشروع)، واكتب التاريخ (مثال 2026-10-08).`],
+      [`3) شيت "${ST_XL.items}": كل سطر = بند. اختار البند من القايمة (ولو بند جديد اكتبه وأكّد بـ Yes). البند والسعر وإجمالي الكمية مطلوبين.`],
       ["4) إجمالي الكمية = الكمية التراكمية لحد المستخلص ده. الأرقام بتقبل كسور (0.5)."],
       ["5) نسبة التنفيذ الحالية: اكتب الرقم بس (30 = 30٪). فاضية = تكملة البند لـ 100٪."],
       ["6) الكمية والنسبة السابقة: سيبهم فاضيين — البرنامج بيجيبهم من المستخلص اللي قبله لنفس البند (بنفس الاسم)."],
