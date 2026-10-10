@@ -584,7 +584,7 @@ function ContractingApp({ currentUsername, onLogout }) {
       if (payCostReady) {
         // النظام الجديد: المستخلص نفسه مش تكلفة فعلية (بيتحسب "مستحق")، والدفعات هي اللي بتتسجّل كتكاليف فعلية
         await removeLegacyStatementCost(st.id);
-        for (const p of statementPayments.filter((x) => x.statementId === st.id)) await syncPaymentCost(p, st);
+        for (const p of statementPayments.filter((x) => x.statementId === st.id)) { await syncPaymentCost(p, st); await syncPaymentTreasury(p, st); }
       } else {
         await syncStatementCost(st);
       }
@@ -597,6 +597,26 @@ function ContractingApp({ currentUsername, onLogout }) {
     if (!costs.some((c) => c.id === costId)) return;
     const { error } = await supabase.from("costs").delete().eq("id", costId);
     if (!error) setCosts((prev) => prev.filter((c) => c.id !== costId));
+  }
+
+  // الدفعة = حركة "صرف" في خزينة المشروع (id ثابت "tpp_" + id الدفعة) — بتتخصم من رصيد الخزينة
+  async function syncPaymentTreasury(p, stOverride) {
+    const st = stOverride && stOverride.id === p.statementId ? stOverride : statements.find((x) => x.id === p.statementId);
+    const tid = payTreasId(p.id);
+    const exists = treasuryEntries.some((t) => t.id === tid);
+    const target = stPayTarget(p, st);
+    const want = target.projectId && projects.some((pr) => pr.id === target.projectId) && Number(p.amount) > 0;
+    if (!want) {
+      if (!exists) return;
+      const { error } = await supabase.from("treasury_entries").delete().eq("id", tid);
+      if (!error) setTreasuryEntries((prev) => prev.filter((t) => t.id !== tid));
+      return;
+    }
+    const who = p.kind === "contractor" ? "مقاول" : p.kind === "supplier" ? "مورد" : p.category || "مصروفات";
+    const e = { id: tid, projectId: target.projectId, date: p.date, type: "صرف", amount: stRound(p.amount), note: `دفعة ${who}: ${p.partyName}${st ? ` (مستخلص #${st.number})` : ""}${p.method ? ` — ${p.method}` : ""}` };
+    const { error } = await supabase.from("treasury_entries").upsert([{ id: e.id, project_id: e.projectId, date: e.date, type: e.type, amount: e.amount, note: e.note }]);
+    if (error) { alert("اتسجلت الدفعة، بس حصل خطأ أثناء خصمها من الخزينة: " + error.message); return; }
+    setTreasuryEntries((prev) => (exists ? prev.map((t) => (t.id === tid ? e : t)) : [...prev, e]));
   }
 
   // الدفعة = تكلفة فعلية على المشروع (id ثابت "spc_" + id الدفعة)
@@ -672,6 +692,7 @@ function ContractingApp({ currentUsername, onLogout }) {
     const saved = { ...p, projectId: row.project_id || null, workItemId: row.work_item_id || null, workItemLevel: row.work_item_level || "", category: row.category || "", costType: row.cost_type || "" };
     setStatementPayments((prev) => [...prev, saved]);
     if (payCostReady) await syncPaymentCost(saved);
+    await syncPaymentTreasury(saved);
   }
 
   async function deleteStatementPayment(id) {
@@ -683,6 +704,11 @@ function ContractingApp({ currentUsername, onLogout }) {
       const { error: cErr } = await supabase.from("costs").delete().eq("id", payCostId(id));
       if (cErr) alert("اتمسحت الدفعة، بس حصل خطأ أثناء شيل تكلفتها الفعلية من المشروع: " + cErr.message);
       else setCosts((prev) => prev.filter((c) => c.id !== payCostId(id)));
+    }
+    if (treasuryEntries.some((t) => t.id === payTreasId(id))) {
+      const { error: tErr } = await supabase.from("treasury_entries").delete().eq("id", payTreasId(id));
+      if (tErr) alert("اتمسحت الدفعة، بس حصل خطأ أثناء شيل حركتها من الخزينة: " + tErr.message);
+      else setTreasuryEntries((prev) => prev.filter((t) => t.id !== payTreasId(id)));
     }
   }
 
@@ -874,6 +900,11 @@ function ContractingApp({ currentUsername, onLogout }) {
     const { error } = await supabase.from("custodies").insert([{ id: c.id, project_id: c.projectId, person_name: c.personName, amount_given: c.amountGiven, date_given: c.dateGiven, status: c.status, notes: c.notes || null }]);
     if (error) { alert("حصل خطأ أثناء حفظ العهدة: " + error.message); return; }
     setCustodies((prev) => [...prev, c]);
+    // العهدة = حركة "صرف" في خزينة المشروع
+    const e = { id: custTreasId(c.id), projectId: c.projectId, date: c.dateGiven, type: "صرف", amount: Number(c.amountGiven) || 0, note: `عهدة: ${c.personName}` };
+    const { error: tErr } = await supabase.from("treasury_entries").insert([{ id: e.id, project_id: e.projectId, date: e.date, type: e.type, amount: e.amount, note: e.note }]);
+    if (tErr) alert("اتسجلت العهدة، بس حصل خطأ أثناء خصمها من الخزينة: " + tErr.message);
+    else setTreasuryEntries((prev) => [...prev, e]);
   }
 
   async function updateCustody(id, patch) {
@@ -886,6 +917,15 @@ function ContractingApp({ currentUsername, onLogout }) {
     const { error } = await supabase.from("custodies").update(updateData).eq("id", id);
     if (error) { alert("حصل خطأ أثناء تعديل العهدة: " + error.message); return; }
     setCustodies((prev) => prev.map((c) => (c.id === id ? { ...c, ...patch } : c)));
+    // لو العهدة ليها حركة خزينة تلقائية، نحدّث مبلغها/تاريخها/اسمها
+    const tid = custTreasId(id);
+    if (treasuryEntries.some((t) => t.id === tid) && (patch.amountGiven !== undefined || patch.dateGiven !== undefined || patch.personName !== undefined)) {
+      const old = custodies.find((c) => c.id === id) || {};
+      const nc = { ...old, ...patch };
+      const upd = { date: nc.dateGiven, amount: Number(nc.amountGiven) || 0, note: `عهدة: ${nc.personName}` };
+      const { error: tErr } = await supabase.from("treasury_entries").update(upd).eq("id", tid);
+      if (!tErr) setTreasuryEntries((prev) => prev.map((t) => (t.id === tid ? { ...t, ...upd } : t)));
+    }
   }
 
   async function deleteCustody(id) {
@@ -896,6 +936,10 @@ function ContractingApp({ currentUsername, onLogout }) {
     if (error) { alert("حصل خطأ أثناء حذف العهدة: " + error.message); return; }
     setCustodies((prev) => prev.filter((c) => c.id !== id));
     setCosts((prev) => prev.map((c) => (c.custodyId === id ? { ...c, custodyId: null } : c)));
+    if (treasuryEntries.some((t) => t.id === custTreasId(id))) {
+      const { error: tErr } = await supabase.from("treasury_entries").delete().eq("id", custTreasId(id));
+      if (!tErr) setTreasuryEntries((prev) => prev.filter((t) => t.id !== custTreasId(id)));
+    }
   }
 
   async function settleCustody(id) {
@@ -4234,10 +4278,14 @@ function TreasuryTab({ pTreasuryEntries, openingBalance, activeProjectId, onAddE
                               </div>
                               <div className="flex items-center gap-2">
                                 <span className={`font-bold mono ${t.type === "ايداع" ? "text-[color:var(--cl-green)]" : "text-[color:var(--cl-red)]"}`}>{money(t.amount)}</span>
+                                {isAutoTreasury(t) ? (
+                                  <span title={t.id.startsWith("tcu_") ? "حركة تلقائية من عهدة — بتتعدل أو تتشال من تصفية العهد أو المدفوعات" : "حركة تلقائية من دفعة — بتتشال من شاشة المدفوعات"} className="text-[10px] px-2 py-0.5 rounded-full bg-[color:var(--cl-chip)] text-[color:var(--cl-soft)] border border-[color:var(--cl-sep)]">{t.id.startsWith("tcu_") ? "من العُهد" : "من المدفوعات"}</span>
+                                ) : (
                                 <div className="flex gap-1 opacity-0 group-hover:opacity-100 transition">
                                   <button onClick={(e) => { e.stopPropagation(); startEdit(t); }} title="تعديل" className="p-1 rounded-md text-[color:var(--cl-soft)] hover:bg-[color:var(--cl-line)] hover:text-[color:var(--cl-text)] transition"><Pencil size={13} /></button>
                                   <button onClick={(e) => { e.stopPropagation(); onDeleteEntry(t.id); }} title="حذف" className="p-1 rounded-md text-[color:var(--cl-red)] hover:bg-[#C1453B]/10 transition"><Trash2 size={13} /></button>
                                 </div>
+                                )}
                               </div>
                             </div>
                           ))}
@@ -4890,6 +4938,10 @@ const stToday = () => { const d = new Date(); return new Date(d.getTime() - d.ge
 const stCostId = (statementId) => "stc_" + statementId;
 const isStatementCost = (c) => String(c?.id || "").startsWith("stc_") || String(c?.id || "").startsWith("spc_");
 const payCostId = (paymentId) => "spc_" + paymentId;
+// حركات خزينة تلقائية: كل دفعة/عهدة على مشروع = حركة "صرف" في خزينة المشروع
+const payTreasId = (paymentId) => "tpp_" + paymentId;
+const custTreasId = (custodyId) => "tcu_" + custodyId;
+const isAutoTreasury = (t) => /^(tpp_|tcu_)/.test(String(t?.id || ""));
 const isPaymentCost = (c) => String(c?.id || "").startsWith("spc_");
 // المشروع/البند اللي الدفعة بتتحسب عليه
 const stPayTarget = (p, st) => (p.statementId && st ? { projectId: st.projectId || null, workItemId: st.workItemId || null } : { projectId: p.projectId || null, workItemId: p.workItemId || null });
@@ -6295,6 +6347,326 @@ const DP_TYPES = [
 ];
 const dpTypeLabel = (k) => (k === "contractor" ? "مقاول" : k === "supplier" ? "مورد" : k === "custody" ? "عهدة" : "مصروفات");
 
+/* ---------- تسجيل دفعات متعددة (جدول + نموذج إكسيل) ---------- */
+const BP_KINDS = [{ k: "contractor", l: "مقاول" }, { k: "supplier", l: "مورد" }, { k: "custody", l: "عهدة" }, { k: "other", l: "مصروفات" }];
+const BP_METHODS = ["تحويل بنكي", "نقدي", "شيك"];
+const BP_COLS = ["النوع", "التاريخ", "المستفيد", "رقم المستخلص", "التصنيف", "نوع التكلفة", "المشروع", "بند العمل", "البند الفرعي", "المبلغ", "الطريقة", "ملاحظات"];
+let bpSeq = 0;
+const bpNewRow = (base = {}) => ({ key: "r" + ++bpSeq, kind: "other", date: stToday(), partyName: "", statementId: "", category: "", costType: "مصروفات", projectId: "", workItemId: "", workItemLevel: "", amount: "", method: "تحويل بنكي", note: "", err: "", ...base });
+
+// التحقق من سطر — بيرجع رسالة خطأ أو ""
+function bpValidate(r, ctx) {
+  const amount = Number(r.amount);
+  if (!r.partyName.trim()) return r.kind === "custody" ? "اسم مستلم العهدة" : r.kind === "other" ? "اسم المستفيد" : `اختار ${r.kind === "contractor" ? "المقاول" : "المورد"}`;
+  if (r.kind === "contractor" || r.kind === "supplier") {
+    const known = ctx.registeredParties.some((x) => x.kind === r.kind && x.name === r.partyName) || ctx.statements.some((x) => x.kind === r.kind && x.partyName === r.partyName);
+    if (!known) return `"${r.partyName}" مش متسجل — اختاره من القايمة`;
+  }
+  if (!amount || amount <= 0) return "المبلغ";
+  if (!dtParse(r.date)) return "التاريخ";
+  if (r.kind === "custody" && !r.projectId) return "العهدة لازم مشروع";
+  if (r.statementId && !ctx.statements.some((s) => s.id === r.statementId)) return "المستخلص مش موجود";
+  if (!r.statementId && r.kind !== "custody" && r.projectId && !r.workItemId) return "بند العمل";
+  return "";
+}
+
+function buildPaymentsTemplate(ctx) {
+  const uniq = (arr) => Array.from(new Set(arr.map((x) => String(x ?? "").trim()).filter(Boolean)));
+  const L = "قوائم";
+  const parties = uniq([...ctx.registeredParties.map((r) => r.name), ...ctx.statements.map((s) => s.partyName), ...ctx.payments.filter((p) => p.kind === "other").map((p) => p.partyName), ...ctx.custodies.map((c) => c.personName)]).sort((a, b) => a.localeCompare(b, "ar"));
+  const lists = {
+    kinds: BP_KINDS.map((k) => k.l), parties, categories: uniq([...DP_CATEGORIES, ...ctx.payments.map((p) => p.category)]),
+    costTypes: COST_TYPES.map((t) => t.label), projects: uniq(ctx.projects.map((p) => p.name)), methods: BP_METHODS,
+  };
+  const pairs = [], lvPairs = [];
+  ctx.projects.forEach((pr) => ctx.workItems.filter((w) => w.projectId === pr.id).forEach((w) => {
+    pairs.push([pr.name, w.name]);
+    uniq(ctx.wiLevels.filter((l) => l.workItemId === w.id).map((l) => l.name)).forEach((n) => lvPairs.push([pr.name + " › " + w.name, n]));
+  }));
+  lists.pairProj = pairs.map((x) => x[0]); lists.pairWork = pairs.map((x) => x[1]);
+  lists.lvKey = lvPairs.map((x) => x[0]); lists.lvName = lvPairs.map((x) => x[1]);
+  const cols = [["kinds", "النوع"], ["parties", "المستفيدين"], ["categories", "التصنيفات"], ["costTypes", "نوع التكلفة"], ["projects", "المشروعات"], ["methods", "الطريقة"], ["pairProj", "مشروع البند"], ["pairWork", "بند العمل"], ["lvKey", "المشروع › البند"], ["lvName", "البند الفرعي"]];
+  const colOf = (k) => xwCol(cols.findIndex(([x]) => x === k));
+  const ref = (k) => (lists[k].length ? `'${L}'!$${colOf(k)}$2:$${colOf(k)}$${lists[k].length + 1}` : null);
+  const maxLen = Math.max(1, ...cols.map(([k]) => lists[k].length));
+  const listRows = [cols.map(([, h]) => ({ v: h, s: 1 }))];
+  for (let r = 0; r < maxLen; r++) listRows.push(cols.map(([k]) => lists[k][r] ?? ""));
+
+  const N = 300, last = N + 1;
+  const rows = [BP_COLS.map((h) => ({ v: h, s: 1 }))];
+  for (let r = 0; r < N; r++) rows.push(BP_COLS.map(() => ({ v: "", s: 2 })));
+  const v = [];
+  const add = (col, list, opts = {}) => { if (list) v.push({ sqref: `${col}2:${col}${last}`, list, ...opts }); };
+  add("A", `"${lists.kinds.join(",")}"`, { strict: true, error: "اختار: مقاول / مورد / عهدة / مصروفات" });
+  add("C", ref("parties"), { warn: true, errorTitle: "اسم جديد؟", error: "الاسم ده مش في القايمة. المقاول/المورد لازم يكون متسجل في البرنامج — للمصروفات أو العهدة دوس Yes لو اسم جديد." });
+  add("E", ref("categories"), { warn: true, errorTitle: "تصنيف جديد؟", error: "التصنيف ده مش في القايمة — دوس Yes لو تصنيف جديد." });
+  add("F", ref("costTypes"), { strict: true, error: "اختار نوع التكلفة من القايمة." });
+  add("G", ref("projects"), { strict: true, error: "اختار المشروع من القايمة." });
+  const pn = lists.pairProj.length;
+  if (pn) add("H", `IF($G2="",'${L}'!$${colOf("pairWork")}$2:$${colOf("pairWork")}$${pn + 1},IF(ISNA(MATCH($G2,'${L}'!$${colOf("pairProj")}$2:$${colOf("pairProj")}$${pn + 1},0)),'${L}'!$${colOf("pairWork")}$${maxLen + 3},OFFSET('${L}'!$${colOf("pairWork")}$2,MATCH($G2,'${L}'!$${colOf("pairProj")}$2:$${colOf("pairProj")}$${pn + 1},0)-1,0,MAX(1,COUNTIF('${L}'!$${colOf("pairProj")}$2:$${colOf("pairProj")}$${pn + 1},$G2)),1)))`, { strict: true, error: "اختار بند العمل من القايمة — فيها بنود المشروع اللي في نفس السطر." });
+  const ln = lists.lvKey.length;
+  if (ln) {
+    const key = `$G2&" › "&$H2`, kc = colOf("lvKey"), nc = colOf("lvName");
+    add("I", `IF(OR($G2="",$H2=""),'${L}'!$${nc}$2:$${nc}$${ln + 1},IF(ISNA(MATCH(${key},'${L}'!$${kc}$2:$${kc}$${ln + 1},0)),'${L}'!$${nc}$${maxLen + 3},OFFSET('${L}'!$${nc}$2,MATCH(${key},'${L}'!$${kc}$2:$${kc}$${ln + 1},0)-1,0,MAX(1,COUNTIF('${L}'!$${kc}$2:$${kc}$${ln + 1},${key})),1)))`, { strict: true, error: "اختار البند الفرعي من القايمة — فيها البنود الفرعية لبند العمل اللي في نفس السطر." });
+  }
+  add("K", ref("methods"), { strict: true, error: "اختار: تحويل بنكي / نقدي / شيك" });
+  v.push({ sqref: `J2:J${last}`, decimal: [0, 999999999999], errorTitle: "رقم غلط", error: "اكتب المبلغ رقم" });
+  v.push({ sqref: `D2:D${last}`, decimal: [0, 999999], errorTitle: "رقم غلط", error: "اكتب رقم المستخلص بس (مثال 3)" });
+
+  const sheet = { name: "المدفوعات", rtl: true, active: true, freeze: 1, cols: [11, 13, 28, 12, 16, 16, 22, 22, 22, 13, 12, 28], rows, validations: v };
+  const help = {
+    name: "تعليمات", rtl: true, cols: [120],
+    rows: [
+      [{ v: "طريقة الاستخدام — كل سطر = دفعة", s: 5 }],
+      ["النوع: مقاول / مورد / عهدة / مصروفات (استشاري، مرتبات...). الخانات اللي فيها سهم ▾ بتختار منها."],
+      ["التاريخ: 2026-10-11 أو 11/10/2026. المبلغ رقم (ينفع بكسور)."],
+      ["مقاول / مورد: اكتب اسمه زي ما هو متسجل. لو الدفعة على مستخلص معيّن اكتب رقم المستخلص — ساعتها المشروع والبند بيتاخدوا من المستخلص. من غير رقم = دفعة تحت الحساب (واختار المشروع والبند لو عايزها تنزل تكلفة)."],
+      ["عهدة: اسم المستلم + المشروع (إجباري). بتتسجّل عهدة مفتوحة في تصفية العهد."],
+      ["مصروفات: المستفيد + التصنيف + نوع التكلفة، ولو على مشروع: المشروع وبند العمل والبند الفرعي."],
+      ["بند العمل والبند الفرعي: القايمة بتتغير حسب المشروع (وبند العمل) اللي في نفس السطر."],
+      ["في البرنامج: المدفوعات ← رفع دفعات من إكسيل ← راجع الجدول ← حفظ الكل."],
+    ],
+  };
+  return xwBuildXlsx([sheet, help, { name: L, hidden: true, rtl: true, cols: cols.map(() => 26), rows: listRows }]);
+}
+
+function parsePaymentsExcel(file, ctx) {
+  return loadSheetJS().then((XLSX) => file.arrayBuffer().then((buf) => {
+    const wb = XLSX.read(buf, { type: "array", cellDates: true });
+    const name = wb.SheetNames.find((n) => stNorm(n) === "المدفوعات") || wb.SheetNames.find((n) => (XLSX.utils.sheet_to_json(wb.Sheets[n], { header: 1 })[0] || []).some((h) => stNorm(h) === "المبلغ"));
+    const ws = name ? wb.Sheets[name] : null;
+    if (!ws || !ws["!ref"]) return { error: 'الملف مفيهوش شيت "المدفوعات". نزّل النموذج من البرنامج واملاه.' };
+    const rg = XLSX.utils.decode_range(ws["!ref"]);
+    const cols = {};
+    for (let c = rg.s.c; c <= rg.e.c; c++) { const h = ws[XLSX.utils.encode_cell({ r: rg.s.r, c })]; if (h) cols[stNorm(h.v)] = c; }
+    const rows = [];
+    for (let rr = rg.s.r + 1; rr <= rg.e.r; rr++) {
+      const get = (h) => { const c = cols[stNorm(h)]; return c === undefined ? null : ws[XLSX.utils.encode_cell({ r: rr, c })] || null; };
+      const txt = (h) => stXlTxt(get(h)?.v);
+      const amount = stXlNum(get("المبلغ")?.v);
+      const party = txt("المستفيد");
+      if (!party && (amount === "" || amount === 0) && !txt("النوع")) continue;
+      const warn = [];
+      const kindL = txt("النوع");
+      const kind = (BP_KINDS.find((k) => k.l === kindL) || {}).k || (kindL ? null : "other");
+      if (!kind) warn.push(`النوع "${kindL}"`);
+      const row = bpNewRow({ kind: kind || "other", partyName: party, amount: amount === "" || isNaN(amount) ? "" : String(amount), method: BP_METHODS.includes(txt("الطريقة")) ? txt("الطريقة") : "تحويل بنكي", note: txt("ملاحظات") });
+      row.date = stXlDate(get("التاريخ")) || stToday();
+      if (kind === "contractor" || kind === "supplier") {
+        const reg = ctx.registeredParties.find((r) => r.kind === kind && stNorm(r.name) === stNorm(party));
+        if (reg) row.partyName = reg.name; else if (!ctx.statements.some((s) => s.kind === kind && s.partyName === party)) warn.push(`"${party}" مش متسجل`);
+        const num = txt("رقم المستخلص");
+        if (num) {
+          const st = ctx.statements.find((s) => s.kind === kind && s.partyName === row.partyName && String(s.number) === String(parseInt(stXlDigits(num), 10)));
+          if (st) row.statementId = st.id; else warn.push(`مستخلص #${num} مش موجود`);
+        }
+      }
+      if (kind === "other") {
+        row.category = txt("التصنيف");
+        const ct = txt("نوع التكلفة");
+        row.costType = (COST_TYPES.find((t) => t.label === ct || t.key === ct) || {}).key || (ct === "مشتريات وكميات" ? "مشتريات" : dpDefaultCostType(row.category));
+      }
+      if (!row.statementId) {
+        const pName = txt("المشروع");
+        if (pName) {
+          const pr = ctx.projects.find((p) => stNorm(p.name) === stNorm(pName));
+          if (pr) row.projectId = pr.id; else warn.push(`المشروع "${pName}"`);
+        }
+        const wName = txt("بند العمل");
+        if (wName && row.projectId && kind !== "custody") {
+          const wi = ctx.workItems.find((w) => w.projectId === row.projectId && stNorm(w.name) === stNorm(wName));
+          if (wi) row.workItemId = wi.id; else warn.push(`بند العمل "${wName}"`);
+        }
+        const lName = txt("البند الفرعي");
+        if (lName && row.workItemId) {
+          const lv = ctx.wiLevels.find((l) => l.workItemId === row.workItemId && stNorm(l.name) === stNorm(lName));
+          if (lv) row.workItemLevel = lv.name; else warn.push(`البند الفرعي "${lName}"`);
+        }
+      }
+      if (warn.length) row.err = "راجع: " + warn.join("، ");
+      rows.push(row);
+    }
+    if (!rows.length) return { error: 'شيت "المدفوعات" فاضي.' };
+    return { rows };
+  }));
+}
+
+function BulkPaymentsPanel({ ctx, onClose, onAddPayment, onAddCustody, initialRows }) {
+  const [rows, setRows] = useState(() => (initialRows && initialRows.length ? initialRows : [bpNewRow(), bpNewRow(), bpNewRow()]));
+  const [saving, setSaving] = useState(false);
+  const [msg, setMsg] = useState("");
+  const upd = (key, patch) => setRows((rs) => rs.map((r) => (r.key === key ? { ...r, ...patch, err: "" } : r)));
+  const projName = (id) => ctx.projects.find((p) => p.id === id)?.name || "";
+  const cell = "w-full border border-[color:var(--cl-line)] rounded-md px-1.5 py-1 text-xs outline-none focus:border-[color:var(--cl-accent-bg)] bg-[color:var(--cl-card)] text-[color:var(--cl-text)]";
+  const partyList = (kind) => {
+    const reg = ctx.registeredParties.filter((r) => r.kind === kind).map((r) => r.name);
+    return Array.from(new Set(reg.length ? reg : ctx.statements.filter((s) => s.kind === kind).map((s) => s.partyName))).sort((a, b) => a.localeCompare(b, "ar"));
+  };
+  const valid = rows.filter((r) => r.partyName.trim() || Number(r.amount));
+  const total = stRound(valid.reduce((s, r) => s + (Number(r.amount) || 0), 0));
+
+  const saveAll = async () => {
+    setMsg("");
+    const todo = rows.filter((r) => r.partyName.trim() || Number(r.amount));
+    if (!todo.length) return setMsg("مفيش سطور متعبّية.");
+    // تنبيهات الاستيراد بتفضل مانعة للحفظ لحد ما السطر يتعدّل (أي تعديل بيمسح التنبيه ويتعمل تحقق جديد)
+    const checked = todo.map((r) => ({ ...r, err: r.err || bpValidate(r, ctx) }));
+    if (checked.some((r) => r.err)) {
+      setRows((rs) => rs.map((r) => checked.find((c) => c.key === r.key) || r));
+      return setMsg(`فيه ${checked.filter((r) => r.err).length} سطر محتاج تصحيح (معلّم بالأحمر) — مفيش حاجة اتحفظت.`);
+    }
+    setSaving(true);
+    let done = 0;
+    for (const r of checked) {
+      const date = dtParse(r.date), amount = Number(r.amount), name = r.partyName.trim();
+      if (r.kind === "custody") {
+        await onAddCustody({ id: "cst_" + Math.random().toString(36).slice(2, 8) + Date.now().toString(36).slice(-3), projectId: r.projectId, personName: name, amountGiven: amount, dateGiven: date, status: "مفتوحة", notes: [r.method, r.note.trim()].filter(Boolean).join(" — ") });
+      } else {
+        const party = r.kind === "contractor" || r.kind === "supplier";
+        const general = !r.statementId;
+        await onAddPayment({
+          id: stUid(party ? "sp_" : "dp_"), kind: r.kind, partyName: name, date, amount, method: r.method, note: r.note.trim(),
+          statementId: party ? r.statementId || null : null,
+          projectId: general ? r.projectId || null : null, workItemId: general && r.projectId ? r.workItemId || null : null,
+          workItemLevel: general && r.projectId && r.workItemId ? r.workItemLevel || "" : "",
+          category: r.kind === "other" ? r.category || "أخرى" : "", costType: r.kind === "other" ? r.costType || "مصروفات" : "",
+        });
+      }
+      done++;
+    }
+    setSaving(false);
+    setRows([bpNewRow()]);
+    setMsg(`✓ اتحفظ ${done} دفعة بإجمالي ${stMoney(checked.reduce((s, r) => s + Number(r.amount), 0))} ج.م`);
+  };
+
+  return (
+    <div className="bg-[color:var(--cl-card)] rounded-xl border border-[color:var(--cl-accent-bg)] overflow-hidden">
+      <div className="px-4 py-3 flex items-center justify-between border-b border-[color:var(--cl-sep)]">
+        <div>
+          <div className="font-bold text-sm text-[color:var(--cl-text)]">تسجيل دفعات متعددة</div>
+          <div className="text-[11px] text-[color:var(--cl-muted)]">كل سطر = دفعة. ⧉ بينسخ السطر (مفيد للمرتبات الشهرية). مفيش حاجة بتتحفظ غير لما تدوس "حفظ الكل".</div>
+        </div>
+        <button onClick={onClose} className="p-1.5 rounded-md text-[color:var(--cl-soft)] hover:bg-[color:var(--cl-sub)]"><X size={16} /></button>
+      </div>
+      <div className="overflow-x-auto">
+        <table className="w-full text-xs" style={{ minWidth: 1500 }}>
+          <thead>
+            <tr className="bg-[color:var(--cl-inset)] text-[color:var(--cl-soft)] text-[11px]">
+              <th className="py-2 px-1.5 w-8">#</th>
+              <th className="text-right py-2 px-1.5 w-24">النوع</th>
+              <th className="text-right py-2 px-1.5 w-32">التاريخ</th>
+              <th className="text-right py-2 px-1.5 w-44">المستفيد</th>
+              <th className="text-right py-2 px-1.5 w-40">على مستخلص / التصنيف</th>
+              <th className="text-right py-2 px-1.5 w-32">نوع التكلفة</th>
+              <th className="text-right py-2 px-1.5 w-36">المشروع</th>
+              <th className="text-right py-2 px-1.5 w-36">بند العمل</th>
+              <th className="text-right py-2 px-1.5 w-36">البند الفرعي</th>
+              <th className="text-right py-2 px-1.5 w-28">المبلغ</th>
+              <th className="text-right py-2 px-1.5 w-24">الطريقة</th>
+              <th className="text-right py-2 px-1.5">ملاحظات</th>
+              <th className="w-14" />
+            </tr>
+          </thead>
+          <tbody className="divide-y divide-[color:var(--cl-sep)]">
+            {rows.map((r, i) => {
+              const party = r.kind === "contractor" || r.kind === "supplier";
+              const sts = party ? ctx.statements.filter((s) => s.kind === r.kind && s.partyName === r.partyName) : [];
+              const st = r.statementId ? ctx.statements.find((s) => s.id === r.statementId) : null;
+              const wis = ctx.workItems.filter((w) => w.projectId === r.projectId);
+              const lvs = ctx.wiLevels.filter((l) => l.workItemId === r.workItemId).map((l) => l.name);
+              return (
+                <React.Fragment key={r.key}>
+                  <tr className={r.err ? "bg-[#C1453B]/5" : ""}>
+                    <td className="py-1.5 px-1.5 mono text-[color:var(--cl-muted)] text-center">{i + 1}</td>
+                    <td className="py-1.5 px-1.5">
+                      <select className={cell} value={r.kind} onChange={(e) => upd(r.key, { kind: e.target.value, partyName: "", statementId: "", workItemId: e.target.value === "custody" ? "" : r.workItemId, workItemLevel: "" })}>
+                        {BP_KINDS.map((k) => <option key={k.k} value={k.k}>{k.l}</option>)}
+                      </select>
+                    </td>
+                    <td className="py-1.5 px-1.5"><DateInput small value={r.date} onChange={(v) => upd(r.key, { date: v })} /></td>
+                    <td className="py-1.5 px-1.5">
+                      {party ? (
+                        <select className={cell} value={r.partyName} onChange={(e) => upd(r.key, { partyName: e.target.value, statementId: "" })}>
+                          <option value="">— اختار —</option>
+                          {partyList(r.kind).map((n) => <option key={n} value={n}>{n}</option>)}
+                        </select>
+                      ) : <input className={cell} value={r.partyName} onChange={(e) => upd(r.key, { partyName: e.target.value })} placeholder={r.kind === "custody" ? "مستلم العهدة" : "المستفيد"} list={r.kind === "custody" ? "bp-cust" : "bp-payees"} />}
+                    </td>
+                    <td className="py-1.5 px-1.5">
+                      {party ? (
+                        <select className={cell} value={r.statementId} onChange={(e) => upd(r.key, { statementId: e.target.value })}>
+                          <option value="">تحت الحساب</option>
+                          {sts.map((s) => <option key={s.id} value={s.id}>#{s.number} — {s.date}</option>)}
+                        </select>
+                      ) : r.kind === "other" ? (
+                        <input className={cell} value={r.category} onChange={(e) => upd(r.key, { category: e.target.value, costType: dpDefaultCostType(e.target.value) })} list="bp-cats" placeholder="التصنيف" />
+                      ) : <span className="text-[color:var(--cl-muted)]">—</span>}
+                    </td>
+                    <td className="py-1.5 px-1.5">
+                      {r.kind === "other" ? (
+                        <select className={cell} value={r.costType} onChange={(e) => upd(r.key, { costType: e.target.value })}>
+                          {COST_TYPES.map((t) => <option key={t.key} value={t.key}>{t.label}</option>)}
+                        </select>
+                      ) : <span className="text-[color:var(--cl-muted)]">{r.kind === "contractor" ? "مصنعيات" : r.kind === "supplier" ? "توريدات" : "—"}</span>}
+                    </td>
+                    {st ? (
+                      <td colSpan={3} className="py-1.5 px-1.5 text-[color:var(--cl-soft)]">من المستخلص: {projName(st.projectId) || "بدون مشروع"}{st.workItemLevel ? ` › ${st.workItemLevel}` : ""}</td>
+                    ) : (
+                      <>
+                        <td className="py-1.5 px-1.5">
+                          <select className={cell} value={r.projectId} onChange={(e) => upd(r.key, { projectId: e.target.value, workItemId: "", workItemLevel: "" })}>
+                            <option value="">{r.kind === "custody" ? "— اختار —" : "بدون مشروع"}</option>
+                            {ctx.projects.map((p) => <option key={p.id} value={p.id}>{p.name}</option>)}
+                          </select>
+                        </td>
+                        <td className="py-1.5 px-1.5">
+                          {r.kind !== "custody" && r.projectId ? (
+                            <select className={cell} value={r.workItemId} onChange={(e) => upd(r.key, { workItemId: e.target.value, workItemLevel: "" })}>
+                              <option value="">— اختار —</option>
+                              {wis.map((w) => <option key={w.id} value={w.id}>{w.name}</option>)}
+                            </select>
+                          ) : <span className="text-[color:var(--cl-muted)]">—</span>}
+                        </td>
+                        <td className="py-1.5 px-1.5">
+                          {r.kind !== "custody" && r.workItemId && lvs.length ? (
+                            <select className={cell} value={r.workItemLevel} onChange={(e) => upd(r.key, { workItemLevel: e.target.value })}>
+                              <option value="">—</option>
+                              {lvs.map((n) => <option key={n} value={n}>{n}</option>)}
+                            </select>
+                          ) : <span className="text-[color:var(--cl-muted)]">—</span>}
+                        </td>
+                      </>
+                    )}
+                    <td className="py-1.5 px-1.5"><input type="number" step="any" onWheel={(e) => e.currentTarget.blur()} className={cell + " mono"} value={r.amount} onChange={(e) => upd(r.key, { amount: e.target.value })} /></td>
+                    <td className="py-1.5 px-1.5">
+                      <select className={cell} value={r.method} onChange={(e) => upd(r.key, { method: e.target.value })}>{BP_METHODS.map((m) => <option key={m} value={m}>{m}</option>)}</select>
+                    </td>
+                    <td className="py-1.5 px-1.5"><input className={cell} value={r.note} onChange={(e) => upd(r.key, { note: e.target.value })} /></td>
+                    <td className="py-1.5 px-1 whitespace-nowrap">
+                      <button title="نسخ السطر" onClick={() => setRows((rs) => { const idx = rs.findIndex((x) => x.key === r.key); const c = bpNewRow({ ...r, key: undefined, err: "" }); c.key = "r" + ++bpSeq; return [...rs.slice(0, idx + 1), c, ...rs.slice(idx + 1)]; })} className="px-1.5 py-1 rounded text-[color:var(--cl-soft)] hover:bg-[color:var(--cl-sub)]">⧉</button>
+                      <button title="حذف السطر" onClick={() => setRows((rs) => (rs.length > 1 ? rs.filter((x) => x.key !== r.key) : [bpNewRow()]))} className="p-1 rounded text-[color:var(--cl-red)] hover:bg-[#C1453B]/10"><Trash2 size={12} /></button>
+                    </td>
+                  </tr>
+                  {r.err && <tr className="bg-[#C1453B]/5"><td /><td colSpan={12} className="pb-1.5 px-1.5 text-[11px] text-[color:var(--cl-red)]">⚠ {r.err}</td></tr>}
+                </React.Fragment>
+              );
+            })}
+          </tbody>
+        </table>
+        <datalist id="bp-cats">{ctx.categories.map((c) => <option key={c} value={c} />)}</datalist>
+        <datalist id="bp-payees">{ctx.payees.map((c) => <option key={c} value={c} />)}</datalist>
+        <datalist id="bp-cust">{ctx.custodyPersons.map((c) => <option key={c} value={c} />)}</datalist>
+      </div>
+      <div className="px-4 py-3 flex items-center gap-3 border-t border-[color:var(--cl-sep)]">
+        <button onClick={() => setRows((rs) => [...rs, bpNewRow({ kind: rs[rs.length - 1]?.kind || "other", date: rs[rs.length - 1]?.date || stToday() })])} className="px-3 py-1.5 rounded-lg bg-[color:var(--cl-ink)] text-white text-xs font-semibold flex items-center gap-1 hover:bg-[color:var(--cl-ink-hover)]"><Plus size={13} /> سطر</button>
+        <span className="text-[12px] text-[color:var(--cl-soft)]">{valid.length} دفعة — الإجمالي <b className="mono text-[color:var(--cl-text)]">{stMoney(total)}</b> ج.م</span>
+        {msg && <span className={`text-[12px] ${msg.startsWith("✓") ? "text-[color:var(--cl-green)]" : "text-[color:var(--cl-red)]"}`}>{msg}</span>}
+        <button disabled={saving} onClick={saveAll} className="mr-auto px-5 py-2 rounded-lg bg-[color:var(--cl-accent-bg)] text-[color:var(--cl-on-accent)] text-sm font-bold hover:bg-[color:var(--cl-accent-hover)] disabled:opacity-60 flex items-center gap-1.5">{saving && <Loader2 size={14} className="animate-spin" />} حفظ الكل</button>
+      </div>
+    </div>
+  );
+}
+
 function DirectPaymentsModule({ payments, statements = [], registeredParties = [], projects, workItems, wiLevels = [], levelsReady = false, onAddLevel, ready, onAddPayment, onDeletePayment, custodies = [], onAddCustody, onDeleteCustody }) {
   // العُهد بتظهر في نفس الجدول (من جدول custodies) — مش تكلفة فعلية لحد ما تتصفّى من "تصفية العهد"
   const custodyRows = useMemo(() => custodies.map((c) => ({ id: c.id, kind: "custody", partyName: c.personName, date: c.dateGiven || "", amount: Number(c.amountGiven) || 0, projectId: c.projectId, note: c.notes || "", status: c.status, isCustody: true })), [custodies]);
@@ -6311,6 +6683,8 @@ function DirectPaymentsModule({ payments, statements = [], registeredParties = [
   const [fCat, setFCat] = useState("");
   const [fProj, setFProj] = useState("");
   const [fWI, setFWI] = useState("");
+  const [bulk, setBulk] = useState(null); // null | { rows } — جدول الدفعات المتعددة
+  const [importing, setImporting] = useState(false);
   const [fLv, setFLv] = useState("");
   const [search, setSearch] = useState("");
   const set = (patch) => setForm((f) => ({ ...f, ...patch }));
@@ -6367,6 +6741,8 @@ function DirectPaymentsModule({ payments, statements = [], registeredParties = [
     setForm((f) => ({ ...empty, payType: f.payType, date: f.date, partyName: isParty ? f.partyName : "", statementId: "", category: f.category, costType: f.costType, projectId: f.projectId, workItemId: f.workItemId, workItemLevel: f.workItemLevel, method: f.method }));
   };
 
+  const bulkCtx = { statements, registeredParties, projects, workItems, wiLevels, payments, custodies, categories, payees, custodyPersons };
+
   if (!ready) {
     return (
       <div className="bg-[color:var(--cl-card)] rounded-xl border border-[color:var(--cl-red)] p-6 space-y-2">
@@ -6398,10 +6774,33 @@ function DirectPaymentsModule({ payments, statements = [], registeredParties = [
           <h2 className="font-bold text-xl text-[color:var(--cl-text)] flex items-center gap-2"><Banknote size={20} /> المدفوعات</h2>
           <p className="text-[12px] text-[color:var(--cl-muted)] mt-1">كل الدفعات في مكان واحد — دفعة المقاول/المورد بتظهر في حسابه في المستخلصات، والعهدة بتظهر في تصفية العهد، وأي دفعة على مشروع بتنزل تكلفة فعلية على بند العمل</p>
         </div>
-        <button onClick={() => setOpen((o) => !o)} className="px-3 py-2 rounded-lg bg-[color:var(--cl-accent-bg)] text-[color:var(--cl-on-accent)] text-sm font-semibold flex items-center gap-1.5 hover:bg-[color:var(--cl-accent-hover)] transition">
-          <Plus size={15} /> تسجيل دفعة
-        </button>
+        <div className="flex items-center gap-2">
+          <button onClick={() => { try { xwDownload(buildPaymentsTemplate(bulkCtx), "نموذج المدفوعات.xlsx"); } catch (e) { alert("حصل خطأ أثناء تجهيز النموذج: " + (e?.message || e)); } }} title="نموذج إكسيل بقوايم منسدلة من البرنامج" className="px-3 py-2 rounded-lg border border-[color:var(--cl-line)] text-[color:var(--cl-text)] text-sm font-semibold flex items-center gap-1.5 hover:bg-[color:var(--cl-sub)] transition">
+            <FileStack size={15} /> نموذج إكسيل
+          </button>
+          <label className={`px-3 py-2 rounded-lg border border-[color:var(--cl-line)] text-[color:var(--cl-text)] text-sm font-semibold flex items-center gap-1.5 hover:bg-[color:var(--cl-sub)] transition cursor-pointer ${importing ? "opacity-60 pointer-events-none" : ""}`}>
+            {importing ? <Loader2 size={15} className="animate-spin" /> : <Upload size={15} />} رفع دفعات من إكسيل
+            <input type="file" accept=".xlsx,.xls" className="hidden" onChange={async (e) => {
+              const f = e.target.files?.[0]; e.target.value = "";
+              if (!f) return;
+              setImporting(true);
+              try { const r = await parsePaymentsExcel(f, bulkCtx); if (r.error) alert(r.error); else { setBulk({ rows: r.rows, k: Date.now() }); setOpen(false); } }
+              catch (err) { alert("حصل خطأ أثناء قراءة الملف: " + (err?.message || err)); }
+              finally { setImporting(false); }
+            }} />
+          </label>
+          <button onClick={() => { setBulk(bulk ? null : { rows: null, k: Date.now() }); setOpen(false); }} className={`px-3 py-2 rounded-lg border text-sm font-semibold flex items-center gap-1.5 transition ${bulk ? "border-[color:var(--cl-accent-bg)] text-[color:var(--cl-accent)]" : "border-[color:var(--cl-line)] text-[color:var(--cl-text)] hover:bg-[color:var(--cl-sub)]"}`}>
+            <Layers size={15} /> دفعات متعددة
+          </button>
+          <button onClick={() => { setOpen((o) => !o); setBulk(null); }} className="px-3 py-2 rounded-lg bg-[color:var(--cl-accent-bg)] text-[color:var(--cl-on-accent)] text-sm font-semibold flex items-center gap-1.5 hover:bg-[color:var(--cl-accent-hover)] transition">
+            <Plus size={15} /> تسجيل دفعة
+          </button>
+        </div>
       </div>
+
+      {bulk && (
+        <BulkPaymentsPanel key={bulk.k} ctx={bulkCtx} initialRows={bulk.rows} onClose={() => setBulk(null)} onAddPayment={onAddPayment} onAddCustody={onAddCustody} />
+      )}
 
       {open && (
         <div className="bg-[color:var(--cl-card)] rounded-xl border border-[color:var(--cl-line)] p-4 space-y-3">
