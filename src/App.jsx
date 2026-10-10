@@ -329,8 +329,10 @@ function ContractingApp({ currentUsername, onLogout }) {
   const [units, setUnits] = useState([]); // قايمة الوحدات (م² / طن / ...)
   const [unitsReady, setUnitsReady] = useState(false); // جدول units موجود؟
   const [stCostLinkReady, setStCostLinkReady] = useState(false);
-  const [payCostReady, setPayCostReady] = useState(false); // أعمدة project_id/work_item_id في party_payments موجودة؟ (الدفعات → تكاليف فعلية) // عمود work_item_id في party_statements موجود؟
-  const [view, setView] = useState("project"); // 'project' | 'finance' | 'reports' | 'users' | 'contractor_statements' | 'supplier_statements'
+  const [payCostReady, setPayCostReady] = useState(false);
+  const [directPayReady, setDirectPayReady] = useState(false); // أعمدة category/cost_type/work_item_level في party_payments (المدفوعات المباشرة)
+  const [stKind, setStKind] = useState("contractor"); // نوع المستخلصات المعروضة: مقاول / مورد // أعمدة project_id/work_item_id في party_payments موجودة؟ (الدفعات → تكاليف فعلية) // عمود work_item_id في party_statements موجود؟
+  const [view, setView] = useState("project"); // 'project' | 'finance' | 'reports' | 'users' | 'statements' | 'payments'
   const [loading, setLoading] = useState(true);
   const [dbError, setDbError] = useState(null);
 
@@ -407,9 +409,11 @@ function ContractingApp({ currentUsername, onLogout }) {
       if (err) { setStatementsDbError(err.message); return; }
       setStatementsDbError(null);
       setStatements((stRes.data || []).map((s) => ({ id: s.id, kind: s.kind, partyName: s.party_name, date: s.statement_date, number: s.number || "", projectId: s.project_id || null, status: s.status || "", notes: s.notes || "", workType: s.work_type || "", workItemId: s.work_item_id || "", workItemLevel: s.work_item_level || "", items: s.items || [], adjustments: s.adjustments || [], subtotal: Number(s.subtotal), netTotal: Number(s.net_total) })));
-      setStatementPayments((spRes.data || []).map((p) => ({ id: p.id, kind: p.kind, partyName: p.party_name, date: p.payment_date, amount: Number(p.amount), method: p.method || "", note: p.note || "", statementId: p.statement_id || null, projectId: p.project_id || null, workItemId: p.work_item_id || null })));
+      setStatementPayments((spRes.data || []).map((p) => ({ id: p.id, kind: p.kind, partyName: p.party_name, date: p.payment_date, amount: Number(p.amount), method: p.method || "", note: p.note || "", statementId: p.statement_id || null, projectId: p.project_id || null, workItemId: p.work_item_id || null, category: p.category || "", costType: p.cost_type || "", workItemLevel: p.work_item_level || "" })));
       const payProbe = await supabase.from("party_payments").select("project_id,work_item_id").limit(1);
       setPayCostReady(!payProbe.error);
+      const dpProbe = await supabase.from("party_payments").select("category,cost_type,work_item_level").limit(1);
+      setDirectPayReady(!payProbe.error && !dpProbe.error);
       // ربط المستخلصات بتكاليف المشروع شغال بس بعد تشغيل statement_costs_migration.sql
       const probe = await supabase.from("party_statements").select("work_item_id").limit(1);
       setStCostLinkReady(!probe.error);
@@ -661,9 +665,10 @@ function ContractingApp({ currentUsername, onLogout }) {
   async function addStatementPayment(p) {
     const row = { id: p.id, kind: p.kind, party_name: p.partyName, payment_date: p.date, amount: p.amount, method: p.method || null, note: p.note || null, statement_id: p.statementId || null };
     if (payCostReady) { row.project_id = p.statementId ? null : p.projectId || null; row.work_item_id = p.statementId ? null : p.workItemId || null; }
+    if (directPayReady) { row.category = p.category || null; row.cost_type = p.costType || null; row.work_item_level = p.statementId ? null : p.workItemLevel || null; }
     const { error } = await supabase.from("party_payments").insert([row]);
     if (error) { alert("حصل خطأ أثناء تسجيل الدفعة: " + error.message); return; }
-    const saved = { ...p, projectId: row.project_id || null, workItemId: row.work_item_id || null };
+    const saved = { ...p, projectId: row.project_id || null, workItemId: row.work_item_id || null, workItemLevel: row.work_item_level || "", category: row.category || "", costType: row.cost_type || "" };
     setStatementPayments((prev) => [...prev, saved]);
     if (payCostReady) await syncPaymentCost(saved);
   }
@@ -1130,9 +1135,9 @@ function ContractingApp({ currentUsername, onLogout }) {
 
         {/* المستخلصات: مقاولين وموردين */}
         <div className="mt-4 px-4 pt-4 border-t border-white/10 space-y-0.5">
-          <div className="text-[11px] text-white/45 font-bold tracking-wide mb-1.5 px-1">المستخلصات</div>
-          <SidebarItem icon={HardHat} label="مستخلصات المقاولين" active={view === "contractor_statements"} onClick={() => setView("contractor_statements")} />
-          <SidebarItem icon={Package} label="مستخلصات الموردين" active={view === "supplier_statements"} onClick={() => setView("supplier_statements")} />
+          <div className="text-[11px] text-white/45 font-bold tracking-wide mb-1.5 px-1">المستخلصات والمدفوعات</div>
+          <SidebarItem icon={HardHat} label="المستخلصات (مقاولين وموردين)" active={view === "statements"} onClick={() => setView("statements")} />
+          <SidebarItem icon={Banknote} label="المدفوعات" active={view === "payments"} onClick={() => setView("payments")} />
         </div>
 
         {/* عام */}
@@ -1207,10 +1212,34 @@ function ContractingApp({ currentUsername, onLogout }) {
           <div className="p-8">
             <UsersManagementModule currentUsername={currentUsername} />
           </div>
-        ) : view === "contractor_statements" || view === "supplier_statements" ? (
+        ) : view === "payments" ? (
           <div className="p-8">
+            <DirectPaymentsModule
+              payments={statementPayments}
+              statements={statements}
+              registeredParties={registeredParties}
+              projects={projects}
+              workItems={workItems}
+              wiLevels={wiLevels}
+              levelsReady={levelsReady}
+              onAddLevel={addLevel}
+              ready={directPayReady && !statementsDbError}
+              onAddPayment={addStatementPayment}
+              onDeletePayment={deleteStatementPayment}
+              custodies={custodies}
+              onAddCustody={addCustody}
+              onDeleteCustody={deleteCustody}
+            />
+          </div>
+        ) : view === "statements" ? (
+          <div className="p-8 space-y-4">
+            <div className="flex items-center gap-1 p-1 rounded-xl bg-[color:var(--cl-inset)] border border-[color:var(--cl-line)] w-fit">
+              {[{ k: "contractor", l: "مستخلصات المقاولين", I: HardHat }, { k: "supplier", l: "مستخلصات الموردين", I: Package }].map(({ k, l, I }) => (
+                <button key={k} onClick={() => setStKind(k)} className={`px-4 py-2 rounded-lg text-sm font-bold flex items-center gap-1.5 transition ${stKind === k ? "bg-[color:var(--cl-accent-bg)] text-[color:var(--cl-on-accent)]" : "text-[color:var(--cl-soft)] hover:bg-[color:var(--cl-sub)]"}`}><I size={15} /> {l}</button>
+              ))}
+            </div>
             <StatementsModule
-              kind={view === "contractor_statements" ? "contractor" : "supplier"}
+              kind={stKind}
               statements={statements}
               payments={statementPayments}
               projects={projects}
@@ -3634,7 +3663,7 @@ function CostsTab({ pCosts, pWorkItems, activeProjectId, onAddCost, onAddCostsBu
                                 <div className="flex items-center gap-2 shrink-0">
                                   <span className="font-bold mono">{money(c.qty * c.price)}</span>
                                   {isStatementCost(c) ? (
-                                    <span title={isPaymentCost(c) ? "دفعة اتصرفت لمقاول/مورد — بتتعدل أو تتشال من شاشة المستخلصات" : "التكلفة دي جاية من مستخلص معتمد — بتتعدل أو تتشال من شاشة المستخلصات"} className="text-[10px] px-2 py-0.5 rounded-full bg-[color:var(--cl-chip)] text-[color:var(--cl-soft)] border border-[color:var(--cl-sep)]">{isPaymentCost(c) ? "دفعة مقاول/مورد" : "من مستخلص"}</span>
+                                    <span title={isPaymentCost(c) ? (c.costLevel2 === "دفعة مباشرة" ? "دفعة مباشرة — بتتشال من شاشة المدفوعات" : "دفعة اتصرفت لمقاول/مورد — بتتعدل أو تتشال من شاشة المستخلصات") : "التكلفة دي جاية من مستخلص معتمد — بتتعدل أو تتشال من شاشة المستخلصات"} className="text-[10px] px-2 py-0.5 rounded-full bg-[color:var(--cl-chip)] text-[color:var(--cl-soft)] border border-[color:var(--cl-sep)]">{isPaymentCost(c) ? (c.costLevel2 === "دفعة مباشرة" ? "من المدفوعات" : "دفعة مقاول/مورد") : "من مستخلص"}</span>
                                   ) : (
                                   <div className="flex gap-1 opacity-0 group-hover:opacity-100 transition">
                                     <button onClick={() => startEdit(c)} title="تعديل" className="p-1 rounded-md text-[color:var(--cl-soft)] hover:bg-[color:var(--cl-line)] hover:text-[color:var(--cl-text)] transition"><Pencil size={13} /></button>
@@ -4864,13 +4893,23 @@ const isPaymentCost = (c) => String(c?.id || "").startsWith("spc_");
 // المشروع/البند اللي الدفعة بتتحسب عليه
 const stPayTarget = (p, st) => (p.statementId && st ? { projectId: st.projectId || null, workItemId: st.workItemId || null } : { projectId: p.projectId || null, workItemId: p.workItemId || null });
 function payCostFromPayment(p, st) {
-  const isContractor = p.kind !== "supplier";
   const t = stPayTarget(p, st);
+  if (p.kind === "other") {
+    // دفعة مباشرة (استشاري / مرتبات / ...) — بدون مستخلص
+    return {
+      id: payCostId(p.id), projectId: t.projectId, workItemId: t.workItemId, custodyId: null,
+      type: p.costType || "مصروفات",
+      desc: `${p.category || "مدفوعات"}: ${p.partyName}`,
+      costLevel1: p.workItemLevel || p.category || "", costLevel2: "دفعة مباشرة",
+      qty: 1, unit: "دفعة", price: stRound(p.amount), date: p.date,
+    };
+  }
+  const isContractor = p.kind !== "supplier";
   return {
     id: payCostId(p.id), projectId: t.projectId, workItemId: t.workItemId, custodyId: null,
     type: isContractor ? "مصنعيات" : "مشتريات",
     desc: `${isContractor ? "مقاول" : "مورد"}: ${p.partyName}`,
-    costLevel1: st?.workItemLevel || st?.workType || "", costLevel2: st ? `دفعة على مستخلص رقم ${st.number}` : "دفعة عامة",
+    costLevel1: st?.workItemLevel || p.workItemLevel || st?.workType || "", costLevel2: st ? `دفعة على مستخلص رقم ${st.number}` : "دفعة عامة",
     qty: 1, unit: "دفعة", price: stRound(p.amount), date: p.date,
   };
 }
@@ -6235,6 +6274,279 @@ function StatementsModule({ kind, statements, payments, projects, dbError, onSav
           </table>
         </div>
       )}
+    </div>
+  );
+}
+
+/* ======================= المدفوعات (كل الدفعات في مكان واحد) =======================
+   - مقاول / مورد: الدفعة بتتسجّل على الطرف (وعلى مستخلص معيّن لو اخترته) → بتظهر في حسابه في المستخلصات
+     ("السابق صرفه" والمستحق) وبتنزل تكلفة فعلية على مشروع/بند المستخلص (أو اللي تختاره للدفعة العامة).
+   - أخرى (استشاري، مرتبات، إيجارات...): kind = "other" — بدون مستخلص.
+   كله في جدول party_payments، والتكلفة الفعلية spc_ بنفس الآلية.
+*/
+const DP_CATEGORIES = ["استشاري", "مرتبات وأجور", "إيجارات", "رسوم وتراخيص", "نقل ومواصلات", "أخرى"];
+const dpDefaultCostType = (cat) => (/مرتب|أجور/.test(cat) ? "مصروفات عمومية" : "مصروفات");
+const DP_TYPES = [
+  { k: "contractor", l: "مقاول", plural: "المقاولين" },
+  { k: "supplier", l: "مورد", plural: "الموردين" },
+  { k: "custody", l: "عهدة", plural: "العُهد" },
+  { k: "other", l: "أخرى (استشاري / مرتبات / ...)", plural: "أخرى" },
+];
+const dpTypeLabel = (k) => (k === "contractor" ? "مقاول" : k === "supplier" ? "مورد" : k === "custody" ? "عهدة" : "أخرى");
+
+function DirectPaymentsModule({ payments, statements = [], registeredParties = [], projects, workItems, wiLevels = [], levelsReady = false, onAddLevel, ready, onAddPayment, onDeletePayment, custodies = [], onAddCustody, onDeleteCustody }) {
+  // العُهد بتظهر في نفس الجدول (من جدول custodies) — مش تكلفة فعلية لحد ما تتصفّى من "تصفية العهد"
+  const custodyRows = useMemo(() => custodies.map((c) => ({ id: c.id, kind: "custody", partyName: c.personName, date: c.dateGiven || "", amount: Number(c.amountGiven) || 0, projectId: c.projectId, note: c.notes || "", status: c.status, isCustody: true })), [custodies]);
+  const all = useMemo(() => [...payments, ...custodyRows].sort((a, b) => (b.date || "").localeCompare(a.date || "")), [payments, custodyRows]);
+  const custodyPersons = useMemo(() => Array.from(new Set(custodies.map((c) => c.personName).filter(Boolean))).sort((a, b) => a.localeCompare(b, "ar")), [custodies]);
+  const others = useMemo(() => all.filter((p) => p.kind === "other"), [all]);
+  const categories = useMemo(() => Array.from(new Set([...DP_CATEGORIES, ...others.map((p) => p.category).filter(Boolean)])), [others]);
+  const payees = useMemo(() => Array.from(new Set(others.map((p) => p.partyName).filter(Boolean))).sort((a, b) => a.localeCompare(b, "ar")), [others]);
+  const empty = { payType: "contractor", date: stToday(), partyName: "", statementId: "", category: "استشاري", costType: "مصروفات", amount: "", method: "تحويل بنكي", projectId: "", workItemId: "", workItemLevel: "", note: "" };
+  const [form, setForm] = useState(empty);
+  const [open, setOpen] = useState(false);
+  const [err, setErr] = useState("");
+  const [fType, setFType] = useState("");
+  const [fCat, setFCat] = useState("");
+  const [fProj, setFProj] = useState("");
+  const [search, setSearch] = useState("");
+  const set = (patch) => setForm((f) => ({ ...f, ...patch }));
+  const projName = (id) => projects.find((p) => p.id === id)?.name || "";
+  const wiName = (id) => workItems.find((w) => w.id === id)?.name || "";
+  const stById = useMemo(() => new Map(statements.map((s) => [s.id, s])), [statements]);
+  const isCustody = form.payType === "custody";
+  const isParty = form.payType === "contractor" || form.payType === "supplier";
+
+  // أسماء المقاولين/الموردين: المسجلين، ولو مفيش: الأسماء اللي في المستخلصات
+  const partyNames = useMemo(() => {
+    if (!isParty) return [];
+    const reg = registeredParties.filter((r) => r.kind === form.payType).map((r) => r.name);
+    const fromSt = statements.filter((s) => s.kind === form.payType).map((s) => s.partyName);
+    return Array.from(new Set(reg.length ? reg : fromSt)).sort((a, b) => a.localeCompare(b, "ar"));
+  }, [isParty, registeredParties, statements, form.payType]);
+  const partySts = useMemo(
+    () => statements.filter((s) => s.kind === form.payType && s.partyName === form.partyName).sort((a, b) => (b.date || "").localeCompare(a.date || "")),
+    [statements, form.payType, form.partyName]
+  );
+  const chosenSt = form.statementId ? stById.get(form.statementId) : null;
+  // حساب الطرف (لو مقاول/مورد): إجمالي صافي المستخلصات المعتمدة − المدفوع
+  const partyAcct = useMemo(() => {
+    if (!isParty || !form.partyName) return null;
+    const sts = statements.filter((s) => s.kind === form.payType && s.partyName === form.partyName);
+    const net = stRound(sts.filter((s) => s.status === "معتمد").reduce((a, s) => a + s.netTotal, 0));
+    const paid = stRound(payments.filter((p) => p.kind === form.payType && p.partyName === form.partyName).reduce((a, p) => a + p.amount, 0));
+    const onSt = chosenSt ? stRound(payments.filter((p) => p.statementId === chosenSt.id).reduce((a, p) => a + p.amount, 0)) : 0;
+    return { net, paid, due: stRound(net - paid), onSt };
+  }, [isParty, form.partyName, form.payType, statements, payments, chosenSt]);
+  const projWIs = workItems.filter((w) => w.projectId === form.projectId);
+
+  const submit = async () => {
+    setErr("");
+    const amount = Number(form.amount);
+    const name = form.partyName.trim();
+    if (!name) return setErr(isParty ? `اختار ${dpTypeLabel(form.payType)} من القايمة.` : isCustody ? "اكتب اسم الشخص اللي استلم العهدة." : "اكتب اسم المستفيد (مثال: المكتب الاستشاري / مرتبات شهر 10).");
+    if (!amount || amount <= 0) return setErr("اكتب المبلغ.");
+    if (isCustody) {
+      if (!form.projectId) return setErr("العهدة لازم تتربط بمشروع — اختار المشروع.");
+      await onAddCustody({ id: "cst_" + Math.random().toString(36).slice(2, 8) + Date.now().toString(36).slice(-3), projectId: form.projectId, personName: name, amountGiven: amount, dateGiven: form.date || stToday(), status: "مفتوحة", notes: [form.method, form.note.trim()].filter(Boolean).join(" — ") });
+      setForm((f) => ({ ...empty, payType: "custody", date: f.date, projectId: f.projectId, method: f.method }));
+      return;
+    }
+    const general = !form.statementId;
+    if (general && form.projectId && !form.workItemId) return setErr("اختار بند العمل اللي الدفعة هتتحسب عليه.");
+    await onAddPayment({
+      id: stUid(isParty ? "sp_" : "dp_"), kind: form.payType, partyName: name, date: form.date || stToday(), amount, method: form.method,
+      note: form.note.trim(), statementId: isParty ? form.statementId || null : null,
+      projectId: general ? form.projectId || null : null, workItemId: general && form.projectId ? form.workItemId || null : null,
+      workItemLevel: general && form.projectId && form.workItemId ? form.workItemLevel || "" : "",
+      category: isParty ? "" : form.category, costType: isParty ? "" : form.costType,
+    });
+    setForm((f) => ({ ...empty, payType: f.payType, date: f.date, partyName: isParty ? f.partyName : "", statementId: "", category: f.category, costType: f.costType, projectId: f.projectId, workItemId: f.workItemId, workItemLevel: f.workItemLevel, method: f.method }));
+  };
+
+  if (!ready) {
+    return (
+      <div className="bg-[color:var(--cl-card)] rounded-xl border border-[color:var(--cl-red)] p-6 space-y-2">
+        <div className="font-bold text-[color:var(--cl-red)]">المدفوعات محتاجة تحديث لقاعدة البيانات</div>
+        <div className="text-sm text-[color:var(--cl-soft)]">شغّل ملف <span className="mono">direct_payments_migration.sql</span> في Supabase ← SQL Editor، وبعدين حدّث الصفحة.</div>
+      </div>
+    );
+  }
+
+  const q = search.trim();
+  const target = (p) => {
+    const st = stById.get(p.statementId);
+    return st ? { projectId: st.projectId, workItemId: st.workItemId, level: st.workItemLevel } : { projectId: p.projectId, workItemId: p.workItemId, level: p.workItemLevel };
+  };
+  const filtered = all
+    .filter((p) => !fType || p.kind === fType)
+    .filter((p) => !fCat || p.category === fCat)
+    .filter((p) => { const t = target(p); return !fProj || (fProj === "_none" ? !t.projectId : t.projectId === fProj); })
+    .filter((p) => !q || p.partyName.includes(q) || (p.note || "").includes(q) || (p.category || "").includes(q));
+  const total = stRound(filtered.reduce((s, p) => s + p.amount, 0));
+  const sumKind = (k) => stRound(all.filter((p) => p.kind === k).reduce((s, p) => s + p.amount, 0));
+
+  return (
+    <div className="space-y-5">
+      <div className="flex items-center justify-between">
+        <div>
+          <h2 className="font-bold text-xl text-[color:var(--cl-text)] flex items-center gap-2"><Banknote size={20} /> المدفوعات</h2>
+          <p className="text-[12px] text-[color:var(--cl-muted)] mt-1">كل الدفعات في مكان واحد — دفعة المقاول/المورد بتظهر في حسابه في المستخلصات، والعهدة بتظهر في تصفية العهد، وأي دفعة على مشروع بتنزل تكلفة فعلية على بند العمل</p>
+        </div>
+        <button onClick={() => setOpen((o) => !o)} className="px-3 py-2 rounded-lg bg-[color:var(--cl-accent-bg)] text-[color:var(--cl-on-accent)] text-sm font-semibold flex items-center gap-1.5 hover:bg-[color:var(--cl-accent-hover)] transition">
+          <Plus size={15} /> تسجيل دفعة
+        </button>
+      </div>
+
+      {open && (
+        <div className="bg-[color:var(--cl-card)] rounded-xl border border-[color:var(--cl-line)] p-4 space-y-3">
+          <div className="flex items-center gap-1 p-1 rounded-xl bg-[color:var(--cl-inset)] border border-[color:var(--cl-line)] w-fit">
+            {DP_TYPES.map((t) => (
+              <button key={t.k} type="button" onClick={() => set({ payType: t.k, partyName: "", statementId: "" })} className={`px-4 py-1.5 rounded-lg text-sm font-bold transition ${form.payType === t.k ? "bg-[color:var(--cl-accent-bg)] text-[color:var(--cl-on-accent)]" : "text-[color:var(--cl-soft)] hover:bg-[color:var(--cl-sub)]"}`}>{t.l}</button>
+            ))}
+          </div>
+          <div className="grid grid-cols-4 gap-3">
+            <Field label="التاريخ *" type="date" value={form.date} onChange={(v) => set({ date: v })} />
+            {isParty ? (
+              <>
+                <SelectField label={`${dpTypeLabel(form.payType)} *`} value={form.partyName} onChange={(v) => set({ partyName: v, statementId: "" })} options={[{ value: "", label: `— اختار ${dpTypeLabel(form.payType)} —` }, ...partyNames.map((n) => ({ value: n, label: n }))]} />
+                <SelectField label="على مستخلص" value={form.statementId} onChange={(v) => set({ statementId: v })} options={[{ value: "", label: "— دفعة عامة (تحت الحساب) —" }, ...partySts.map((s) => ({ value: s.id, label: `#${s.number} — ${s.date}${s.projectId ? " — " + projName(s.projectId) : ""}${s.status !== "معتمد" ? " (مسودة)" : ""}` }))]} />
+              </>
+            ) : isCustody ? (
+              <>
+                <div>
+                  <label className="block text-[11px] font-semibold text-[color:var(--cl-soft)] mb-1">اسم مستلم العهدة *</label>
+                  <input list="dp-cust" value={form.partyName} onChange={(e) => set({ partyName: e.target.value })} placeholder="مثال: م. محمد — مهندس الموقع" className="w-full border border-[color:var(--cl-line)] rounded-lg px-3 py-2 text-sm outline-none focus:border-[color:var(--cl-accent-bg)] bg-[color:var(--cl-card)]" />
+                  <datalist id="dp-cust">{custodyPersons.map((n) => <option key={n} value={n} />)}</datalist>
+                </div>
+                <div className="text-[11px] text-[color:var(--cl-muted)] self-end pb-2 col-span-1">العهدة بتتسجّل "مفتوحة" في تصفية العهد بتاعة المشروع، والتكلفة الفعلية بتنزل لما تصفّيها هناك ببنودها.</div>
+              </>
+            ) : (
+              <>
+                <div>
+                  <label className="block text-[11px] font-semibold text-[color:var(--cl-soft)] mb-1">المستفيد *</label>
+                  <input list="dp-payees" value={form.partyName} onChange={(e) => set({ partyName: e.target.value })} placeholder="مثال: المكتب الاستشاري / مرتبات أكتوبر" className="w-full border border-[color:var(--cl-line)] rounded-lg px-3 py-2 text-sm outline-none focus:border-[color:var(--cl-accent-bg)] bg-[color:var(--cl-card)]" />
+                  <datalist id="dp-payees">{payees.map((n) => <option key={n} value={n} />)}</datalist>
+                </div>
+                <div>
+                  <label className="block text-[11px] font-semibold text-[color:var(--cl-soft)] mb-1">التصنيف</label>
+                  <ListSelect value={form.category} onChange={(v) => set({ category: v, costType: dpDefaultCostType(v) })} options={categories} onAdd={async (n) => String(n || "").trim() || null} placeholder="— التصنيف —" addLabel="+ تصنيف جديد…" />
+                </div>
+              </>
+            )}
+            {isParty || isCustody ? <div /> : <SelectField label="نوع التكلفة" value={form.costType} onChange={(v) => set({ costType: v })} options={COST_TYPES.map((t) => ({ value: t.key, label: t.label }))} />}
+            <Field label="المبلغ *" type="number" value={form.amount} onChange={(v) => set({ amount: v })} />
+            <SelectField label="الطريقة" value={form.method} onChange={(v) => set({ method: v })} options={["تحويل بنكي", "نقدي", "شيك"].map((m) => ({ value: m, label: m }))} />
+            {isCustody ? (
+              <SelectField label="المشروع *" value={form.projectId} onChange={(v) => set({ projectId: v })} options={[{ value: "", label: "— اختار المشروع —" }, ...projects.map((p) => ({ value: p.id, label: p.name }))]} />
+            ) : chosenSt ? (
+              <div className="col-span-2 self-end text-[12px] text-[color:var(--cl-soft)] bg-[color:var(--cl-inset)] border border-[color:var(--cl-sep)] rounded-lg px-3 py-2">
+                بتتحسب على: <b>{chosenSt.projectId ? projName(chosenSt.projectId) : "بدون مشروع"}</b>{chosenSt.workItemId && <> › <b>{wiName(chosenSt.workItemId)}</b></>}{chosenSt.workItemLevel && <> › <b>{chosenSt.workItemLevel}</b></>}
+                {!chosenSt.projectId && <span className="block text-[11px] text-[color:var(--cl-muted)]">المستخلص مش مربوط بمشروع — الدفعة هتظهر في حساب {dpTypeLabel(form.payType)} بس.</span>}
+              </div>
+            ) : (
+              <>
+                <SelectField label="المشروع (اختياري)" value={form.projectId} onChange={(v) => set({ projectId: v, workItemId: "", workItemLevel: "" })} options={[{ value: "", label: "— بدون مشروع —" }, ...projects.map((p) => ({ value: p.id, label: p.name }))]} />
+                {form.projectId ? (
+                  <SelectField label="بند العمل *" value={form.workItemId} onChange={(v) => set({ workItemId: v, workItemLevel: "" })} options={[{ value: "", label: "— اختار بند العمل —" }, ...projWIs.map((w) => ({ value: w.id, label: w.name }))]} />
+                ) : <div className="text-[11px] text-[color:var(--cl-muted)] self-end pb-2">من غير مشروع الدفعة مش بتدخل تكاليف أي مشروع.</div>}
+              </>
+            )}
+            {!isCustody && !chosenSt && form.projectId && form.workItemId && levelsReady && (
+              <div>
+                <label className="block text-[11px] font-semibold text-[color:var(--cl-soft)] mb-1">البند الفرعي</label>
+                <ListSelect value={form.workItemLevel} onChange={(v) => set({ workItemLevel: v })} options={wiLevels.filter((l) => l.workItemId === form.workItemId).map((l) => l.name)} onAdd={async (n) => { const l = await onAddLevel(form.workItemId, n); return l?.name || null; }} placeholder="— البند الفرعي —" addLabel="+ بند فرعي جديد…" />
+              </div>
+            )}
+            <div className="col-span-2"><Field label="ملاحظات" value={form.note} onChange={(v) => set({ note: v })} /></div>
+          </div>
+          {partyAcct && (
+            <div className="flex flex-wrap gap-x-6 gap-y-1 text-[12px] text-[color:var(--cl-soft)] bg-[color:var(--cl-inset)] border border-[color:var(--cl-sep)] rounded-lg px-3 py-2">
+              <span>حساب {form.partyName}:</span>
+              <span>صافي المستخلصات المعتمدة <b className="mono text-[color:var(--cl-text)]">{stMoney(partyAcct.net)}</b></span>
+              <span>اتصرف <b className="mono text-[color:var(--cl-green)]">{stMoney(partyAcct.paid)}</b></span>
+              <span>المستحق <b className={`mono ${partyAcct.due > 0 ? "text-[#D6A23C]" : "text-[color:var(--cl-text)]"}`}>{stMoney(partyAcct.due)}</b></span>
+              {chosenSt && <span>مدفوع على مستخلص #{chosenSt.number}: <b className="mono">{stMoney(partyAcct.onSt)}</b> من صافي <b className="mono">{stMoney(chosenSt.netTotal)}</b></span>}
+            </div>
+          )}
+          <div className="flex items-center justify-end gap-3">
+            {err && <span className="text-sm text-[color:var(--cl-red)]">{err}</span>}
+            <button onClick={() => { setOpen(false); setErr(""); }} className="px-4 py-2 rounded-lg border border-[color:var(--cl-line)] text-sm text-[color:var(--cl-soft)] hover:bg-[color:var(--cl-sub)]">إغلاق</button>
+            <button onClick={submit} className="px-5 py-2 rounded-lg bg-[color:var(--cl-accent-bg)] text-[color:var(--cl-on-accent)] text-sm font-bold hover:bg-[color:var(--cl-accent-hover)]">حفظ الدفعة</button>
+          </div>
+        </div>
+      )}
+
+      <div className="grid grid-cols-5 gap-3">
+        <div className="bg-[color:var(--cl-ink)] rounded-xl p-4 text-white">
+          <div className="text-[11px] text-white/50 mb-1">إجمالي المدفوعات</div>
+          <div className="font-bold mono text-lg">{stMoney(all.reduce((s, p) => s + p.amount, 0))} ج.م</div>
+        </div>
+        {DP_TYPES.map((t) => (
+          <div key={t.k} className="bg-[color:var(--cl-card)] rounded-xl border border-[color:var(--cl-line)] p-4">
+            <div className="text-[11px] text-[color:var(--cl-muted)] mb-1">{t.k === "other" ? "أخرى (استشاري / مرتبات)" : t.plural}</div>
+            <div className="font-bold mono text-lg text-[color:var(--cl-text)]">{stMoney(sumKind(t.k))} ج.م</div>
+          </div>
+        ))}
+      </div>
+
+      <div className="flex items-center gap-2">
+        <select value={fType} onChange={(e) => setFType(e.target.value)} className="border border-[color:var(--cl-line)] rounded-lg px-3 py-2 text-sm bg-[color:var(--cl-card)] text-[color:var(--cl-text)]">
+          <option value="">كل الأنواع</option>
+          {DP_TYPES.map((t) => <option key={t.k} value={t.k}>{t.k === "other" ? "أخرى" : t.plural}</option>)}
+        </select>
+        {(fType === "" || fType === "other") && (
+          <select value={fCat} onChange={(e) => setFCat(e.target.value)} className="border border-[color:var(--cl-line)] rounded-lg px-3 py-2 text-sm bg-[color:var(--cl-card)] text-[color:var(--cl-text)]">
+            <option value="">كل التصنيفات</option>
+            {categories.map((c) => <option key={c} value={c}>{c}</option>)}
+          </select>
+        )}
+        <select value={fProj} onChange={(e) => setFProj(e.target.value)} className="border border-[color:var(--cl-line)] rounded-lg px-3 py-2 text-sm bg-[color:var(--cl-card)] text-[color:var(--cl-text)]">
+          <option value="">كل المشروعات</option>
+          {projects.map((p) => <option key={p.id} value={p.id}>{p.name}</option>)}
+          <option value="_none">— بدون مشروع —</option>
+        </select>
+        <input value={search} onChange={(e) => setSearch(e.target.value)} placeholder="بحث بالاسم / الملاحظات" className="mr-auto w-72 border border-[color:var(--cl-line)] rounded-lg px-3 py-2 text-sm outline-none focus:border-[color:var(--cl-accent-bg)] bg-[color:var(--cl-card)]" />
+      </div>
+
+      <div className="bg-[color:var(--cl-card)] rounded-xl border border-[color:var(--cl-line)] overflow-hidden">
+        <table className="w-full text-sm">
+          <thead>
+            <tr className="bg-[color:var(--cl-inset)] text-[color:var(--cl-soft)] text-[12px]">
+              <th className="text-right py-3 px-4">التاريخ</th>
+              <th className="text-right py-3 px-4">النوع</th>
+              <th className="text-right py-3 px-4">المستفيد</th>
+              <th className="text-right py-3 px-4">على</th>
+              <th className="text-right py-3 px-4">المشروع › البند</th>
+              <th className="text-right py-3 px-4">الطريقة</th>
+              <th className="text-right py-3 px-4">المبلغ</th>
+              <th className="w-12" />
+            </tr>
+          </thead>
+          <tbody className="divide-y divide-[color:var(--cl-sep)]">
+            {filtered.map((p) => {
+              const st = stById.get(p.statementId);
+              const t = target(p);
+              return (
+                <tr key={p.id} className="hover:bg-[color:var(--cl-sub)] group">
+                  <td className="py-3 px-4 mono text-[color:var(--cl-soft)]">{p.date}</td>
+                  <td className="py-3 px-4"><span className={`text-[11px] px-2 py-0.5 rounded-full ${p.kind === "custody" ? "bg-[#6B5CA5]/15 text-[#9B8CD5]" : p.kind === "other" ? "bg-[color:var(--cl-chip)] text-[color:var(--cl-soft)]" : "bg-[color:rgb(var(--cl-accent-rgb)/0.15)] text-[color:var(--cl-accent)]"}`}>{dpTypeLabel(p.kind)}</span></td>
+                  <td className="py-3 px-4 font-semibold text-[color:var(--cl-text)]">{p.partyName}{p.note && <span className="block text-[11px] font-normal text-[color:var(--cl-muted)]">{p.note}</span>}</td>
+                  <td className="py-3 px-4 text-[color:var(--cl-soft)]">{p.isCustody ? <span className={p.status === "مصفاة" ? "text-[color:var(--cl-green)]" : "text-[#D6A23C]"}>عهدة {p.status || "مفتوحة"}</span> : p.kind === "other" ? (p.category || "—") : st ? `مستخلص #${st.number}` : "تحت الحساب"}</td>
+                  <td className="py-3 px-4 text-[color:var(--cl-soft)]">{t.projectId ? <>{projName(t.projectId)}{t.workItemId && <> › {wiName(t.workItemId)}</>}{t.level && <> › {t.level}</>}</> : <span className="text-[color:var(--cl-muted)]">بدون مشروع</span>}</td>
+                  <td className="py-3 px-4 text-[color:var(--cl-soft)]">{p.isCustody ? "—" : p.method || "—"}</td>
+                  <td className="py-3 px-4 mono font-bold">{stMoney(p.amount)}</td>
+                  <td className="py-3 px-2"><button onClick={() => (p.isCustody ? onDeleteCustody(p.id) : onDeletePayment(p.id))} title="حذف" className="p-1.5 rounded-md text-[color:var(--cl-red)] opacity-0 group-hover:opacity-100 hover:bg-[#C1453B]/10 transition"><Trash2 size={14} /></button></td>
+                </tr>
+              );
+            })}
+            {filtered.length === 0 && <tr><td colSpan={8} className="text-center py-8 text-[color:var(--cl-muted)]">لا توجد مدفوعات.</td></tr>}
+          </tbody>
+          {filtered.length > 0 && (
+            <tfoot><tr className="bg-[color:var(--cl-inset)]"><td colSpan={6} className="py-2.5 px-4 font-bold text-[color:var(--cl-soft)]">الإجمالي ({filtered.length})</td><td className="py-2.5 px-4 mono font-bold text-[color:var(--cl-text)]">{stMoney(total)}</td><td /></tr></tfoot>
+          )}
+        </table>
+      </div>
     </div>
   );
 }
