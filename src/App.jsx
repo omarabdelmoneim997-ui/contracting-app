@@ -9,14 +9,14 @@ import {
   Landmark, CircleDollarSign, CheckCircle2, Clock, Ruler, Users, Loader2,
   Trash2, Pencil, Printer, Banknote, Upload, ShieldCheck, LogOut,
   LayoutDashboard, ClipboardList, ReceiptText, FileCheck2, HandCoins, Vault, BarChart3,
-  Gauge, Layers, FileSignature, Percent, Hourglass, FolderKanban, UserCircle2, Palette, RotateCcw,
+  Gauge, Layers, FileSignature, Percent, Hourglass, FolderKanban, UserCircle2, Palette, RotateCcw, CalendarDays,
 } from "lucide-react";
 import { supabase } from "./supabaseClient";
 
 /* ---------------------------------- data ---------------------------------- */
 
 const COST_TYPES = [
-  { key: "مشتريات", label: "مشتريات وكميات", icon: Package, color: "#3F7D63" },
+  { key: "مشتريات", label: "توريدات", icon: Package, color: "#3F7D63" }, // المفتاح المتخزن لسه "مشتريات"
   { key: "مصنعيات", label: "مصنعيات", icon: HardHat, color: "#E8672C" },
   { key: "مصروفات", label: "مصروفات", icon: Receipt, color: "#D6A23C" },
   { key: "عهد", label: "عهد", icon: Landmark, color: "#6B5CA5" },
@@ -68,7 +68,7 @@ function downloadCostExcelTemplate(pWorkItems) {
         {
           "التاريخ": "2026-08-01",
           "بند العمل": pWorkItems[0]?.name || "أعمال المباني",
-          "النوع": "مشتريات وكميات",
+          "النوع": "توريدات",
           "الوصف": "توريد طوب",
           "المستوى الأول": "",
           "المستوى الثاني": "",
@@ -112,7 +112,8 @@ function parseCostExcelFile(file, pWorkItems) {
         const qtyRaw = r["الكمية"];
         const priceRaw = r["السعر"];
 
-        let type = COST_TYPES.find((t) => t.key === typeRaw || t.label === typeRaw)?.key;
+        // "توريدات" = المفتاح "مشتريات" (والاسم القديم "مشتريات وكميات" لسه مقبول)
+        let type = COST_TYPES.find((t) => t.key === typeRaw || t.label === typeRaw)?.key || (["مشتريات وكميات", "توريدات", "توريد"].includes(typeRaw) ? "مشتريات" : undefined);
         if (!type) {
           type = "مصروفات";
           if (typeRaw) warnings.push(`نوع "${typeRaw}" غير معروف، اتحطت كـ"مصروفات"`);
@@ -2118,11 +2119,11 @@ function ReportsCenter({ projects, workItems, costs, extracts, collections, trea
         </label>
         <label className="text-[11px] text-[color:var(--cl-muted)] font-semibold">
           من تاريخ
-          <input type="date" value={from} onChange={(e) => setFrom(e.target.value)} className="block mt-1 px-3 py-2 rounded-lg border border-[color:var(--cl-line)] bg-[color:var(--cl-card)] text-sm text-[color:var(--cl-text)]" />
+          <div className="mt-1 w-44"><DateInput value={from} onChange={setFrom} /></div>
         </label>
         <label className="text-[11px] text-[color:var(--cl-muted)] font-semibold">
           إلى تاريخ
-          <input type="date" value={to} onChange={(e) => setTo(e.target.value)} className="block mt-1 px-3 py-2 rounded-lg border border-[color:var(--cl-line)] bg-[color:var(--cl-card)] text-sm text-[color:var(--cl-text)]" />
+          <div className="mt-1 w-44"><DateInput value={to} onChange={setTo} /></div>
         </label>
         {(from || to) && (
           <button onClick={() => { setFrom(""); setTo(""); }} className="px-3 py-2 rounded-lg text-xs font-semibold text-[color:var(--cl-soft)] hover:bg-[color:var(--cl-inset)] flex items-center gap-1 transition">
@@ -6309,6 +6310,8 @@ function DirectPaymentsModule({ payments, statements = [], registeredParties = [
   const [fType, setFType] = useState("");
   const [fCat, setFCat] = useState("");
   const [fProj, setFProj] = useState("");
+  const [fWI, setFWI] = useState("");
+  const [fLv, setFLv] = useState("");
   const [search, setSearch] = useState("");
   const set = (patch) => setForm((f) => ({ ...f, ...patch }));
   const projName = (id) => projects.find((p) => p.id === id)?.name || "";
@@ -6382,6 +6385,8 @@ function DirectPaymentsModule({ payments, statements = [], registeredParties = [
     .filter((p) => !fType || p.kind === fType)
     .filter((p) => !fCat || p.category === fCat)
     .filter((p) => { const t = target(p); return !fProj || (fProj === "_none" ? !t.projectId : t.projectId === fProj); })
+    .filter((p) => !fWI || target(p).workItemId === fWI)
+    .filter((p) => !fLv || (fLv === "_none" ? !target(p).level : target(p).level === fLv))
     .filter((p) => !q || p.partyName.includes(q) || (p.note || "").includes(q) || (p.category || "").includes(q));
   const total = stRound(filtered.reduce((s, p) => s + p.amount, 0));
   const sumKind = (k) => stRound(all.filter((p) => p.kind === k).reduce((s, p) => s + p.amount, 0));
@@ -6501,11 +6506,24 @@ function DirectPaymentsModule({ payments, statements = [], registeredParties = [
             {categories.map((c) => <option key={c} value={c}>{c}</option>)}
           </select>
         )}
-        <select value={fProj} onChange={(e) => setFProj(e.target.value)} className="border border-[color:var(--cl-line)] rounded-lg px-3 py-2 text-sm bg-[color:var(--cl-card)] text-[color:var(--cl-text)]">
+        <select value={fProj} onChange={(e) => { setFProj(e.target.value); setFWI(""); setFLv(""); }} className="border border-[color:var(--cl-line)] rounded-lg px-3 py-2 text-sm bg-[color:var(--cl-card)] text-[color:var(--cl-text)]">
           <option value="">كل المشروعات</option>
           {projects.map((p) => <option key={p.id} value={p.id}>{p.name}</option>)}
           <option value="_none">— بدون مشروع —</option>
         </select>
+        {fProj !== "_none" && (
+          <select value={fWI} onChange={(e) => { setFWI(e.target.value); setFLv(""); }} className="border border-[color:var(--cl-line)] rounded-lg px-3 py-2 text-sm bg-[color:var(--cl-card)] text-[color:var(--cl-text)]">
+            <option value="">كل بنود العمل</option>
+            {workItems.filter((w) => !fProj || w.projectId === fProj).map((w) => <option key={w.id} value={w.id}>{fProj ? w.name : `${projName(w.projectId)} › ${w.name}`}</option>)}
+          </select>
+        )}
+        {fWI && (
+          <select value={fLv} onChange={(e) => setFLv(e.target.value)} className="border border-[color:var(--cl-line)] rounded-lg px-3 py-2 text-sm bg-[color:var(--cl-card)] text-[color:var(--cl-text)]">
+            <option value="">كل البنود الفرعية</option>
+            {Array.from(new Set([...wiLevels.filter((l) => l.workItemId === fWI).map((l) => l.name), ...all.filter((p) => target(p).workItemId === fWI).map((p) => target(p).level).filter(Boolean)])).map((n) => <option key={n} value={n}>{n}</option>)}
+            <option value="_none">— بدون بند فرعي —</option>
+          </select>
+        )}
         <input value={search} onChange={(e) => setSearch(e.target.value)} placeholder="بحث بالاسم / الملاحظات" className="mr-auto w-72 border border-[color:var(--cl-line)] rounded-lg px-3 py-2 text-sm outline-none focus:border-[color:var(--cl-accent-bg)] bg-[color:var(--cl-card)]" />
       </div>
 
@@ -6652,7 +6670,54 @@ function UnitSelect({ value, onChange, units = [], onAddUnit, compact }) {
   );
 }
 
+// خانة تاريخ بأرقام إنجليزي دايمًا (yyyy-mm-dd) — بدل خانة المتصفح اللي بتظهر "يوم/شهر/سنة" وأرقام عربي
+// تقبل كتابة 2026-10-11 أو 11/10/2026 (وكمان بالأرقام العربي)، وفيها زرار نتيجة بيفتح التقويم
+const dtDigits = (t) => String(t || "").replace(/[٠-٩]/g, (d) => String("٠١٢٣٤٥٦٧٨٩".indexOf(d))).replace(/[۰-۹]/g, (d) => String("۰۱۲۳۴۵۶۷۸۹".indexOf(d)));
+function dtParse(t) {
+  const s = dtDigits(t).trim();
+  if (!s) return "";
+  let m = s.match(/^(\d{4})[-/.](\d{1,2})[-/.](\d{1,2})$/);
+  let y, mo, d;
+  if (m) { y = +m[1]; mo = +m[2]; d = +m[3]; }
+  else if ((m = s.match(/^(\d{1,2})[-/.](\d{1,2})[-/.](\d{4})$/))) { d = +m[1]; mo = +m[2]; y = +m[3]; }
+  else return null;
+  const dt = new Date(Date.UTC(y, mo - 1, d));
+  if (dt.getUTCFullYear() !== y || dt.getUTCMonth() !== mo - 1 || dt.getUTCDate() !== d) return null;
+  return `${y}-${String(mo).padStart(2, "0")}-${String(d).padStart(2, "0")}`;
+}
+function DateInput({ value, onChange, className = "", small }) {
+  const [text, setText] = useState(value || "");
+  const pick = React.useRef(null);
+  useEffect(() => { setText(value || ""); }, [value]);
+  const commit = (t) => { const iso = dtParse(t); if (iso === null) setText(value || ""); else { setText(iso); if (iso !== (value || "")) onChange(iso); } };
+  const openPicker = () => { const el = pick.current; if (!el) return; try { el.showPicker ? el.showPicker() : el.click(); } catch { el.click(); } };
+  return (
+    <div className="relative">
+      <input
+        type="text" dir="ltr" lang="en" inputMode="numeric" placeholder="yyyy-mm-dd" value={text}
+        onChange={(e) => { const t = dtDigits(e.target.value); setText(t); const iso = /^\d{4}-\d{2}-\d{2}$/.test(t) ? dtParse(t) : null; if (iso) onChange(iso); }}
+        onBlur={(e) => commit(e.target.value)}
+        onKeyDown={(e) => { if (e.key === "Enter") commit(e.currentTarget.value); }}
+        className={className || `w-full border border-[color:var(--cl-line)] rounded-lg px-3 ${small ? "py-1.5 text-xs" : "py-2 text-sm"} outline-none focus:border-[color:var(--cl-accent-bg)] transition bg-[color:var(--cl-card)]`}
+        style={{ paddingLeft: small ? 28 : 34, textAlign: "left", fontFamily: "'IBM Plex Mono', monospace" }}
+      />
+      <button type="button" tabIndex={-1} onClick={openPicker} title="اختار من التقويم" className="absolute left-1.5 top-1/2 -translate-y-1/2 p-1 rounded text-[color:var(--cl-muted)] hover:text-[color:var(--cl-text)]">
+        <CalendarDays size={small ? 13 : 15} />
+      </button>
+      <input ref={pick} type="date" tabIndex={-1} aria-hidden="true" value={value || ""} onChange={(e) => { setText(e.target.value); onChange(e.target.value); }} className="absolute left-0 bottom-0 w-0 h-0 opacity-0 pointer-events-none" />
+    </div>
+  );
+}
+
 function Field({ label, value, onChange, type = "text", placeholder = "", small }) {
+  if (type === "date") {
+    return (
+      <div>
+        <label className="block text-[11px] font-semibold text-[color:var(--cl-soft)] mb-1">{label}</label>
+        <DateInput value={value} onChange={onChange} small={small} />
+      </div>
+    );
+  }
   return (
     <div>
       <label className="block text-[11px] font-semibold text-[color:var(--cl-soft)] mb-1">{label}</label>
