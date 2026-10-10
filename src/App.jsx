@@ -6290,9 +6290,9 @@ const DP_TYPES = [
   { k: "contractor", l: "مقاول", plural: "المقاولين" },
   { k: "supplier", l: "مورد", plural: "الموردين" },
   { k: "custody", l: "عهدة", plural: "العُهد" },
-  { k: "other", l: "أخرى (استشاري / مرتبات / ...)", plural: "أخرى" },
+  { k: "other", l: "مصروفات (استشاري / مرتبات / ...)", plural: "مصروفات" },
 ];
-const dpTypeLabel = (k) => (k === "contractor" ? "مقاول" : k === "supplier" ? "مورد" : k === "custody" ? "عهدة" : "أخرى");
+const dpTypeLabel = (k) => (k === "contractor" ? "مقاول" : k === "supplier" ? "مورد" : k === "custody" ? "عهدة" : "مصروفات");
 
 function DirectPaymentsModule({ payments, statements = [], registeredParties = [], projects, workItems, wiLevels = [], levelsReady = false, onAddLevel, ready, onAddPayment, onDeletePayment, custodies = [], onAddCustody, onDeleteCustody }) {
   // العُهد بتظهر في نفس الجدول (من جدول custodies) — مش تكلفة فعلية لحد ما تتصفّى من "تصفية العهد"
@@ -6484,7 +6484,7 @@ function DirectPaymentsModule({ payments, statements = [], registeredParties = [
         </div>
         {DP_TYPES.map((t) => (
           <div key={t.k} className="bg-[color:var(--cl-card)] rounded-xl border border-[color:var(--cl-line)] p-4">
-            <div className="text-[11px] text-[color:var(--cl-muted)] mb-1">{t.k === "other" ? "أخرى (استشاري / مرتبات)" : t.plural}</div>
+            <div className="text-[11px] text-[color:var(--cl-muted)] mb-1">{t.k === "other" ? "مصروفات (استشاري / مرتبات)" : t.plural}</div>
             <div className="font-bold mono text-lg text-[color:var(--cl-text)]">{stMoney(sumKind(t.k))} ج.م</div>
           </div>
         ))}
@@ -6493,7 +6493,7 @@ function DirectPaymentsModule({ payments, statements = [], registeredParties = [
       <div className="flex items-center gap-2">
         <select value={fType} onChange={(e) => setFType(e.target.value)} className="border border-[color:var(--cl-line)] rounded-lg px-3 py-2 text-sm bg-[color:var(--cl-card)] text-[color:var(--cl-text)]">
           <option value="">كل الأنواع</option>
-          {DP_TYPES.map((t) => <option key={t.k} value={t.k}>{t.k === "other" ? "أخرى" : t.plural}</option>)}
+          {DP_TYPES.map((t) => <option key={t.k} value={t.k}>{t.plural}</option>)}
         </select>
         {(fType === "" || fType === "other") && (
           <select value={fCat} onChange={(e) => setFCat(e.target.value)} className="border border-[color:var(--cl-line)] rounded-lg px-3 py-2 text-sm bg-[color:var(--cl-card)] text-[color:var(--cl-text)]">
