@@ -1222,6 +1222,8 @@ function ContractingApp({ currentUsername, onLogout }) {
               financePersons={financePersons}
               financeTransactions={financeTransactions}
               expectedCosts={expectedCosts}
+              statements={statements}
+              statementPayments={statementPayments}
               defaultProjectId={activeProjectId}
               costsManager={{ wiLevels, levelsReady, onAddLevel: addLevel, units, unitsReady, onAddUnit: addUnit, onAddCost: addCost, onAddCostsBulk: addCostsBulk, onUpdateCost: updateCost, onDeleteCost: deleteCost }}
             />
@@ -1496,6 +1498,7 @@ const rOverTone = (v) => (v > 0 ? "text-[color:var(--cl-red)]" : "text-[color:va
 const REPORT_LIST = [
   { key: "costs_manage", title: "التكاليف الفعلية", desc: "شاشة التكاليف الفعلية للمشروع: إضافة وتعديل وحذف التكاليف ورفعها من إكسيل، مع العرض المجمّع حسب بند العمل.", icon: ReceiptText, manage: true },
   { key: "executive", title: "التقرير التنفيذي للمشروع", desc: "قيمة العقد، الأعمال، التكلفة الفعلية والمتوقعة، الربح والهامش، التحصيل وأهم التجاوزات.", icon: LayoutDashboard },
+  { key: "paid", title: "تقرير التكاليف الفعلية", desc: "اللي اتصرف فعلًا على المشروع من المدفوعات، مع فلاتر بالبند والبنود الفرعية ونوع الجهة، وتوزيع حسب البند والجهة وكشف تفصيلي.", icon: Wallet },
   { key: "costs", title: "تقرير التكاليف التفصيلي", desc: "التكاليف حسب النوع وبند العمل ومستوى التكلفة الأول والثاني (الكمية × السعر).", icon: ReceiptText },
   { key: "bva", title: "تقرير Budget vs Actual", desc: "الميزانية مقابل الفعلي لكل بند مع الفرق ونسبة الانحراف وتحديد البنود المتجاوزة.", icon: Gauge },
   { key: "extracts", title: "تقرير المستخلصات والتحصيلات", desc: "إجمالي المستخلصات والمحصل والمتبقي ونسبة التحصيل لكل مستخلص.", icon: FileCheck2 },
@@ -2062,8 +2065,208 @@ function ItemsReport({ s }) {
   );
 }
 
+/* -------- التكاليف الفعلية (من المدفوعات) -------- */
+const PAID_KINDS = [
+  { key: "contractor", label: "مقاولين", color: "#E8672C" },
+  { key: "supplier", label: "موردين", color: "#3F7D63" },
+  { key: "other", label: "مدفوعات مباشرة", color: "#D6A23C" },
+];
+const paidKindLabel = (k) => PAID_KINDS.find((x) => x.key === k)?.label || "—";
+const NO_LEVEL = "بدون بند فرعي";
+
+function PaidCostsReport({ s }) {
+  const [itemF, setItemF] = useState("all");
+  const [levelF, setLevelF] = useState("all");
+  const [kindF, setKindF] = useState("all");
+  const [partyF, setPartyF] = useState("");
+
+  const itemName = (id) => (id ? s.works.find((w) => w.id === id)?.name || "بند محذوف" : "غير مرتبط ببند");
+  // لو المشروع اتغيّر والبند المختار مش تابع له → نرجع لـ"كل البنود"
+  const item = itemF === "all" || itemF === "_none" || s.works.some((w) => w.id === itemF) ? itemF : "all";
+  const itemRows = s.payments.filter((p) => item === "all" || (item === "_none" ? !p.workItemId : p.workItemId === item));
+  const levelOptions = item === "all" ? [] : [...new Set([
+    ...s.wiLevels.filter((l) => l.workItemId === item).map((l) => l.name),
+    ...itemRows.map((p) => p.level || NO_LEVEL),
+  ])].sort((a, b) => a.localeCompare(b, "ar"));
+  const level = item !== "all" && levelOptions.includes(levelF) ? levelF : "all";
+  const q = partyF.trim().toLowerCase();
+
+  const list = itemRows
+    .filter((p) => level === "all" || (p.level || NO_LEVEL) === level)
+    .filter((p) => kindF === "all" || p.kind === kindF)
+    .filter((p) => !q || String(p.partyName || "").toLowerCase().includes(q));
+  const total = rSum(list, (p) => p.amount);
+  const share = (v) => rPct(total > 0 ? (v / total) * 100 : null);
+
+  // حسب البند ← البنود الفرعية تحته
+  const itemMap = new Map();
+  list.forEach((p) => {
+    const k = p.workItemId || "_none";
+    if (!itemMap.has(k)) itemMap.set(k, new Map());
+    const inner = itemMap.get(k);
+    const lv = p.level || NO_LEVEL;
+    inner.set(lv, [...(inner.get(lv) || []), p]);
+  });
+  const groups = [...itemMap.entries()].map(([k, inner]) => {
+    const all = [...inner.values()].flat();
+    const w = s.works.find((x) => x.id === k);
+    return {
+      key: k, name: k === "_none" ? "غير مرتبط ببند" : itemName(k), projectId: w?.projectId || all[0]?.projectId,
+      budget: w ? w.qty * w.price : 0, total: rSum(all, (p) => p.amount), count: all.length,
+      levels: [...inner.entries()].map(([name, ps]) => ({ name, count: ps.length, total: rSum(ps, (p) => p.amount) })).sort((a, b) => b.total - a.total),
+    };
+  }).sort((a, b) => b.total - a.total);
+  const itemTableRows = [];
+  groups.forEach((g) => {
+    itemTableRows.push({
+      className: "bg-[color:var(--cl-inset)] font-bold",
+      cells: [
+        <span>{g.name}{s.multi && <span className="text-[10px] font-normal text-[color:var(--cl-muted)] block">{s.projName(g.projectId)}</span>}</span>,
+        g.count, g.budget > 0 ? fmt(g.budget) : "—", fmt(g.total),
+        g.budget > 0 ? <span className={g.total > g.budget ? "text-[color:var(--cl-red)]" : ""}>{rPct((g.total / g.budget) * 100)}</span> : "—",
+        share(g.total),
+      ],
+    });
+    if (g.levels.length > 1 || g.levels[0]?.name !== NO_LEVEL) {
+      g.levels.forEach((l) => itemTableRows.push({
+        cells: [<span className="pr-4 text-[color:var(--cl-soft)]">↳ {l.name}</span>, l.count, "", fmt(l.total), "", share(l.total)],
+      }));
+    }
+  });
+
+  const byKind = PAID_KINDS.map((k) => {
+    const ps = list.filter((p) => p.kind === k.key);
+    return { ...k, count: ps.length, total: rSum(ps, (p) => p.amount) };
+  }).filter((k) => k.count > 0);
+
+  const partyMap = new Map();
+  list.forEach((p) => {
+    const k = p.kind + "|" + p.partyName;
+    const cur = partyMap.get(k) || { name: p.partyName, kind: p.kind, category: p.category, count: 0, total: 0 };
+    cur.count += 1; cur.total += p.amount;
+    partyMap.set(k, cur);
+  });
+  const parties = [...partyMap.values()].sort((a, b) => b.total - a.total);
+  const topParties = parties.slice(0, 10);
+  const partyMax = topParties[0]?.total || 0;
+
+  const lines = [...list].sort((a, b) => rDay(a.date).localeCompare(rDay(b.date)));
+  const activeFilters = [
+    item !== "all" && `البند: ${itemName(item === "_none" ? null : item)}`,
+    level !== "all" && `البند الفرعي: ${level}`,
+    kindF !== "all" && `الجهة: ${paidKindLabel(kindF)}`,
+    q && `بحث: ${partyF.trim()}`,
+  ].filter(Boolean);
+  const selCls = "block mt-1 min-w-[170px] px-3 py-2 rounded-lg border border-[color:var(--cl-line)] bg-[color:var(--cl-card)] text-sm text-[color:var(--cl-text)] disabled:opacity-50";
+
+  return (
+    <div className="space-y-4">
+      <div className="no-print bg-[color:var(--cl-card)] rounded-xl border border-[color:var(--cl-line)] p-4 flex flex-wrap items-end gap-4">
+        <label className="text-[11px] text-[color:var(--cl-muted)] font-semibold">
+          بند العمل
+          <select value={item} onChange={(e) => { setItemF(e.target.value); setLevelF("all"); }} className={selCls}>
+            <option value="all">كل البنود</option>
+            {s.works.map((w) => <option key={w.id} value={w.id}>{w.name}{s.multi ? ` — ${s.projName(w.projectId)}` : ""}</option>)}
+            <option value="_none">غير مرتبط ببند</option>
+          </select>
+        </label>
+        <label className="text-[11px] text-[color:var(--cl-muted)] font-semibold">
+          البند الفرعي
+          <select value={level} onChange={(e) => setLevelF(e.target.value)} disabled={item === "all"} className={selCls} title={item === "all" ? "اختار بند العمل الأول" : ""}>
+            <option value="all">{item === "all" ? "اختار البند الأول" : "كل البنود الفرعية"}</option>
+            {levelOptions.map((l) => <option key={l} value={l}>{l}</option>)}
+          </select>
+        </label>
+        <label className="text-[11px] text-[color:var(--cl-muted)] font-semibold">
+          نوع الجهة
+          <select value={kindF} onChange={(e) => setKindF(e.target.value)} className={selCls}>
+            <option value="all">الكل</option>
+            {PAID_KINDS.map((k) => <option key={k.key} value={k.key}>{k.label}</option>)}
+          </select>
+        </label>
+        <label className="text-[11px] text-[color:var(--cl-muted)] font-semibold">
+          بحث باسم الجهة
+          <input value={partyF} onChange={(e) => setPartyF(e.target.value)} placeholder="اسم المقاول / المورد" className="block mt-1 w-52 px-3 py-2 rounded-lg border border-[color:var(--cl-line)] bg-[color:var(--cl-card)] text-sm text-[color:var(--cl-text)] outline-none focus:border-[color:var(--cl-accent-bg)]" />
+        </label>
+        {activeFilters.length > 0 && (
+          <button onClick={() => { setItemF("all"); setLevelF("all"); setKindF("all"); setPartyF(""); }} className="px-3 py-2 rounded-lg text-xs font-semibold text-[color:var(--cl-soft)] hover:bg-[color:var(--cl-inset)] flex items-center gap-1 transition">
+            <X size={13} /> مسح الفلاتر
+          </button>
+        )}
+      </div>
+
+      <ReportShell title="تقرير التكاليف الفعلية" s={s}
+        notice="التقرير ده مبني على المدفوعات المسجّلة (دفعات المقاولين والموردين والمدفوعات المباشرة) — يعني اللي اتصرف فعلًا على المشروع.">
+        {activeFilters.length > 0 && (
+          <div className="flex flex-wrap gap-2 -mt-2">
+            {activeFilters.map((f) => <span key={f} className="text-[11px] px-2.5 py-1 rounded-full bg-[color:rgb(var(--cl-accent-rgb)/0.1)] text-[color:var(--cl-accent)] font-semibold">{f}</span>)}
+          </div>
+        )}
+
+        <div className="grid grid-cols-4 gap-3">
+          <RptKpi label="إجمالي المصروف فعليًا" value={money(total)} color="#E8672C" />
+          <RptKpi label="عدد الدفعات" value={fmt(list.length)} />
+          <RptKpi label="عدد الجهات" value={fmt(parties.length)} sub="مقاولين / موردين / مدفوعات مباشرة" />
+          <RptKpi label="أكبر بند صرفًا" value={groups[0]?.name || "—"} sub={groups[0] ? money(groups[0].total) : ""} />
+        </div>
+
+        {byKind.length > 0 && (
+          <RptSection title="حسب نوع الجهة">
+            <div className="space-y-3 avoid-break">
+              {byKind.map((k) => <RptBar key={k.key} label={`${k.label} (${share(k.total)})`} value={k.total} max={total} color={k.color} />)}
+            </div>
+          </RptSection>
+        )}
+
+        <RptSection title="حسب بند العمل والبنود الفرعية" hint="نسبة الصرف = المصروف ÷ ميزانية البند (الكمية × السعر). باللون الأحمر لو المصروف عدّى الميزانية.">
+          <RptTable
+            heads={[{ label: "البند / البند الفرعي" }, { label: "عدد الدفعات", num: true }, { label: "ميزانية البند", num: true }, { label: "المصروف", num: true }, { label: "نسبة الصرف", num: true }, { label: "من الإجمالي", num: true }]}
+            rows={itemTableRows}
+            footer={["الإجمالي", list.length, "", fmt(total), "", total > 0 ? "100٪" : "—"]}
+            empty="لا توجد مدفوعات مطابقة للفلاتر في هذه الفترة"
+          />
+        </RptSection>
+
+        {topParties.length > 0 && (
+          <RptSection title={parties.length > 10 ? "أعلى 10 جهات صرفًا" : "حسب الجهة"}>
+            <RptTable
+              heads={[{ label: "الجهة" }, { label: "النوع" }, { label: "عدد الدفعات", num: true }, { label: "المصروف", num: true }, { label: "" }]}
+              rows={topParties.map((p) => ({
+                cells: [
+                  <b>{p.name}</b>, p.kind === "other" ? p.category || paidKindLabel(p.kind) : paidKindLabel(p.kind), p.count, fmt(p.total),
+                  <div className="h-2 w-32 rounded-full bg-[color:var(--cl-chip)] overflow-hidden"><div className="h-full rounded-full bg-[color:var(--cl-accent-bg)]" style={{ width: `${partyMax > 0 ? (p.total / partyMax) * 100 : 0}%` }} /></div>,
+                ],
+              }))}
+            />
+          </RptSection>
+        )}
+
+        <RptSection title="كشف الدفعات التفصيلي">
+          <RptTable
+            heads={[{ label: "التاريخ" }, { label: "البند" }, { label: "البند الفرعي" }, { label: "الجهة" }, { label: "النوع" }, { label: "المرجع" }, { label: "طريقة الدفع" }, { label: "المبلغ", num: true }]}
+            rows={lines.map((p) => ({
+              cells: [
+                rDay(p.date) || "—",
+                <span>{itemName(p.workItemId)}{s.multi && <span className="text-[10px] text-[color:var(--cl-muted)] block">{s.projName(p.projectId)}</span>}</span>,
+                p.level || "—",
+                <span>{p.partyName}{p.note && <span className="text-[10px] text-[color:var(--cl-muted)] block">{p.note}</span>}</span>,
+                p.kind === "other" ? p.category || paidKindLabel(p.kind) : paidKindLabel(p.kind),
+                p.statementNumber ? `مستخلص #${p.statementNumber}` : p.kind === "other" ? "دفعة مباشرة" : "دفعة عامة",
+                p.method || "—",
+                <b>{fmt(p.amount)}</b>,
+              ],
+            }))}
+            footer={["", "", "", "", "", "", "الإجمالي", fmt(total)]}
+            empty="لا توجد مدفوعات مطابقة للفلاتر في هذه الفترة"
+          />
+        </RptSection>
+      </ReportShell>
+    </div>
+  );
+}
+
 /* -------- مركز التقارير (الواجهة الرئيسية) -------- */
-function ReportsCenter({ projects, workItems, costs, extracts, collections, treasuryEntries, financePersons, financeTransactions, expectedCosts, defaultProjectId, costsManager }) {
+function ReportsCenter({ projects, workItems, costs, extracts, collections, treasuryEntries, financePersons, financeTransactions, expectedCosts, defaultProjectId, costsManager, statements = [], statementPayments = [] }) {
   const [reportKey, setReportKey] = useState(null);
   const [projectId, setProjectId] = useState(defaultProjectId || "all");
   const [from, setFrom] = useState("");
@@ -2099,6 +2302,13 @@ function ReportsCenter({ projects, workItems, costs, extracts, collections, trea
     persons: financePersons,
     financeAll: financeTransactions,
     finTx: financeTransactions.filter((t) => inRange(t.date)),
+    wiLevels: costsManager?.wiLevels || [],
+    // المدفوعات بعد تحديد المشروع/البند اللي بتتحسب عليه (من المستخلص أو من الدفعة نفسها)
+    payments: statementPayments.map((p) => {
+      const st = p.statementId ? statements.find((x) => x.id === p.statementId) : null;
+      const t = stPayTarget(p, st);
+      return { ...p, projectId: t.projectId, workItemId: t.workItemId, amount: Number(p.amount) || 0, level: (st ? st.workItemLevel : p.workItemLevel) || "", statementNumber: st?.number || null };
+    }).filter((p) => p.projectId && p.amount > 0 && inScope(p) && inRange(p.date)),
   };
 
   const current = REPORT_LIST.find((r) => r.key === reportKey);
@@ -2207,6 +2417,7 @@ function ReportsCenter({ projects, workItems, costs, extracts, collections, trea
         ) : null
       )}
       {reportKey === "executive" && <ExecutiveReport s={s} />}
+      {reportKey === "paid" && <PaidCostsReport s={s} />}
       {reportKey === "costs" && <CostDetailReport s={s} />}
       {reportKey === "bva" && <BudgetVsActualReport s={s} />}
       {reportKey === "extracts" && <ExtractsReport s={s} />}
