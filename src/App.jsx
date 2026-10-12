@@ -327,6 +327,7 @@ function ContractingApp({ currentUsername, onLogout }) {
   const [registryDbError, setRegistryDbError] = useState(null);
   const [wiLevels, setWiLevels] = useState([]); // البنود الفرعية تحت كل بند عمل (مباني ← مصنعيات المباني)
   const [levelsReady, setLevelsReady] = useState(false); // جدول work_item_levels موجود؟
+  const [levelsTreeReady, setLevelsTreeReady] = useState(false); // عمود parent_id موجود؟ (مستويات تحت بعض)
   const [units, setUnits] = useState([]); // قايمة الوحدات (م² / طن / ...)
   const [unitsReady, setUnitsReady] = useState(false); // جدول units موجود؟
   const [stCostLinkReady, setStCostLinkReady] = useState(false);
@@ -453,21 +454,26 @@ function ContractingApp({ currentUsername, onLogout }) {
     async function loadLevels() {
       const { data, error } = await supabase.from("work_item_levels").select("*").order("created_at");
       if (error) { setLevelsReady(false); return; } // الجدول مش موجود → الخانة بتفضل كتابة حرة
-      setWiLevels((data || []).map((l) => ({ id: l.id, workItemId: l.work_item_id, name: l.name })));
+      setWiLevels((data || []).map((l) => ({ id: l.id, workItemId: l.work_item_id, name: l.name, parentId: l.parent_id || null })));
       setLevelsReady(true);
+      const probe = await supabase.from("work_item_levels").select("parent_id").limit(1);
+      setLevelsTreeReady(!probe.error);
     }
     loadLevels();
   }, []);
 
-  async function addLevel(workItemId, name) {
-    const n = String(name || "").trim();
+  // parentId = البند الفرعي اللي المستوى الجديد هيبقى تحته (null = مستوى أول تحت بند العمل)
+  async function addLevel(workItemId, name, parentId = null) {
+    const n = String(name || "").replace(/›/g, "-").trim();
     if (!workItemId || !n) return null;
-    const exists = wiLevels.find((l) => l.workItemId === workItemId && l.name === n);
+    if (parentId && !levelsTreeReady) { alert("عشان تضيف مستوى تحت بند فرعي لازم تشغّل ملف work_item_levels_tree_migration.sql على Supabase الأول."); return null; }
+    const exists = wiLevels.find((l) => l.workItemId === workItemId && (l.parentId || null) === (parentId || null) && l.name === n);
     if (exists) return exists;
     const row = { id: stUid("wl_"), work_item_id: workItemId, name: n };
+    if (parentId) row.parent_id = parentId;
     const { error } = await supabase.from("work_item_levels").insert([row]);
     if (error) { alert("حصل خطأ أثناء إضافة البند الفرعي: " + error.message); return null; }
-    const saved = { id: row.id, workItemId, name: n };
+    const saved = { id: row.id, workItemId, name: n, parentId: parentId || null };
     setWiLevels((prev) => [...prev, saved]);
     return saved;
   }
@@ -475,11 +481,14 @@ function ContractingApp({ currentUsername, onLogout }) {
   async function deleteLevel(id) {
     const l = wiLevels.find((x) => x.id === id);
     if (!l) return;
-    const used = costs.filter((c) => c.workItemId === l.workItemId && c.costLevel1 === l.name).length;
-    if (!window.confirm(used ? `"${l.name}" مستخدم في ${used} تكلفة — التكاليف دي هتفضل محتفظة بالاسم، بس مش هيظهر في القايمة تاني. متأكد؟` : `متأكد إنك عايز تمسح "${l.name}"؟`)) return;
-    const { error } = await supabase.from("work_item_levels").delete().eq("id", id);
+    const path = lvPath(wiLevels, l);
+    const ids = lvSubtreeIds(wiLevels, id); // المستوى نفسه + كل اللي تحته
+    const used = costs.filter((c) => c.workItemId === l.workItemId && lvUnder(c.costLevel1, path)).length;
+    const kids = ids.length > 1 ? ` ومعاه ${ids.length - 1} مستوى تحته` : "";
+    if (!window.confirm(used ? `"${path}" مستخدم في ${used} تكلفة — التكاليف دي هتفضل محتفظة بالاسم، بس مش هيظهر في القايمة تاني${kids}. متأكد؟` : `متأكد إنك عايز تمسح "${path}"${kids}؟`)) return;
+    const { error } = await supabase.from("work_item_levels").delete().in("id", ids);
     if (error) { alert("حصل خطأ أثناء الحذف: " + error.message); return; }
-    setWiLevels((prev) => prev.filter((x) => x.id !== id));
+    setWiLevels((prev) => prev.filter((x) => !ids.includes(x.id)));
   }
 
   async function addUnit(name) {
@@ -2073,6 +2082,23 @@ const PAID_KINDS = [
 ];
 const paidKindLabel = (k) => PAID_KINDS.find((x) => x.key === k)?.label || "—";
 const NO_LEVEL = "بدون بند فرعي";
+// صفوف المستويات بشكل شجرة: كل مسار (وكل أب ليه) بإجمالي اللي تحته، والأكبر الأول في كل مستوى
+function lvRollup(leaves) {
+  const nodes = new Map();
+  leaves.forEach((x) => {
+    const parts = x.name === NO_LEVEL ? [NO_LEVEL] : x.name.split(LV_SEP);
+    parts.forEach((_, i) => {
+      const path = parts.slice(0, i + 1).join(LV_SEP);
+      const n = nodes.get(path) || { path, label: parts[i], depth: i, parent: i ? parts.slice(0, i).join(LV_SEP) : null, count: 0, total: 0 };
+      n.count += x.count; n.total += x.total;
+      nodes.set(path, n);
+    });
+  });
+  const out = [];
+  const walk = (parent) => [...nodes.values()].filter((n) => n.parent === parent).sort((a, b) => b.total - a.total).forEach((n) => { out.push(n); walk(n.path); });
+  walk(null);
+  return out.map((n) => ({ ...n, name: n.path }));
+}
 
 function PaidCostsReport({ s }) {
   const [itemF, setItemF] = useState("all");
@@ -2085,14 +2111,14 @@ function PaidCostsReport({ s }) {
   const item = itemF === "all" || itemF === "_none" || s.works.some((w) => w.id === itemF) ? itemF : "all";
   const itemRows = s.payments.filter((p) => item === "all" || (item === "_none" ? !p.workItemId : p.workItemId === item));
   const levelOptions = item === "all" ? [] : [...new Set([
-    ...s.wiLevels.filter((l) => l.workItemId === item).map((l) => l.name),
-    ...itemRows.map((p) => p.level || NO_LEVEL),
-  ])].sort((a, b) => a.localeCompare(b, "ar"));
+    ...lvPaths(s.wiLevels, item),
+    ...itemRows.map((p) => p.level || NO_LEVEL).sort((a, b) => a.localeCompare(b, "ar")),
+  ])];
   const level = item !== "all" && levelOptions.includes(levelF) ? levelF : "all";
   const q = partyF.trim().toLowerCase();
 
   const list = itemRows
-    .filter((p) => level === "all" || (p.level || NO_LEVEL) === level)
+    .filter((p) => level === "all" || (level === NO_LEVEL ? !p.level : lvUnder(p.level, level)))
     .filter((p) => kindF === "all" || p.kind === kindF)
     .filter((p) => !q || String(p.partyName || "").toLowerCase().includes(q));
   const total = rSum(list, (p) => p.amount);
@@ -2113,7 +2139,8 @@ function PaidCostsReport({ s }) {
     return {
       key: k, name: k === "_none" ? "غير مرتبط ببند" : itemName(k), projectId: w?.projectId || all[0]?.projectId,
       budget: w ? w.qty * w.price : 0, total: rSum(all, (p) => p.amount), count: all.length,
-      levels: [...inner.entries()].map(([name, ps]) => ({ name, count: ps.length, total: rSum(ps, (p) => p.amount) })).sort((a, b) => b.total - a.total),
+      // كل مستوى بإجمالي اللي تحته كمان (مباني ← مصنعيات ← لياسة)، بترتيب الشجرة
+      levels: lvRollup([...inner.entries()].map(([name, ps]) => ({ name, count: ps.length, total: rSum(ps, (p) => p.amount) }))),
     };
   }).sort((a, b) => b.total - a.total);
   const itemTableRows = [];
@@ -2129,7 +2156,7 @@ function PaidCostsReport({ s }) {
     });
     if (g.levels.length > 1 || g.levels[0]?.name !== NO_LEVEL) {
       g.levels.forEach((l) => itemTableRows.push({
-        cells: [<span className="pr-4 text-[color:var(--cl-soft)]">↳ {l.name}</span>, l.count, "", fmt(l.total), "", share(l.total)],
+        cells: [<span className="text-[color:var(--cl-soft)]" style={{ paddingRight: 16 + l.depth * 18 }}>↳ {l.label}</span>, l.count, "", fmt(l.total), "", share(l.total)],
       }));
     }
   });
@@ -2174,7 +2201,7 @@ function PaidCostsReport({ s }) {
           البند الفرعي
           <select value={level} onChange={(e) => setLevelF(e.target.value)} disabled={item === "all"} className={selCls} title={item === "all" ? "اختار بند العمل الأول" : ""}>
             <option value="all">{item === "all" ? "اختار البند الأول" : "كل البنود الفرعية"}</option>
-            {levelOptions.map((l) => <option key={l} value={l}>{l}</option>)}
+            {levelOptions.map((l) => <option key={l} value={l}>{lvLabel(l)}</option>)}
           </select>
         </label>
         <label className="text-[11px] text-[color:var(--cl-muted)] font-semibold">
@@ -3330,6 +3357,7 @@ function Dashboard({ contractValue, treasuryBalance, totals, pWorkItems, pCosts,
 
 function WorkItemsTab({ pWorkItems, pCosts, activeProjectId, onAddWorkItem, onUpdateWorkItem, onDeleteWorkItem, wiLevels = [], levelsReady = false, onAddLevel, onDeleteLevel }) {
   const [lvDraft, setLvDraft] = useState({}); // { [workItemId]: "اسم بند فرعي جديد" }
+  const [lvParent, setLvParent] = useState({}); // { [workItemId]: id المستوى اللي هنضيف تحته } — مش موجود = مستوى أول
   const [form, setForm] = useState({ name: "" });
   const [open, setOpen] = useState(false);
   const [editId, setEditId] = useState(null);
@@ -3422,23 +3450,38 @@ function WorkItemsTab({ pWorkItems, pCosts, activeProjectId, onAddWorkItem, onUp
                   {levelsReady && (
                     <td className="py-2.5 px-4">
                       <div className="flex flex-wrap items-center gap-1.5">
-                        {wiLevels.filter((l) => l.workItemId === w.id).map((l) => {
-                          const lvCost = pCosts.filter((c) => c.workItemId === w.id && c.costLevel1 === l.name).reduce((s, c) => s + c.qty * c.price, 0);
+                        {lvTree(wiLevels, w.id).map((l) => {
+                          const lvCost = pCosts.filter((c) => c.workItemId === w.id && lvUnder(c.costLevel1, l.path)).reduce((s, c) => s + c.qty * c.price, 0);
+                          const target = lvParent[w.id] === l.id;
+                          const nested = wiLevels.some((x) => x.workItemId === w.id && x.parentId); // فيه مستويات تحت بعض → كل مستوى في سطر
                           return (
-                            <span key={l.id} className="flex items-center gap-1.5 text-[12px] bg-[color:var(--cl-inset)] border border-[color:var(--cl-sep)] rounded-full pr-2.5 pl-1 py-0.5">
+                            <span key={l.id} title={l.path} style={{ marginRight: l.depth * 16 }} className={`flex items-center gap-1.5 text-[12px] border rounded-full pr-2.5 pl-1 py-0.5 ${target ? "border-[color:var(--cl-accent-bg)] bg-[color:rgb(var(--cl-accent-rgb)/0.1)]" : "bg-[color:var(--cl-inset)] border-[color:var(--cl-sep)]"} ${nested ? "basis-full w-fit" : ""}`}>
+                              {l.depth > 0 && <span className="text-[color:var(--cl-muted)]">↳</span>}
                               <span className="text-[color:var(--cl-text)]">{l.name}</span>
                               {lvCost > 0 && <span className="mono text-[10px] text-[color:var(--cl-muted)]">{money(lvCost)}</span>}
-                              <button onClick={() => onDeleteLevel(l.id)} title="حذف" className="p-0.5 rounded-full text-[color:var(--cl-red)] hover:bg-[#C1453B]/10"><X size={11} /></button>
+                              <button onClick={() => setLvParent((d) => ({ ...d, [w.id]: target ? undefined : l.id }))} title={`إضافة مستوى تحت «${l.name}»`} className="p-0.5 rounded-full text-[color:var(--cl-accent)] hover:bg-[color:rgb(var(--cl-accent-rgb)/0.15)]"><Plus size={11} /></button>
+                              <button onClick={() => onDeleteLevel(l.id)} title="حذف (ومعاه اللي تحته)" className="p-0.5 rounded-full text-[color:var(--cl-red)] hover:bg-[#C1453B]/10"><X size={11} /></button>
                             </span>
                           );
                         })}
-                        <input
-                          value={lvDraft[w.id] || ""}
-                          onChange={(e) => setLvDraft((d) => ({ ...d, [w.id]: e.target.value }))}
-                          onKeyDown={async (e) => { if (e.key === "Enter") { const l = await onAddLevel(w.id, lvDraft[w.id]); if (l) setLvDraft((d) => ({ ...d, [w.id]: "" })); } }}
-                          placeholder="+ بند فرعي (Enter)"
-                          className="w-36 border border-dashed border-[color:var(--cl-line)] rounded-full px-2.5 py-0.5 text-[12px] outline-none focus:border-[color:var(--cl-accent-bg)] bg-transparent"
-                        />
+                        {(() => {
+                          const parent = lvParent[w.id] ? wiLevels.find((x) => x.id === lvParent[w.id]) : null;
+                          return (
+                            <span className="flex items-center gap-1 basis-full">
+                              <input
+                                value={lvDraft[w.id] || ""}
+                                onChange={(e) => setLvDraft((d) => ({ ...d, [w.id]: e.target.value }))}
+                                onKeyDown={async (e) => {
+                                  if (e.key === "Escape") setLvParent((d) => ({ ...d, [w.id]: undefined }));
+                                  if (e.key === "Enter") { const l = await onAddLevel(w.id, lvDraft[w.id], parent?.id || null); if (l) setLvDraft((d) => ({ ...d, [w.id]: "" })); }
+                                }}
+                                placeholder={parent ? `+ مستوى تحت «${parent.name}» (Enter)` : "+ بند فرعي (Enter)"}
+                                className={`${parent ? "w-52 border-[color:var(--cl-accent-bg)]" : "w-36 border-[color:var(--cl-line)]"} border border-dashed rounded-full px-2.5 py-0.5 text-[12px] outline-none focus:border-[color:var(--cl-accent-bg)] bg-transparent`}
+                              />
+                              {parent && <button onClick={() => setLvParent((d) => ({ ...d, [w.id]: undefined }))} title="رجوع لمستوى أول" className="p-0.5 rounded-full text-[color:var(--cl-soft)] hover:bg-[color:var(--cl-inset)]"><X size={11} /></button>}
+                            </span>
+                          );
+                        })()}
                       </div>
                     </td>
                   )}
@@ -3788,7 +3831,7 @@ function CostsTab({ pCosts, pWorkItems, activeProjectId, onAddCost, onAddCostsBu
           {levelsReady && form.workItemId ? (
             <div>
               <label className="block text-[11px] font-semibold text-[color:var(--cl-soft)] mb-1">البند الفرعي (تحت بند العمل)</label>
-              <ListSelect value={form.costLevel1} onChange={(v) => setForm((f) => ({ ...f, costLevel1: v }))} options={wiLevels.filter((l) => l.workItemId === form.workItemId).map((l) => l.name)} onAdd={async (n) => { const l = await onAddLevel(form.workItemId, n); return l?.name || null; }} placeholder="— البند الفرعي —" addLabel="+ بند فرعي جديد…" />
+              <LevelSelect value={form.costLevel1} onChange={(v) => setForm((f) => ({ ...f, costLevel1: v }))} levels={wiLevels} workItemId={form.workItemId} onAddLevel={onAddLevel} />
             </div>
           ) : (
             <Field label={levelsReady ? "البند الفرعي (اختار بند العمل الأول)" : "المستوى الأول للتكلفة"} value={form.costLevel1} onChange={(v) => setForm((f) => ({ ...f, costLevel1: v }))} placeholder="مثال: كهرباء" />
@@ -5469,7 +5512,7 @@ function buildStatementTemplate(cfg, ctx) {
   lists.pairWork = pairs.map((x) => x[1]);
   // جدول (مشروع › بند | بند فرعي) — عشان قايمة البند الفرعي تبقى بتاعة بند العمل المختار بس
   const lvPairs = [];
-  ctx.projects.forEach((pr) => ctx.workItems.filter((w) => w.projectId === pr.id).forEach((w) => uniq((ctx.wiLevels || []).filter((l) => l.workItemId === w.id).map((l) => l.name)).forEach((n) => lvPairs.push([pr.name + " › " + w.name, n]))));
+  ctx.projects.forEach((pr) => ctx.workItems.filter((w) => w.projectId === pr.id).forEach((w) => uniq(lvPaths(ctx.wiLevels || [], w.id)).forEach((n) => lvPairs.push([pr.name + " › " + w.name, n]))));
   lists.lvKey = lvPairs.map((x) => x[0]);
   lists.lvName = lvPairs.map((x) => x[1]);
   const L = "قوائم";
@@ -5688,8 +5731,8 @@ function parseStatementExcel(file, cfg, ctx) {
         }
         const lName = stXlTxt(g("البند الفرعي")?.v);
         if (lName) {
-          const lv = (ctx.wiLevels || []).find((l) => l.workItemId === d.workItemId && stNorm(l.name) === stNorm(lName));
-          if (lv) d.workItemLevel = lv.name;
+          const lv = lvFind(ctx.wiLevels || [], d.workItemId, lName);
+          if (lv) d.workItemLevel = lv.path;
           else if (d.workItemId) warnings.push(`البند الفرعي "${lName}" مش متسجل تحت بند العمل — اختاره أو ضيفه من الشاشة.`);
         }
         const wt = stXlTxt((g(cfg.workLabel || "نوع الأعمال") || g("نوع الأعمال"))?.v);
@@ -5916,7 +5959,7 @@ function StatementForm({ cfg, initial, parties, projects, existing, payments, on
               <div>
                 <label className="block text-[11px] font-semibold text-[color:var(--cl-soft)] mb-1">البند الفرعي</label>
                 {workItemId
-                  ? <ListSelect value={workItemLevel} onChange={setWorkItemLevel} options={wiLevels.filter((l) => l.workItemId === workItemId).map((l) => l.name)} onAdd={async (n) => { const l = await onAddLevel(workItemId, n); return l?.name || null; }} placeholder="— البند الفرعي —" addLabel="+ بند فرعي جديد…" />
+                  ? <LevelSelect value={workItemLevel} onChange={setWorkItemLevel} levels={wiLevels} workItemId={workItemId} onAddLevel={onAddLevel} />
                   : <div className="text-[11px] text-[color:var(--cl-muted)] py-2">اختار بند العمل الأول</div>}
               </div>
             )}
@@ -6579,7 +6622,7 @@ function buildPaymentsTemplate(ctx) {
   const pairs = [], lvPairs = [];
   ctx.projects.forEach((pr) => ctx.workItems.filter((w) => w.projectId === pr.id).forEach((w) => {
     pairs.push([pr.name, w.name]);
-    uniq(ctx.wiLevels.filter((l) => l.workItemId === w.id).map((l) => l.name)).forEach((n) => lvPairs.push([pr.name + " › " + w.name, n]));
+    uniq(lvPaths(ctx.wiLevels, w.id)).forEach((n) => lvPairs.push([pr.name + " › " + w.name, n]));
   }));
   lists.pairProj = pairs.map((x) => x[0]); lists.pairWork = pairs.map((x) => x[1]);
   lists.lvKey = lvPairs.map((x) => x[0]); lists.lvName = lvPairs.map((x) => x[1]);
@@ -6677,8 +6720,8 @@ function parsePaymentsExcel(file, ctx) {
         }
         const lName = txt("البند الفرعي");
         if (lName && row.workItemId) {
-          const lv = ctx.wiLevels.find((l) => l.workItemId === row.workItemId && stNorm(l.name) === stNorm(lName));
-          if (lv) row.workItemLevel = lv.name; else warn.push(`البند الفرعي "${lName}"`);
+          const lv = lvFind(ctx.wiLevels, row.workItemId, lName);
+          if (lv) row.workItemLevel = lv.path; else warn.push(`البند الفرعي "${lName}"`);
         }
       }
       if (warn.length) row.err = "راجع: " + warn.join("، ");
@@ -6771,7 +6814,7 @@ function BulkPaymentsPanel({ ctx, onClose, onAddPayment, onAddCustody, initialRo
               const sts = party ? ctx.statements.filter((s) => s.kind === r.kind && s.partyName === r.partyName) : [];
               const st = r.statementId ? ctx.statements.find((s) => s.id === r.statementId) : null;
               const wis = ctx.workItems.filter((w) => w.projectId === r.projectId);
-              const lvs = ctx.wiLevels.filter((l) => l.workItemId === r.workItemId).map((l) => l.name);
+              const lvs = lvPaths(ctx.wiLevels, r.workItemId);
               return (
                 <React.Fragment key={r.key}>
                   <tr className={r.err ? "bg-[#C1453B]/5" : ""}>
@@ -6829,7 +6872,7 @@ function BulkPaymentsPanel({ ctx, onClose, onAddPayment, onAddCustody, initialRo
                           {r.kind !== "custody" && r.workItemId && lvs.length ? (
                             <select className={cell} value={r.workItemLevel} onChange={(e) => upd(r.key, { workItemLevel: e.target.value })}>
                               <option value="">—</option>
-                              {lvs.map((n) => <option key={n} value={n}>{n}</option>)}
+                              {lvs.map((n) => <option key={n} value={n}>{lvLabel(n)}</option>)}
                             </select>
                           ) : <span className="text-[color:var(--cl-muted)]">—</span>}
                         </td>
@@ -6960,7 +7003,7 @@ function DirectPaymentsModule({ payments, statements = [], registeredParties = [
     .filter((p) => !fCat || p.category === fCat)
     .filter((p) => { const t = target(p); return !fProj || (fProj === "_none" ? !t.projectId : t.projectId === fProj); })
     .filter((p) => !fWI || target(p).workItemId === fWI)
-    .filter((p) => !fLv || (fLv === "_none" ? !target(p).level : target(p).level === fLv))
+    .filter((p) => !fLv || (fLv === "_none" ? !target(p).level : lvUnder(target(p).level, fLv)))
     .filter((p) => !q || p.partyName.includes(q) || (p.note || "").includes(q) || (p.category || "").includes(q));
   const total = stRound(filtered.reduce((s, p) => s + p.amount, 0));
   const sumKind = (k) => stRound(all.filter((p) => p.kind === k).reduce((s, p) => s + p.amount, 0));
@@ -7057,7 +7100,7 @@ function DirectPaymentsModule({ payments, statements = [], registeredParties = [
             {!isCustody && !chosenSt && form.projectId && form.workItemId && levelsReady && (
               <div>
                 <label className="block text-[11px] font-semibold text-[color:var(--cl-soft)] mb-1">البند الفرعي</label>
-                <ListSelect value={form.workItemLevel} onChange={(v) => set({ workItemLevel: v })} options={wiLevels.filter((l) => l.workItemId === form.workItemId).map((l) => l.name)} onAdd={async (n) => { const l = await onAddLevel(form.workItemId, n); return l?.name || null; }} placeholder="— البند الفرعي —" addLabel="+ بند فرعي جديد…" />
+                <LevelSelect value={form.workItemLevel} onChange={(v) => set({ workItemLevel: v })} levels={wiLevels} workItemId={form.workItemId} onAddLevel={onAddLevel} />
               </div>
             )}
             <div className="col-span-2"><Field label="ملاحظات" value={form.note} onChange={(v) => set({ note: v })} /></div>
@@ -7117,7 +7160,7 @@ function DirectPaymentsModule({ payments, statements = [], registeredParties = [
         {fWI && (
           <select value={fLv} onChange={(e) => setFLv(e.target.value)} className="border border-[color:var(--cl-line)] rounded-lg px-3 py-2 text-sm bg-[color:var(--cl-card)] text-[color:var(--cl-text)]">
             <option value="">كل البنود الفرعية</option>
-            {Array.from(new Set([...wiLevels.filter((l) => l.workItemId === fWI).map((l) => l.name), ...all.filter((p) => target(p).workItemId === fWI).map((p) => target(p).level).filter(Boolean)])).map((n) => <option key={n} value={n}>{n}</option>)}
+            {Array.from(new Set([...lvPaths(wiLevels, fWI), ...all.filter((p) => target(p).workItemId === fWI).map((p) => target(p).level).filter(Boolean)])).map((n) => <option key={n} value={n}>{lvLabel(n)}</option>)}
             <option value="_none">— بدون بند فرعي —</option>
           </select>
         )}
@@ -7206,6 +7249,95 @@ function PayTargetFields({ form, setForm, projects = [], workItems = [] }) {
 }
 
 // قايمة منسدلة عامة + "إضافة جديد" من نفس الخانة (onAdd بترجع الاسم المحفوظ أو null)
+// ===== البنود الفرعية كشجرة: بند العمل ← مستوى ← مستوى تحته ... =====
+// اللي بيتخزن في التكاليف/الدفعات/المستخلصات هو المسار الكامل كنص: "مباني › مصنعيات › لياسة"
+// (البنود الفرعية القديمة من غير أب = مستوى أول، والمسار بتاعها = اسمها، فالبيانات القديمة زي ما هي)
+const LV_SEP = " › ";
+function lvPath(levels, l) {
+  const names = [];
+  const seen = new Set();
+  let cur = l;
+  while (cur && !seen.has(cur.id)) {
+    seen.add(cur.id);
+    names.unshift(cur.name);
+    cur = cur.parentId ? levels.find((x) => x.id === cur.parentId) : null;
+  }
+  return names.join(LV_SEP);
+}
+// البنود الفرعية لبند عمل بترتيب الشجرة، ومع كل واحد depth و path
+function lvTree(levels, workItemId) {
+  const mine = levels.filter((l) => l.workItemId === workItemId);
+  const ids = new Set(mine.map((l) => l.id));
+  const out = [];
+  const walk = (pid, depth) => mine
+    .filter((l) => (l.parentId && ids.has(l.parentId) ? l.parentId : null) === pid)
+    .forEach((l) => { out.push({ ...l, depth, path: lvPath(mine, l) }); walk(l.id, depth + 1); });
+  walk(null, 0);
+  return out;
+}
+const lvPaths = (levels, workItemId) => lvTree(levels, workItemId).map((l) => l.path);
+const lvDepth = (path) => String(path || "").split(LV_SEP).length - 1;
+const lvLabel = (path) => { const parts = String(path || "").split(LV_SEP); return "\u00A0\u00A0\u00A0".repeat(parts.length - 1) + (parts.length > 1 ? "↳ " : "") + parts[parts.length - 1]; };
+// القيمة دي هي المسار ده أو تحته؟ (فلتر على مستوى بيجيب اللي تحته كمان)
+const lvUnder = (value, path) => !!path && (value === path || String(value || "").startsWith(path + LV_SEP));
+function lvSubtreeIds(levels, id) {
+  const out = [id];
+  for (let i = 0; i < out.length; i++) levels.filter((l) => l.parentId === out[i]).forEach((l) => out.push(l.id));
+  return out;
+}
+// مطابقة نص من إكسيل: بالمسار الكامل، أو باسم المستوى لوحده لو مفيش غيره بنفس الاسم
+function lvFind(levels, workItemId, text) {
+  const n = stNorm(text);
+  const t = lvTree(levels, workItemId);
+  const byPath = t.find((l) => stNorm(l.path) === n);
+  if (byPath) return byPath;
+  const byName = t.filter((l) => stNorm(l.name) === n);
+  return byName.length === 1 ? byName[0] : null;
+}
+
+// اختيار البند الفرعي (شجرة) + إضافة مستوى جديد: أول، أو تحت المختار، أو جنبه على نفس المستوى
+function LevelSelect({ value, onChange, levels = [], workItemId, onAddLevel, placeholder = "— البند الفرعي —" }) {
+  const [adding, setAdding] = useState(null); // { parentId, hint }
+  const [draft, setDraft] = useState("");
+  const tree = lvTree(levels, workItemId);
+  const v = value || "";
+  const cur = tree.find((l) => l.path === v);
+  const cls = "w-full border border-[color:var(--cl-line)] rounded-lg px-3 py-2 text-sm outline-none focus:border-[color:var(--cl-accent-bg)] transition bg-[color:var(--cl-card)] text-[color:var(--cl-text)]";
+  const cancel = () => { setAdding(null); setDraft(""); };
+  const save = async () => {
+    const l = await onAddLevel(workItemId, draft, adding.parentId);
+    if (l) { onChange(lvPath([...levels.filter((x) => x.id !== l.id), l], l)); cancel(); }
+  };
+  if (adding) {
+    return (
+      <div>
+        <div className="flex gap-1">
+          <input autoFocus value={draft} onChange={(e) => setDraft(e.target.value)} placeholder="اسم المستوى" onKeyDown={(e) => { if (e.key === "Enter") save(); if (e.key === "Escape") cancel(); }} className={cls + " min-w-0"} />
+          <button type="button" onClick={save} title="حفظ" className="px-2 rounded-md bg-[color:var(--cl-accent-bg)] text-[color:var(--cl-on-accent)] text-xs font-bold shrink-0">✓</button>
+          <button type="button" onClick={cancel} title="إلغاء" className="px-1.5 rounded-md border border-[color:var(--cl-line)] text-[color:var(--cl-soft)] shrink-0"><X size={12} /></button>
+        </div>
+        <div className="text-[10px] text-[color:var(--cl-muted)] mt-0.5">{adding.hint}</div>
+      </div>
+    );
+  }
+  const pick = (x) => {
+    if (x === "__root") return setAdding({ parentId: null, hint: "مستوى أول تحت بند العمل" });
+    if (x === "__child") return setAdding({ parentId: cur.id, hint: `تحت: ${cur.path}` });
+    if (x === "__sib") return setAdding({ parentId: cur.parentId, hint: `جنب «${cur.name}» تحت: ${cur.path.split(LV_SEP).slice(0, -1).join(LV_SEP)}` });
+    onChange(x);
+  };
+  return (
+    <select value={v} onChange={(e) => pick(e.target.value)} className={cls}>
+      <option value="">{placeholder}</option>
+      {tree.map((l) => <option key={l.id} value={l.path}>{lvLabel(l.path)}</option>)}
+      {v && !cur && <option value={v}>{v}</option>}
+      {onAddLevel && <option value="__root">+ بند فرعي جديد (مستوى أول)…</option>}
+      {onAddLevel && cur && <option value="__child">{`+ مستوى تحت «${cur.name}»…`}</option>}
+      {onAddLevel && cur && cur.parentId && <option value="__sib">{`+ جديد جنب «${cur.name}» (نفس المستوى)…`}</option>}
+    </select>
+  );
+}
+
 function ListSelect({ value, onChange, options = [], onAdd, placeholder = "— اختار —", addLabel = "+ إضافة جديد…" }) {
   const [adding, setAdding] = useState(false);
   const [draft, setDraft] = useState("");
