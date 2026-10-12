@@ -378,7 +378,7 @@ function ContractingApp({ currentUsername, onLogout }) {
         (colRes.data || []).map((c) => ({ id: c.id, projectId: c.project_id, extractId: c.extract_id || null, amount: Number(c.amount), date: c.date, method: c.method, note: c.note || "" }))
       );
       setTreasuryEntries(
-        // الدفعات والتحصيلات مبقتش بتنزل الخزينة → حركاتها التلقائية القديمة (tpp_ / tcl_) مش بتتعرض ولا بتتحسب في الرصيد
+        // الدفعات والتحصيلات والعهد مبقتش بتنزل الخزينة → حركاتها التلقائية القديمة (tpp_ / tcl_ / tcu_) مش بتتعرض ولا بتتحسب في الرصيد
         (treRes.data || []).filter((t) => !isLegacyAutoTreasury(t)).map((t) => ({ id: t.id, projectId: t.project_id, date: t.date, type: t.type, amount: Number(t.amount), note: t.note }))
       );
       setFinancePersons((fpRes.data || []).map((p) => ({ id: p.id, name: p.name, note: p.note })));
@@ -899,11 +899,6 @@ function ContractingApp({ currentUsername, onLogout }) {
     const { error } = await supabase.from("custodies").insert([{ id: c.id, project_id: c.projectId, person_name: c.personName, amount_given: c.amountGiven, date_given: c.dateGiven, status: c.status, notes: c.notes || null }]);
     if (error) { alert("حصل خطأ أثناء حفظ العهدة: " + error.message); return; }
     setCustodies((prev) => [...prev, c]);
-    // العهدة = حركة "صرف" في خزينة المشروع
-    const e = { id: custTreasId(c.id), projectId: c.projectId, date: c.dateGiven, type: "صرف", amount: Number(c.amountGiven) || 0, note: `عهدة: ${c.personName}` };
-    const { error: tErr } = await supabase.from("treasury_entries").insert([{ id: e.id, project_id: e.projectId, date: e.date, type: e.type, amount: e.amount, note: e.note }]);
-    if (tErr) alert("اتسجلت العهدة، بس حصل خطأ أثناء خصمها من الخزينة: " + tErr.message);
-    else setTreasuryEntries((prev) => [...prev, e]);
   }
 
   async function updateCustody(id, patch) {
@@ -916,15 +911,6 @@ function ContractingApp({ currentUsername, onLogout }) {
     const { error } = await supabase.from("custodies").update(updateData).eq("id", id);
     if (error) { alert("حصل خطأ أثناء تعديل العهدة: " + error.message); return; }
     setCustodies((prev) => prev.map((c) => (c.id === id ? { ...c, ...patch } : c)));
-    // لو العهدة ليها حركة خزينة تلقائية، نحدّث مبلغها/تاريخها/اسمها
-    const tid = custTreasId(id);
-    if (treasuryEntries.some((t) => t.id === tid) && (patch.amountGiven !== undefined || patch.dateGiven !== undefined || patch.personName !== undefined)) {
-      const old = custodies.find((c) => c.id === id) || {};
-      const nc = { ...old, ...patch };
-      const upd = { date: nc.dateGiven, amount: Number(nc.amountGiven) || 0, note: `عهدة: ${nc.personName}` };
-      const { error: tErr } = await supabase.from("treasury_entries").update(upd).eq("id", tid);
-      if (!tErr) setTreasuryEntries((prev) => prev.map((t) => (t.id === tid ? { ...t, ...upd } : t)));
-    }
   }
 
   async function deleteCustody(id) {
@@ -4942,7 +4928,7 @@ const payTreasId = (paymentId) => "tpp_" + paymentId;
 const custTreasId = (custodyId) => "tcu_" + custodyId;
 const collTreasId = (collectionId) => "tcl_" + collectionId; // التحصيل من العميل = "ايداع" في الخزينة
 const isAutoTreasury = (t) => /^(tpp_|tcu_|tcl_)/.test(String(t?.id || ""));
-const isLegacyAutoTreasury = (t) => /^(tpp_|tcl_)/.test(String(t?.id || "")); // حركات قديمة من الدفعات/التحصيلات
+const isLegacyAutoTreasury = (t) => /^(tpp_|tcl_|tcu_)/.test(String(t?.id || "")); // حركات قديمة من الدفعات/التحصيلات/العهد
 const isPaymentCost = (c) => String(c?.id || "").startsWith("spc_");
 // المشروع/البند اللي الدفعة بتتحسب عليه
 const stPayTarget = (p, st) => (p.statementId && st ? { projectId: st.projectId || null, workItemId: st.workItemId || null } : { projectId: p.projectId || null, workItemId: p.workItemId || null });
