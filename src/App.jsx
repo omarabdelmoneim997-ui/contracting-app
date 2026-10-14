@@ -728,12 +728,13 @@ function ContractingApp({ currentUsername, onLogout }) {
     setCosts((prev) => [...prev, c]);
   }
 
-  async function addCostsBulk(list) {
-    if (!list || list.length === 0) return;
-    const payload = list.map((c) => ({ id: c.id, project_id: c.projectId, work_item_id: c.workItemId, custody_id: null, type: c.type, description: c.desc, cost_level_1: c.costLevel1 || null, cost_level_2: c.costLevel2 || null, qty: c.qty, unit: c.unit, price: c.price, date: c.date }));
+  async function addCostsBulk(list, errMsg = "حصل خطأ أثناء استيراد التكاليف من الإكسيل: ") {
+    if (!list || list.length === 0) return false;
+    const payload = list.map((c) => ({ id: c.id, project_id: c.projectId, work_item_id: c.workItemId, custody_id: c.custodyId || null, type: c.type, description: c.desc, cost_level_1: c.costLevel1 || null, cost_level_2: c.costLevel2 || null, qty: c.qty, unit: c.unit, price: c.price, date: c.date }));
     const { error } = await supabase.from("costs").insert(payload);
-    if (error) { alert("حصل خطأ أثناء استيراد التكاليف من الإكسيل: " + error.message); return; }
+    if (error) { alert(errMsg + error.message); return false; }
     setCosts((prev) => [...prev, ...list]);
+    return true;
   }
 
   async function addExtract(e) {
@@ -1441,6 +1442,7 @@ function ContractingApp({ currentUsername, onLogout }) {
               onDeleteCustody={deleteCustody}
               onSettleCustody={settleCustody}
               onAddCost={addCost}
+              onAddCostsBulk={addCostsBulk}
               onUpdateCost={updateCost}
               onDeleteCost={deleteCost}
               onAddCategory={addCustodyCategory}
@@ -4801,7 +4803,7 @@ function PersonLedger({ person, transactions, onBack, onAddTransaction, onUpdate
 function CustodyTab({
   pCustodies, pCosts, pWorkItems, custodyCategories, activeProjectId,
   onAddCustody, onUpdateCustody, onDeleteCustody, onSettleCustody,
-  onAddCost, onUpdateCost, onDeleteCost, onAddCategory, onDeleteCategory,
+  onAddCost, onAddCostsBulk, onUpdateCost, onDeleteCost, onAddCategory, onDeleteCategory,
 }) {
   const [selectedId, setSelectedId] = useState(null);
   const [open, setOpen] = useState(false);
@@ -4843,6 +4845,7 @@ function CustodyTab({
         activeProjectId={activeProjectId}
         onBack={() => setSelectedId(null)}
         onAddCost={onAddCost}
+        onAddCostsBulk={onAddCostsBulk}
         onUpdateCost={onUpdateCost}
         onDeleteCost={onDeleteCost}
         onSettleCustody={onSettleCustody}
@@ -4966,10 +4969,51 @@ function CustodyTab({
   );
 }
 
-function CustodySettlement({ custody, lines, pWorkItems, custodyCategories, activeProjectId, onBack, onAddCost, onUpdateCost, onDeleteCost, onSettleCustody }) {
+// وصف بند التصفية = التصنيف - التفاصيل
+const csDesc = (r) => {
+  const cat = r.category === "__custom__" ? r.customCategory.trim() : r.category;
+  const det = String(r.detail || "").trim();
+  return cat ? (det ? `${cat} - ${det}` : cat) : det;
+};
+let csSeq = 0;
+const csNewRow = (date = "") => ({ key: "cs" + ++csSeq, workItemId: "", category: "", customCategory: "", detail: "", date, amount: "" });
+
+function CustodySettlement({ custody, lines, pWorkItems, custodyCategories, activeProjectId, onBack, onAddCost, onAddCostsBulk, onUpdateCost, onDeleteCost, onSettleCustody }) {
   const [open, setOpen] = useState(false);
   const [editId, setEditId] = useState(null);
   const [form, setForm] = useState({ workItemId: "", category: "", customCategory: "", amount: "", date: "", detail: "" });
+  // إضافة كذا بند مرة واحدة
+  const [rows, setRows] = useState(() => [csNewRow(stToday())]);
+  const [bulkErr, setBulkErr] = useState("");
+  const [saving, setSaving] = useState(false);
+  const updRow = (key, patch) => setRows((rs) => rs.map((r) => (r.key === key ? { ...r, ...patch } : r)));
+  const addRow = () => setRows((rs) => [...rs, csNewRow(rs[rs.length - 1]?.date || stToday())]);
+  const delRow = (key) => setRows((rs) => (rs.length > 1 ? rs.filter((r) => r.key !== key) : [csNewRow(stToday())]));
+  const isBlank = (r) => !r.workItemId && !r.category && !r.detail.trim() && !r.amount;
+  const filled = rows.filter((r) => !isBlank(r));
+  const rowsTotal = rSum(filled, (r) => Number(r.amount) || 0);
+  const saveRows = async () => {
+    const bad = rows.map((r, i) => (!isBlank(r) && (!csDesc(r) || !(Number(r.amount) > 0)) ? i + 1 : null)).filter(Boolean);
+    if (bad.length) { setBulkErr(`كمّل البيانات في سطر ${bad.join("، ")}: لازم تصنيف أو تفاصيل، ومبلغ أكبر من صفر.`); return; }
+    if (!filled.length) { setBulkErr("مفيش بنود تتحفظ."); return; }
+    setBulkErr("");
+    setSaving(true);
+    const list = filled.map((r) => ({
+      id: "c_" + Math.random().toString(36).slice(2, 8) + Date.now().toString(36).slice(-3),
+      projectId: activeProjectId,
+      workItemId: r.workItemId || null,
+      custodyId: custody.id,
+      type: r.workItemId ? "مصروفات" : "مصروفات عمومية",
+      desc: csDesc(r),
+      qty: 1,
+      unit: "-",
+      price: Number(r.amount),
+      date: r.date || stToday(),
+    }));
+    const ok = await onAddCostsBulk(list, "حصل خطأ أثناء حفظ بنود التصفية (مفيش حاجة اتحفظت): ");
+    setSaving(false);
+    if (ok) { setRows([csNewRow(rows[rows.length - 1]?.date || stToday())]); setOpen(false); }
+  };
 
   const isLocked = custody.status === "مصفاة";
 
@@ -5018,6 +5062,8 @@ function CustodySettlement({ custody, lines, pWorkItems, custodyCategories, acti
   const cancelForm = () => {
     setEditId(null);
     resetForm();
+    setRows([csNewRow(stToday())]);
+    setBulkErr("");
     setOpen(false);
   };
 
@@ -5044,7 +5090,7 @@ function CustodySettlement({ custody, lines, pWorkItems, custodyCategories, acti
         </div>
         {!isLocked && (
           <button onClick={() => (open ? cancelForm() : setOpen(true))} className="px-3 py-2 rounded-lg bg-[color:var(--cl-ink)] text-white text-sm font-semibold flex items-center gap-1.5 hover:bg-[color:var(--cl-ink-hover)] transition">
-            <Plus size={15} /> بند تصفية جديد
+            <Plus size={15} /> {open ? "إلغاء" : "إضافة بنود تصفية"}
           </button>
         )}
       </div>
@@ -5064,7 +5110,78 @@ function CustodySettlement({ custody, lines, pWorkItems, custodyCategories, acti
         </div>
       </div>
 
-      {open && !isLocked && (
+      {open && !isLocked && !editId && (() => {
+        const cell = "w-full border border-[color:var(--cl-line)] rounded-md px-2 py-1.5 text-sm outline-none focus:border-[color:var(--cl-accent-bg)] bg-[color:var(--cl-card)] text-[color:var(--cl-text)]";
+        const after = remaining - rowsTotal;
+        return (
+          <div className="bg-[color:var(--cl-card)] rounded-xl border border-[color:var(--cl-line)] p-4 space-y-3">
+            <div className="flex items-center justify-between">
+              <div className="font-bold text-[color:var(--cl-text)] text-sm">بنود تصفية جديدة</div>
+              <div className="text-[11px] text-[color:var(--cl-muted)]">Enter في خانة المبلغ بيضيف سطر جديد · التاريخ بيتنسخ من السطر اللي قبله</div>
+            </div>
+            <div className="overflow-x-auto">
+              <table className="w-full text-sm">
+                <thead>
+                  <tr className="text-[11px] text-[color:var(--cl-soft)]">
+                    <th className="text-right font-semibold pb-1.5 w-8">#</th>
+                    <th className="text-right font-semibold pb-1.5 px-1 w-40">التاريخ</th>
+                    <th className="text-right font-semibold pb-1.5 px-1">بند العمل (اختياري)</th>
+                    <th className="text-right font-semibold pb-1.5 px-1">التصنيف</th>
+                    <th className="text-right font-semibold pb-1.5 px-1">التفاصيل</th>
+                    <th className="text-right font-semibold pb-1.5 px-1 w-32">المبلغ</th>
+                    <th className="w-8" />
+                  </tr>
+                </thead>
+                <tbody>
+                  {rows.map((r, i) => (
+                    <tr key={r.key} className="align-top">
+                      <td className="py-1 text-[11px] text-[color:var(--cl-muted)] mono pt-3">{i + 1}</td>
+                      <td className="py-1 px-1"><DateInput value={r.date} onChange={(v) => updRow(r.key, { date: v })} /></td>
+                      <td className="py-1 px-1">
+                        <select className={cell} value={r.workItemId} onChange={(e) => updRow(r.key, { workItemId: e.target.value })}>
+                          <option value="">— غير مرتبط ببند —</option>
+                          {pWorkItems.map((w) => <option key={w.id} value={w.id}>{w.name}</option>)}
+                        </select>
+                      </td>
+                      <td className="py-1 px-1">
+                        <select className={cell} value={r.category} onChange={(e) => updRow(r.key, { category: e.target.value })}>
+                          <option value="">— بدون تصنيف —</option>
+                          {custodyCategories.map((c) => <option key={c.id || c.name} value={c.name}>{c.name}</option>)}
+                          <option value="__custom__">تصنيف آخر...</option>
+                        </select>
+                        {r.category === "__custom__" && <input className={cell + " mt-1"} value={r.customCategory} onChange={(e) => updRow(r.key, { customCategory: e.target.value })} placeholder="اسم التصنيف" />}
+                      </td>
+                      <td className="py-1 px-1"><input className={cell} value={r.detail} onChange={(e) => updRow(r.key, { detail: e.target.value })} placeholder="وصف البند" /></td>
+                      <td className="py-1 px-1">
+                        <input className={cell + " mono"} type="number" value={r.amount} onChange={(e) => updRow(r.key, { amount: e.target.value })}
+                          onKeyDown={(e) => { if (e.key === "Enter" && i === rows.length - 1) { e.preventDefault(); addRow(); } }} placeholder="0" />
+                      </td>
+                      <td className="py-1 pt-2"><button onClick={() => delRow(r.key)} title="شيل السطر" className="p-1 rounded-md text-[color:var(--cl-red)] hover:bg-[#C1453B]/10"><X size={14} /></button></td>
+                    </tr>
+                  ))}
+                </tbody>
+              </table>
+            </div>
+            <button onClick={addRow} className="text-xs font-semibold text-[color:var(--cl-accent)] hover:underline flex items-center gap-1"><Plus size={13} /> سطر جديد</button>
+            {bulkErr && <div className="text-xs text-[color:var(--cl-red)] bg-[#C1453B]/10 rounded-md px-3 py-2">{bulkErr}</div>}
+            <div className="flex flex-wrap items-center justify-between gap-3 border-t border-[color:var(--cl-sep)] pt-3">
+              <div className="flex gap-5 text-[12px]">
+                <span className="text-[color:var(--cl-soft)]">عدد البنود: <b className="mono text-[color:var(--cl-text)]">{filled.length}</b></span>
+                <span className="text-[color:var(--cl-soft)]">الإجمالي: <b className="mono text-[color:var(--cl-text)]">{money(rowsTotal)}</b></span>
+                <span className="text-[color:var(--cl-soft)]">{after >= 0 ? "هيفضل عند الشخص" : "هيبقى مستحق للشخص"}: <b className={`mono ${after < 0 ? "text-[color:var(--cl-red)]" : "text-[color:var(--cl-text)]"}`}>{money(Math.abs(after))}</b></span>
+              </div>
+              <div className="flex gap-2">
+                <button onClick={cancelForm} className="px-4 py-2 rounded-lg bg-[color:var(--cl-line)] text-[color:var(--cl-text)] text-sm font-semibold hover:bg-[color:var(--cl-hover)] transition">إلغاء</button>
+                <button onClick={saveRows} disabled={saving} className="px-4 py-2 rounded-lg bg-[color:var(--cl-accent-bg)] text-[color:var(--cl-on-accent)] text-sm font-semibold hover:bg-[color:var(--cl-accent-hover)] transition disabled:opacity-50">
+                  {saving ? "جاري الحفظ..." : `حفظ ${filled.length > 1 ? `الـ ${filled.length} بنود` : "البند"}`}
+                </button>
+              </div>
+            </div>
+          </div>
+        );
+      })()}
+
+      {open && !isLocked && editId && (
         <div className="bg-[color:var(--cl-card)] rounded-xl border border-[color:var(--cl-line)] p-4 grid grid-cols-3 gap-3">
           {editId && (
             <div className="col-span-3 text-xs font-semibold text-[color:var(--cl-accent)] bg-[color:rgb(var(--cl-accent-rgb)/0.1)] rounded-md px-3 py-1.5">جاري تعديل بند موجود</div>
