@@ -3656,6 +3656,11 @@ function CostExcelImportPanel({ pWorkItems, activeProjectId, onImport, onClose }
 
 /* ------------------------------- بنود التكاليف ------------------------------- */
 
+// تصنيف التكلفة في شاشة التكاليف: بنود تصفية العُهد (custody_id) بتتجمع تحت "عهد" مهما كان نوعها المتخزن
+const costCat = (c) => (c.custodyId ? "عهد" : c.type || "مصروفات");
+const costCatOrder = (k) => { const i = COST_TYPES.findIndex((t) => t.key === k); return i < 0 ? 99 : i; };
+const costCatLabel = (k) => (k === "عهد" ? "من عهد (تصفية العُهد)" : COST_TYPES.find((t) => t.key === k)?.label || k);
+
 function CostsTab({ pCosts, pWorkItems, activeProjectId, onAddCost, onAddCostsBulk, onUpdateCost, onDeleteCost, units = [], unitsReady = false, onAddUnit, wiLevels = [], levelsReady = false, onAddLevel }) {
   const [filter, setFilter] = useState("الكل");
   const [open, setOpen] = useState(false);
@@ -3725,9 +3730,9 @@ function CostsTab({ pCosts, pWorkItems, activeProjectId, onAddCost, onAddCostsBu
     setShowImport((o) => !o);
   };
 
-  const filtered = filter === "الكل" ? pCosts : pCosts.filter((c) => c.type === filter);
+  const filtered = filter === "الكل" ? pCosts : pCosts.filter((c) => costCat(c) === filter);
 
-  // تجميع التكاليف على مستويين: بند العمل ← تفاصيل بند التكلفة (الوصف)
+  // تجميع التكاليف على 3 مستويات: بند العمل ← النوع (توريدات/مصنعيات/مصروفات/من عهد...) ← تفاصيل بند التكلفة (الوصف)
   const pivot = useMemo(() => {
     const wiOrder = pWorkItems.map((w) => w.id);
     const byWorkItem = new Map();
@@ -3737,8 +3742,10 @@ function CostsTab({ pCosts, pWorkItems, activeProjectId, onAddCost, onAddCostsBu
       if (!byWorkItem.has(wiKey)) byWorkItem.set(wiKey, new Map());
       const descKey = (c.desc || "بدون وصف").trim();
       const subMap = byWorkItem.get(wiKey);
-      if (!subMap.has(descKey)) subMap.set(descKey, []);
-      subMap.get(descKey).push(c);
+      // المفتاح فيه النوع عشان نفس الوصف تحت نوعين ميتجمعش مع بعض
+      const k = costCat(c) + "\u0000" + descKey;
+      if (!subMap.has(k)) subMap.set(k, []);
+      subMap.get(k).push(c);
     });
 
     const wiKeys = [...byWorkItem.keys()].sort((a, b) => {
@@ -3752,13 +3759,15 @@ function CostsTab({ pCosts, pWorkItems, activeProjectId, onAddCost, onAddCostsBu
       const subMap = byWorkItem.get(wiKey);
 
       const subItems = [...subMap.entries()]
-        .map(([desc, entries]) => {
+        .map(([k, entries]) => {
+          const [cat, desc] = k.split("\u0000");
           const sortedEntries = [...entries].sort((a, b) => (a.date < b.date ? 1 : a.date > b.date ? -1 : 0));
           const totalValue = entries.reduce((s, e) => s + e.qty * e.price, 0);
           const totalQty = entries.reduce((s, e) => s + e.qty, 0);
           const units = new Set(entries.map((e) => e.unit));
           const types = [...new Set(entries.map((e) => e.type))];
           return {
+            cat,
             desc,
             entries: sortedEntries,
             totalValue,
@@ -3770,12 +3779,19 @@ function CostsTab({ pCosts, pWorkItems, activeProjectId, onAddCost, onAddCostsBu
         .sort((a, b) => b.totalValue - a.totalValue);
 
       const groupTotal = subItems.reduce((s, it) => s + it.totalValue, 0);
+      const cats = [...new Set(subItems.map((it) => it.cat))]
+        .sort((a, b) => costCatOrder(a) - costCatOrder(b))
+        .map((cat) => {
+          const items = subItems.filter((it) => it.cat === cat);
+          return { cat, items, total: items.reduce((s, it) => s + it.totalValue, 0) };
+        });
 
       return {
         key: wiKey,
         name: wi ? wi.name : "تكاليف غير مرتبطة ببند",
         unassigned: wiKey === "__unassigned__",
         subItems,
+        cats,
         groupTotal,
       };
     });
@@ -3911,28 +3927,33 @@ function CostsTab({ pCosts, pWorkItems, activeProjectId, onAddCost, onAddCostsBu
 
               {!isCollapsed && (
                 <div>
-                  {g.subItems.map((it) => {
-                    const itemKey = g.key + "::" + it.desc;
+                  {g.cats.map((cg) => {
+                    const meta = COST_TYPES.find((ct) => ct.key === cg.cat);
+                    const catKey = g.key + "##" + cg.cat;
+                    const catClosed = collapsedGroups[catKey];
+                    return (
+                  <div key={catKey} className="border-t border-[color:var(--cl-sep)]">
+                    <button onClick={() => toggleGroup(catKey)} className="w-full flex items-center justify-between px-4 py-2 pr-8 hover:bg-[color:var(--cl-sub)] transition text-right">
+                      <div className="flex items-center gap-2 min-w-0">
+                        <ChevronDown size={13} className={`text-[color:var(--cl-muted)] shrink-0 transition-transform ${catClosed ? "-rotate-90" : ""}`} />
+                        <span className="w-2 h-2 rounded-full shrink-0" style={{ backgroundColor: meta?.color || "#9AA3B2" }} />
+                        <span className="text-sm font-bold" style={{ color: meta?.color }}>{costCatLabel(cg.cat)}</span>
+                        <span className="text-[11px] text-[color:var(--cl-muted)] mono shrink-0">({cg.items.length})</span>
+                      </div>
+                      <span className="text-sm font-bold mono shrink-0" style={{ color: meta?.color }}>{money(cg.total)}</span>
+                    </button>
+                  {!catClosed && cg.items.map((it) => {
+                    const itemKey = g.key + "::" + it.cat + "::" + it.desc;
                     const itemOpen = expandedItems[itemKey];
                     return (
                       <div key={itemKey} className="border-t border-[color:var(--cl-sep)]">
                         <button
                           onClick={() => toggleItem(itemKey)}
-                          className="w-full flex items-center justify-between px-4 py-2.5 pr-9 hover:bg-[color:var(--cl-sub)] transition text-right"
+                          className="w-full flex items-center justify-between px-4 py-2.5 pr-14 hover:bg-[color:var(--cl-sub)] transition text-right"
                         >
                           <div className="flex items-center gap-2 min-w-0">
                             <ChevronRight size={13} className={`text-[color:var(--cl-muted)] shrink-0 transition-transform ${itemOpen ? "rotate-90" : ""}`} />
                             <span className="text-sm font-semibold text-[color:var(--cl-text)] truncate">{it.desc}</span>
-                            <div className="flex gap-1 shrink-0">
-                              {it.types.map((t) => {
-                                const meta = COST_TYPES.find((ct) => ct.key === t);
-                                return (
-                                  <span key={t} className="text-[10px] font-semibold px-1.5 py-0.5 rounded" style={{ backgroundColor: meta?.color + "18", color: meta?.color }}>
-                                    {meta?.label}
-                                  </span>
-                                );
-                              })}
-                            </div>
                             <span className="text-[11px] text-[color:var(--cl-muted)] mono shrink-0">{it.entries.length} حركة</span>
                           </div>
                           <div className="flex items-center gap-4 shrink-0">
@@ -3942,7 +3963,7 @@ function CostsTab({ pCosts, pWorkItems, activeProjectId, onAddCost, onAddCostsBu
                         </button>
 
                         {itemOpen && (
-                          <div className="bg-[color:var(--cl-sub)] px-4 pr-14 py-2.5 space-y-1.5">
+                          <div className="bg-[color:var(--cl-sub)] px-4 pr-20 py-2.5 space-y-1.5">
                             {it.entries.map((c) => (
                               <div key={c.id} className="flex items-center justify-between bg-[color:var(--cl-card)] rounded-lg px-3 py-2 border border-[color:var(--cl-line)] text-sm group">
                                 <div className="flex items-center gap-3 min-w-0 text-[color:var(--cl-soft)]">
@@ -3956,7 +3977,9 @@ function CostsTab({ pCosts, pWorkItems, activeProjectId, onAddCost, onAddCostsBu
                                 </div>
                                 <div className="flex items-center gap-2 shrink-0">
                                   <span className="font-bold mono">{money(c.qty * c.price)}</span>
-                                  {isStatementCost(c) ? (
+                                  {c.custodyId ? (
+                                    <span title="بند تصفية عهدة — بيتعدل أو يتشال من شاشة تصفية العهد" className="text-[10px] px-2 py-0.5 rounded-full bg-[color:var(--cl-chip)] text-[color:var(--cl-soft)] border border-[color:var(--cl-sep)]">من تصفية عهدة</span>
+                                  ) : isStatementCost(c) ? (
                                     <span title={isPaymentCost(c) ? (c.costLevel2 === "دفعة مباشرة" ? "دفعة مباشرة — بتتشال من شاشة المدفوعات" : "دفعة اتصرفت لمقاول/مورد — بتتعدل أو تتشال من شاشة المستخلصات") : "التكلفة دي جاية من مستخلص معتمد — بتتعدل أو تتشال من شاشة المستخلصات"} className="text-[10px] px-2 py-0.5 rounded-full bg-[color:var(--cl-chip)] text-[color:var(--cl-soft)] border border-[color:var(--cl-sep)]">{isPaymentCost(c) ? (c.costLevel2 === "دفعة مباشرة" ? "من المدفوعات" : "دفعة مقاول/مورد") : "من مستخلص"}</span>
                                   ) : (
                                   <div className="flex gap-1 opacity-0 group-hover:opacity-100 transition">
@@ -3970,6 +3993,9 @@ function CostsTab({ pCosts, pWorkItems, activeProjectId, onAddCost, onAddCostsBu
                           </div>
                         )}
                       </div>
+                    );
+                  })}
+                  </div>
                     );
                   })}
                 </div>
