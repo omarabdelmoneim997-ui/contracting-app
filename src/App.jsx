@@ -1234,6 +1234,7 @@ function ContractingApp({ currentUsername, onLogout }) {
               expectedCosts={expectedCosts}
               statements={statements}
               statementPayments={statementPayments}
+              custodies={custodies}
               defaultProjectId={activeProjectId}
               costsManager={{ wiLevels, levelsReady, onAddLevel: addLevel, units, unitsReady, onAddUnit: addUnit, onAddCost: addCost, onAddCostsBulk: addCostsBulk, onUpdateCost: updateCost, onDeleteCost: deleteCost }}
             />
@@ -1509,7 +1510,7 @@ const rOverTone = (v) => (v > 0 ? "text-[color:var(--cl-red)]" : "text-[color:va
 const REPORT_LIST = [
   { key: "costs_manage", title: "التكاليف الفعلية", desc: "شاشة التكاليف الفعلية للمشروع: إضافة وتعديل وحذف التكاليف ورفعها من إكسيل، مع العرض المجمّع حسب بند العمل.", icon: ReceiptText, manage: true },
   { key: "executive", title: "التقرير التنفيذي للمشروع", desc: "قيمة العقد، الأعمال، التكلفة الفعلية والمتوقعة، الربح والهامش، التحصيل وأهم التجاوزات.", icon: LayoutDashboard },
-  { key: "paid", title: "تقرير التكاليف الفعلية", desc: "اللي اتصرف فعلًا على المشروع من المدفوعات، مع فلاتر بالبند والبنود الفرعية ونوع الجهة، وتوزيع حسب البند والجهة وكشف تفصيلي.", icon: Wallet },
+  { key: "paid", title: "تقرير التكاليف الفعلية", desc: "اللي اتصرف فعلًا على المشروع من المدفوعات وتصفية العُهد، مع فلاتر بالبند والبنود الفرعية ونوع الجهة، وتوزيع حسب البند والجهة وكشف تفصيلي.", icon: Wallet },
   { key: "costs", title: "تقرير التكاليف التفصيلي", desc: "التكاليف حسب النوع وبند العمل ومستوى التكلفة الأول والثاني (الكمية × السعر).", icon: ReceiptText },
   { key: "bva", title: "تقرير Budget vs Actual", desc: "الميزانية مقابل الفعلي لكل بند مع الفرق ونسبة الانحراف وتحديد البنود المتجاوزة.", icon: Gauge },
   { key: "extracts", title: "تقرير المستخلصات والتحصيلات", desc: "إجمالي المستخلصات والمحصل والمتبقي ونسبة التحصيل لكل مستخلص.", icon: FileCheck2 },
@@ -2081,6 +2082,7 @@ const PAID_KINDS = [
   { key: "contractor", label: "مقاولين", color: "#E8672C" },
   { key: "supplier", label: "موردين", color: "#3F7D63" },
   { key: "other", label: "مدفوعات مباشرة", color: "#D6A23C" },
+  { key: "custody", label: "عُهد", color: "#6B5CA5" },
 ];
 const paidKindLabel = (k) => PAID_KINDS.find((x) => x.key === k)?.label || "—";
 const NO_LEVEL = "بدون بند فرعي";
@@ -2225,7 +2227,7 @@ function PaidCostsReport({ s }) {
       </div>
 
       <ReportShell title="تقرير التكاليف الفعلية" s={s}
-        notice="التقرير ده مبني على المدفوعات المسجّلة (دفعات المقاولين والموردين والمدفوعات المباشرة) — يعني اللي اتصرف فعلًا على المشروع.">
+        notice="التقرير ده مبني على المدفوعات المسجّلة (دفعات المقاولين والموردين والمدفوعات المباشرة) وبنود تصفية العُهد — يعني اللي اتصرف فعلًا على المشروع.">
         {activeFilters.length > 0 && (
           <div className="flex flex-wrap gap-2 -mt-2">
             {activeFilters.map((f) => <span key={f} className="text-[11px] px-2.5 py-1 rounded-full bg-[color:rgb(var(--cl-accent-rgb)/0.1)] text-[color:var(--cl-accent)] font-semibold">{f}</span>)}
@@ -2234,8 +2236,8 @@ function PaidCostsReport({ s }) {
 
         <div className="grid grid-cols-4 gap-3">
           <RptKpi label="إجمالي المصروف فعليًا" value={money(total)} color="#E8672C" />
-          <RptKpi label="عدد الدفعات" value={fmt(list.length)} />
-          <RptKpi label="عدد الجهات" value={fmt(parties.length)} sub="مقاولين / موردين / مدفوعات مباشرة" />
+          <RptKpi label="عدد الحركات" value={fmt(list.length)} sub="دفعات + بنود تصفية عُهد" />
+          <RptKpi label="عدد الجهات" value={fmt(parties.length)} sub="مقاولين / موردين / مدفوعات مباشرة / عُهد" />
           <RptKpi label="أكبر بند صرفًا" value={groups[0]?.name || "—"} sub={groups[0] ? money(groups[0].total) : ""} />
         </div>
 
@@ -2270,7 +2272,7 @@ function PaidCostsReport({ s }) {
           </RptSection>
         )}
 
-        <RptSection title="كشف الدفعات التفصيلي">
+        <RptSection title="كشف الحركات التفصيلي">
           <RptTable
             heads={[{ label: "التاريخ" }, { label: "البند" }, { label: "البند الفرعي" }, { label: "الجهة" }, { label: "النوع" }, { label: "المرجع" }, { label: "طريقة الدفع" }, { label: "المبلغ", num: true }]}
             rows={lines.map((p) => ({
@@ -2280,7 +2282,7 @@ function PaidCostsReport({ s }) {
                 p.level || "—",
                 <span>{p.partyName}{p.note && <span className="text-[10px] text-[color:var(--cl-muted)] block">{p.note}</span>}</span>,
                 p.kind === "other" ? p.category || paidKindLabel(p.kind) : paidKindLabel(p.kind),
-                p.statementNumber ? `مستخلص #${p.statementNumber}` : p.kind === "other" ? "دفعة مباشرة" : "دفعة عامة",
+                p.kind === "custody" ? `تصفية عهدة${p.custodyStatus ? ` (${p.custodyStatus})` : ""}` : p.statementNumber ? `مستخلص #${p.statementNumber}` : p.kind === "other" ? "دفعة مباشرة" : "دفعة عامة",
                 p.method || "—",
                 <b>{fmt(p.amount)}</b>,
               ],
@@ -2295,7 +2297,7 @@ function PaidCostsReport({ s }) {
 }
 
 /* -------- مركز التقارير (الواجهة الرئيسية) -------- */
-function ReportsCenter({ projects, workItems, costs, extracts, collections, treasuryEntries, financePersons, financeTransactions, expectedCosts, defaultProjectId, costsManager, statements = [], statementPayments = [] }) {
+function ReportsCenter({ projects, workItems, costs, extracts, collections, treasuryEntries, financePersons, financeTransactions, expectedCosts, defaultProjectId, costsManager, statements = [], statementPayments = [], custodies = [] }) {
   const [reportKey, setReportKey] = useState(null);
   const [projectId, setProjectId] = useState(defaultProjectId || "all");
   const [from, setFrom] = useState("");
@@ -2337,7 +2339,13 @@ function ReportsCenter({ projects, workItems, costs, extracts, collections, trea
       const st = p.statementId ? statements.find((x) => x.id === p.statementId) : null;
       const t = stPayTarget(p, st);
       return { ...p, projectId: t.projectId, workItemId: t.workItemId, amount: Number(p.amount) || 0, level: (st ? st.workItemLevel : p.workItemLevel) || "", statementNumber: st?.number || null };
-    }).filter((p) => p.projectId && p.amount > 0 && inScope(p) && inRange(p.date)),
+    }).concat(
+      // بنود تصفية العُهد = تكاليف فعلية اتصرفت من العهدة (الجهة = اسم المستلم)
+      costs.filter((c) => c.custodyId).map((c) => {
+        const cu = custodies.find((x) => x.id === c.custodyId);
+        return { id: c.id, kind: "custody", partyName: cu?.personName || "عهدة", date: c.date, amount: (Number(c.qty) || 0) * (Number(c.price) || 0), method: "", note: c.desc, projectId: c.projectId, workItemId: c.workItemId || null, level: c.costLevel1 || "", statementNumber: null, custodyStatus: cu?.status || "" };
+      })
+    ).filter((p) => p.projectId && p.amount > 0 && inScope(p) && inRange(p.date)),
   };
 
   const current = REPORT_LIST.find((r) => r.key === reportKey);
