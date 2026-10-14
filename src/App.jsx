@@ -4976,12 +4976,13 @@ const csDesc = (r) => {
   return cat ? (det ? `${cat} - ${det}` : cat) : det;
 };
 let csSeq = 0;
-const csNewRow = (date = "") => ({ key: "cs" + ++csSeq, workItemId: "", category: "", customCategory: "", detail: "", date, amount: "" });
+const csNewRow = (date = "") => ({ key: "cs" + ++csSeq, workItemId: "", category: "", customCategory: "", detail: "", date, qty: "1", price: "" });
+const csTotal = (r) => (Number(r.qty) || 0) * (Number(r.price) || 0);
 
 function CustodySettlement({ custody, lines, pWorkItems, custodyCategories, activeProjectId, onBack, onAddCost, onAddCostsBulk, onUpdateCost, onDeleteCost, onSettleCustody }) {
   const [open, setOpen] = useState(false);
   const [editId, setEditId] = useState(null);
-  const [form, setForm] = useState({ workItemId: "", category: "", customCategory: "", amount: "", date: "", detail: "" });
+  const [form, setForm] = useState({ workItemId: "", category: "", customCategory: "", qty: "1", price: "", date: "", detail: "" });
   // إضافة كذا بند مرة واحدة
   const [rows, setRows] = useState(() => [csNewRow(stToday())]);
   const [bulkErr, setBulkErr] = useState("");
@@ -4989,12 +4990,12 @@ function CustodySettlement({ custody, lines, pWorkItems, custodyCategories, acti
   const updRow = (key, patch) => setRows((rs) => rs.map((r) => (r.key === key ? { ...r, ...patch } : r)));
   const addRow = () => setRows((rs) => [...rs, csNewRow(rs[rs.length - 1]?.date || stToday())]);
   const delRow = (key) => setRows((rs) => (rs.length > 1 ? rs.filter((r) => r.key !== key) : [csNewRow(stToday())]));
-  const isBlank = (r) => !r.workItemId && !r.category && !r.detail.trim() && !r.amount;
+  const isBlank = (r) => !r.workItemId && !r.category && !r.detail.trim() && !r.price;
   const filled = rows.filter((r) => !isBlank(r));
-  const rowsTotal = rSum(filled, (r) => Number(r.amount) || 0);
+  const rowsTotal = rSum(filled, csTotal);
   const saveRows = async () => {
-    const bad = rows.map((r, i) => (!isBlank(r) && (!csDesc(r) || !(Number(r.amount) > 0)) ? i + 1 : null)).filter(Boolean);
-    if (bad.length) { setBulkErr(`كمّل البيانات في سطر ${bad.join("، ")}: لازم تصنيف أو تفاصيل، ومبلغ أكبر من صفر.`); return; }
+    const bad = rows.map((r, i) => (!isBlank(r) && (!csDesc(r) || !(Number(r.qty) > 0) || !(Number(r.price) > 0)) ? i + 1 : null)).filter(Boolean);
+    if (bad.length) { setBulkErr(`كمّل البيانات في سطر ${bad.join("، ")}: لازم تصنيف أو تفاصيل، وعدد وسعر أكبر من صفر.`); return; }
     if (!filled.length) { setBulkErr("مفيش بنود تتحفظ."); return; }
     setBulkErr("");
     setSaving(true);
@@ -5005,9 +5006,9 @@ function CustodySettlement({ custody, lines, pWorkItems, custodyCategories, acti
       custodyId: custody.id,
       type: r.workItemId ? "مصروفات" : "مصروفات عمومية",
       desc: csDesc(r),
-      qty: 1,
+      qty: Number(r.qty),
       unit: "-",
-      price: Number(r.amount),
+      price: Number(r.price),
       date: r.date || stToday(),
     }));
     const ok = await onAddCostsBulk(list, "حصل خطأ أثناء حفظ بنود التصفية (مفيش حاجة اتحفظت): ");
@@ -5017,21 +5018,21 @@ function CustodySettlement({ custody, lines, pWorkItems, custodyCategories, acti
 
   const isLocked = custody.status === "مصفاة";
 
-  const resetForm = () => setForm({ workItemId: "", category: "", customCategory: "", amount: "", date: "", detail: "" });
+  const resetForm = () => setForm({ workItemId: "", category: "", customCategory: "", qty: "1", price: "", date: "", detail: "" });
 
   const categoryName = form.category === "__custom__" ? form.customCategory : form.category;
   const finalDesc = categoryName ? (form.detail ? `${categoryName} - ${form.detail}` : categoryName) : form.detail;
 
   const submitLine = () => {
-    if (!finalDesc || !form.amount) return;
+    if (!finalDesc || !(Number(form.qty) > 0) || !(Number(form.price) > 0)) return;
     if (editId) {
       onUpdateCost(editId, {
         type: form.workItemId ? "مصروفات" : "مصروفات عمومية",
         workItemId: form.workItemId || null,
         desc: finalDesc,
-        qty: 1,
+        qty: Number(form.qty),
         unit: "-",
-        price: Number(form.amount),
+        price: Number(form.price),
         date: form.date || new Date().toISOString().slice(0, 10),
       });
       setEditId(null);
@@ -5043,9 +5044,9 @@ function CustodySettlement({ custody, lines, pWorkItems, custodyCategories, acti
         custodyId: custody.id,
         type: form.workItemId ? "مصروفات" : "مصروفات عمومية",
         desc: finalDesc,
-        qty: 1,
+        qty: Number(form.qty),
         unit: "-",
-        price: Number(form.amount),
+        price: Number(form.price),
         date: form.date || new Date().toISOString().slice(0, 10),
       });
     }
@@ -5055,7 +5056,7 @@ function CustodySettlement({ custody, lines, pWorkItems, custodyCategories, acti
 
   const startEdit = (c) => {
     setEditId(c.id);
-    setForm({ workItemId: c.workItemId || "", category: "", customCategory: "", amount: String(c.price), date: c.date, detail: c.desc });
+    setForm({ workItemId: c.workItemId || "", category: "", customCategory: "", qty: String(c.qty), price: String(c.price), date: c.date, detail: c.desc });
     setOpen(true);
   };
 
@@ -5117,7 +5118,7 @@ function CustodySettlement({ custody, lines, pWorkItems, custodyCategories, acti
           <div className="bg-[color:var(--cl-card)] rounded-xl border border-[color:var(--cl-line)] p-4 space-y-3">
             <div className="flex items-center justify-between">
               <div className="font-bold text-[color:var(--cl-text)] text-sm">بنود تصفية جديدة</div>
-              <div className="text-[11px] text-[color:var(--cl-muted)]">Enter في خانة المبلغ بيضيف سطر جديد · التاريخ بيتنسخ من السطر اللي قبله</div>
+              <div className="text-[11px] text-[color:var(--cl-muted)]">Enter في خانة السعر بيضيف سطر جديد · التاريخ بيتنسخ من السطر اللي قبله</div>
             </div>
             <div className="overflow-x-auto">
               <table className="w-full text-sm">
@@ -5128,7 +5129,9 @@ function CustodySettlement({ custody, lines, pWorkItems, custodyCategories, acti
                     <th className="text-right font-semibold pb-1.5 px-1">بند العمل (اختياري)</th>
                     <th className="text-right font-semibold pb-1.5 px-1">التصنيف</th>
                     <th className="text-right font-semibold pb-1.5 px-1">التفاصيل</th>
-                    <th className="text-right font-semibold pb-1.5 px-1 w-32">المبلغ</th>
+                    <th className="text-right font-semibold pb-1.5 px-1 w-20">العدد</th>
+                    <th className="text-right font-semibold pb-1.5 px-1 w-28">السعر</th>
+                    <th className="text-right font-semibold pb-1.5 px-1 w-28">الإجمالي</th>
                     <th className="w-8" />
                   </tr>
                 </thead>
@@ -5153,9 +5156,13 @@ function CustodySettlement({ custody, lines, pWorkItems, custodyCategories, acti
                       </td>
                       <td className="py-1 px-1"><input className={cell} value={r.detail} onChange={(e) => updRow(r.key, { detail: e.target.value })} placeholder="وصف البند" /></td>
                       <td className="py-1 px-1">
-                        <input className={cell + " mono"} type="number" value={r.amount} onChange={(e) => updRow(r.key, { amount: e.target.value })}
+                        <input className={cell + " mono"} type="number" value={r.qty} onChange={(e) => updRow(r.key, { qty: e.target.value })} placeholder="1" />
+                      </td>
+                      <td className="py-1 px-1">
+                        <input className={cell + " mono"} type="number" value={r.price} onChange={(e) => updRow(r.key, { price: e.target.value })}
                           onKeyDown={(e) => { if (e.key === "Enter" && i === rows.length - 1) { e.preventDefault(); addRow(); } }} placeholder="0" />
                       </td>
+                      <td className="py-1 px-1 pt-2.5 mono font-bold text-[color:var(--cl-text)] whitespace-nowrap">{csTotal(r) ? fmt(csTotal(r)) : "—"}</td>
                       <td className="py-1 pt-2"><button onClick={() => delRow(r.key)} title="شيل السطر" className="p-1 rounded-md text-[color:var(--cl-red)] hover:bg-[#C1453B]/10"><X size={14} /></button></td>
                     </tr>
                   ))}
@@ -5209,7 +5216,12 @@ function CustodySettlement({ custody, lines, pWorkItems, custodyCategories, acti
           <div className="col-span-3">
             <Field label="تفاصيل إضافية (اختياري)" value={form.detail} onChange={(v) => setForm((f) => ({ ...f, detail: v }))} placeholder="وصف إضافي للبند" />
           </div>
-          <Field label="المبلغ" value={form.amount} onChange={(v) => setForm((f) => ({ ...f, amount: v }))} type="number" />
+          <Field label="العدد" value={form.qty} onChange={(v) => setForm((f) => ({ ...f, qty: v }))} type="number" />
+          <Field label="السعر" value={form.price} onChange={(v) => setForm((f) => ({ ...f, price: v }))} type="number" />
+          <div>
+            <div className="block text-[11px] font-semibold text-[color:var(--cl-soft)] mb-1">الإجمالي</div>
+            <div className="py-2 font-bold mono text-[color:var(--cl-text)]">{money(csTotal(form))}</div>
+          </div>
           <div className="col-span-3 flex justify-end gap-2">
             {editId && <button onClick={cancelForm} className="px-4 py-2 rounded-lg bg-[color:var(--cl-line)] text-[color:var(--cl-text)] text-sm font-semibold hover:bg-[color:var(--cl-hover)] transition">إلغاء</button>}
             <button onClick={submitLine} className="px-4 py-2 rounded-lg bg-[color:var(--cl-accent-bg)] text-[color:var(--cl-on-accent)] text-sm font-semibold hover:bg-[color:var(--cl-accent-hover)] transition">{editId ? "حفظ التعديل" : "إضافة البند"}</button>
@@ -5224,7 +5236,9 @@ function CustodySettlement({ custody, lines, pWorkItems, custodyCategories, acti
               <th className="text-right py-3 px-4 font-semibold">التاريخ</th>
               <th className="text-right py-3 px-4 font-semibold">البند</th>
               <th className="text-right py-3 px-4 font-semibold">بند العمل</th>
-              <th className="text-right py-3 px-4 font-semibold">المبلغ</th>
+              <th className="text-right py-3 px-4 font-semibold">العدد</th>
+              <th className="text-right py-3 px-4 font-semibold">السعر</th>
+              <th className="text-right py-3 px-4 font-semibold">الإجمالي</th>
               {!isLocked && <th className="text-right py-3 px-4 font-semibold w-20"></th>}
             </tr>
           </thead>
@@ -5234,6 +5248,8 @@ function CustodySettlement({ custody, lines, pWorkItems, custodyCategories, acti
                 <td className="py-3 px-4 mono text-[color:var(--cl-text)]">{c.date}</td>
                 <td className="py-3 px-4 text-[color:var(--cl-soft)]">{c.desc}</td>
                 <td className="py-3 px-4 text-[color:var(--cl-soft)]">{pWorkItems.find((w) => w.id === c.workItemId)?.name || "—"}</td>
+                <td className="py-3 px-4 mono text-[color:var(--cl-soft)]">{fmt(c.qty, 2)}</td>
+                <td className="py-3 px-4 mono text-[color:var(--cl-soft)]">{fmt(c.price, 2)}</td>
                 <td className="py-3 px-4 mono font-bold">{money(c.qty * c.price)}</td>
                 {!isLocked && (
                   <td className="py-3 px-4">
@@ -5246,7 +5262,7 @@ function CustodySettlement({ custody, lines, pWorkItems, custodyCategories, acti
               </tr>
             ))}
             {lines.length === 0 && (
-              <tr><td colSpan={isLocked ? 4 : 5} className="text-center py-8 text-[color:var(--cl-muted)]">لا توجد بنود تصفية مسجّلة بعد.</td></tr>
+              <tr><td colSpan={isLocked ? 6 : 7} className="text-center py-8 text-[color:var(--cl-muted)]">لا توجد بنود تصفية مسجّلة بعد.</td></tr>
             )}
           </tbody>
         </table>
