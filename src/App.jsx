@@ -3746,7 +3746,8 @@ function CostsTab({ pCosts, pWorkItems, activeProjectId, onAddCost, onAddCostsBu
       const descKey = (c.desc || "بدون وصف").trim();
       const subMap = byWorkItem.get(wiKey);
       // المفتاح فيه النوع عشان نفس الوصف تحت نوعين ميتجمعش مع بعض
-      const k = costCat(c) + "\u0000" + descKey;
+      // المفتاح: النوع + البند الفرعي (المسار) + الوصف
+      const k = costCat(c) + "\u0000" + String(c.costLevel1 || "").trim() + "\u0000" + descKey;
       if (!subMap.has(k)) subMap.set(k, []);
       subMap.get(k).push(c);
     });
@@ -3763,7 +3764,7 @@ function CostsTab({ pCosts, pWorkItems, activeProjectId, onAddCost, onAddCostsBu
 
       const subItems = [...subMap.entries()]
         .map(([k, entries]) => {
-          const [cat, desc] = k.split("\u0000");
+          const [cat, level, desc] = k.split("\u0000");
           const sortedEntries = [...entries].sort((a, b) => (a.date < b.date ? 1 : a.date > b.date ? -1 : 0));
           const totalValue = entries.reduce((s, e) => s + e.qty * e.price, 0);
           const totalQty = entries.reduce((s, e) => s + e.qty, 0);
@@ -3771,6 +3772,7 @@ function CostsTab({ pCosts, pWorkItems, activeProjectId, onAddCost, onAddCostsBu
           const types = [...new Set(entries.map((e) => e.type))];
           return {
             cat,
+            level,
             desc,
             entries: sortedEntries,
             totalValue,
@@ -3806,6 +3808,32 @@ function CostsTab({ pCosts, pWorkItems, activeProjectId, onAddCost, onAddCostsBu
   const [expandedItems, setExpandedItems] = useState({});
 
   const toggleGroup = (key) => setCollapsedGroups((p) => ({ ...p, [key]: !p[key] }));
+  // صفوف النوع جوه البند: البنود الفرعية كشجرة (كل مستوى بإجمالي اللي تحته) وتحت كل مستوى الأوصاف المسجلة عليه
+  const costLevelRows = (g, cg) => {
+    const items = cg.items;
+    const paths = new Set();
+    items.forEach((it) => {
+      if (!it.level) return;
+      const parts = it.level.split(LV_SEP);
+      parts.forEach((_, i) => paths.add(parts.slice(0, i + 1).join(LV_SEP)));
+    });
+    const under = (path) => items.filter((it) => lvUnder(it.level, path));
+    const parentOf = (path) => (path.includes(LV_SEP) ? path.slice(0, path.lastIndexOf(LV_SEP)) : "");
+    const rows = [];
+    const walk = (parent, depth) => {
+      [...paths].filter((pth) => parentOf(pth) === parent)
+        .map((pth) => ({ pth, list: under(pth) }))
+        .sort((a, b) => rSum(b.list, (x) => x.totalValue) - rSum(a.list, (x) => x.totalValue))
+        .forEach(({ pth, list }) => {
+          const key = g.key + "##" + cg.cat + "##" + pth;
+          rows.push({ kind: "level", key, path: pth, name: pth.split(LV_SEP).pop(), depth, count: list.length, total: rSum(list, (x) => x.totalValue) });
+          if (!collapsedGroups[key]) walk(pth, depth + 1);
+        });
+      items.filter((it) => (it.level || "") === parent).forEach((it) => rows.push({ kind: "item", it, depth }));
+    };
+    walk("", 0);
+    return rows;
+  };
   const toggleItem = (key) => setExpandedItems((p) => ({ ...p, [key]: !p[key] }));
 
   return (
@@ -3945,14 +3973,30 @@ function CostsTab({ pCosts, pWorkItems, activeProjectId, onAddCost, onAddCostsBu
                       </div>
                       <span className="text-sm font-bold mono shrink-0" style={{ color: meta?.color }}>{money(cg.total)}</span>
                     </button>
-                  {!catClosed && cg.items.map((it) => {
-                    const itemKey = g.key + "::" + it.cat + "::" + it.desc;
+                  {!catClosed && costLevelRows(g, cg).map((row) => {
+                    if (row.kind === "level") {
+                      const lvClosed = collapsedGroups[row.key];
+                      return (
+                        <button key={row.key} onClick={() => toggleGroup(row.key)} style={{ paddingRight: 56 + row.depth * 20 }} className="w-full flex items-center justify-between px-4 py-2 border-t border-[color:var(--cl-sep)] bg-[color:var(--cl-sub)] hover:bg-[color:var(--cl-inset)] transition text-right">
+                          <div className="flex items-center gap-2 min-w-0">
+                            <ChevronDown size={12} className={`text-[color:var(--cl-muted)] shrink-0 transition-transform ${lvClosed ? "-rotate-90" : ""}`} />
+                            <Layers size={12} className="text-[color:var(--cl-muted)] shrink-0" />
+                            <span className="text-[13px] font-bold text-[color:var(--cl-text)] truncate" title={row.path}>{row.name}</span>
+                            <span className="text-[11px] text-[color:var(--cl-muted)] mono shrink-0">({row.count})</span>
+                          </div>
+                          <span className="text-[13px] font-bold mono text-[color:var(--cl-text)] shrink-0">{money(row.total)}</span>
+                        </button>
+                      );
+                    }
+                    const it = row.it;
+                    const itemKey = g.key + "::" + it.cat + "::" + it.level + "::" + it.desc;
                     const itemOpen = expandedItems[itemKey];
                     return (
                       <div key={itemKey} className="border-t border-[color:var(--cl-sep)]">
                         <button
                           onClick={() => toggleItem(itemKey)}
-                          className="w-full flex items-center justify-between px-4 py-2.5 pr-14 hover:bg-[color:var(--cl-sub)] transition text-right"
+                          style={{ paddingRight: 56 + row.depth * 20 }}
+                          className="w-full flex items-center justify-between px-4 py-2.5 hover:bg-[color:var(--cl-sub)] transition text-right"
                         >
                           <div className="flex items-center gap-2 min-w-0">
                             <ChevronRight size={13} className={`text-[color:var(--cl-muted)] shrink-0 transition-transform ${itemOpen ? "rotate-90" : ""}`} />
@@ -3966,17 +4010,13 @@ function CostsTab({ pCosts, pWorkItems, activeProjectId, onAddCost, onAddCostsBu
                         </button>
 
                         {itemOpen && (
-                          <div className="bg-[color:var(--cl-sub)] px-4 pr-20 py-2.5 space-y-1.5">
+                          <div className="bg-[color:var(--cl-sub)] px-4 py-2.5 space-y-1.5" style={{ paddingRight: 80 + row.depth * 20 }}>
                             {it.entries.map((c) => (
                               <div key={c.id} className="flex items-center justify-between bg-[color:var(--cl-card)] rounded-lg px-3 py-2 border border-[color:var(--cl-line)] text-sm group">
                                 <div className="flex items-center gap-3 min-w-0 text-[color:var(--cl-soft)]">
                                   <span className="mono text-xs text-[color:var(--cl-muted)] shrink-0">{c.date}</span>
                                   <span className="shrink-0 mono">{fmt(c.qty)} {c.unit} × {fmt(c.price)}</span>
-                                  {(c.costLevel1 || c.costLevel2) && (
-                                    <span className="text-[11px] text-[color:var(--cl-muted)] truncate">
-                                      {c.costLevel1}{c.costLevel2 ? ` · ${c.costLevel2}` : ""}
-                                    </span>
-                                  )}
+                                  {c.costLevel2 && <span className="text-[11px] text-[color:var(--cl-muted)] truncate">{c.costLevel2}</span>}
                                 </div>
                                 <div className="flex items-center gap-2 shrink-0">
                                   <span className="font-bold mono">{money(c.qty * c.price)}</span>
