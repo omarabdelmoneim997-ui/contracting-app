@@ -6120,6 +6120,13 @@ function StatementForm({ cfg, initial, parties, projects, existing, payments, on
   const partyKey = partyName.trim();
 
   const setItem = (id, patch) => setItems((p) => p.map((i) => (i.id === id ? { ...i, ...patch } : i)));
+  // بند جديد في الآخر + الكيرسر يروح على خانة اسمه على طول
+  const [focusItemId, setFocusItemId] = useState(null);
+  const addItemRow = () => {
+    const id = stUid("si_");
+    setItems((p) => [...p, { id, desc: "", unit: "", price: "", totalIn: "", curPctIn: "", prevQtyManual: "0", prevPctManual: "0" }]);
+    setFocusItemId(id);
+  };
   const setAdj = (id, patch) => setAdjustments((p) => p.map((a) => (a.id === id ? { ...a, ...patch } : a)));
   const addPreset = (idx) => {
     if (idx === "") return;
@@ -6262,7 +6269,7 @@ function StatementForm({ cfg, initial, parties, projects, existing, payments, on
       <div className="bg-[color:var(--cl-card)] rounded-xl border border-[color:var(--cl-line)] overflow-hidden">
         <div className="px-4 py-3 flex items-center justify-between border-b border-[color:var(--cl-sep)]">
           <div className="font-bold text-sm text-[color:var(--cl-text)]">البنود</div>
-          <button onClick={() => setItems((p) => [...p, { id: stUid("si_"), desc: "", unit: "", price: "", totalIn: "", curPctIn: "", prevQtyManual: "0", prevPctManual: "0" }])} className="px-3 py-1.5 rounded-lg bg-[color:var(--cl-ink)] text-white text-xs font-semibold flex items-center gap-1 hover:bg-[color:var(--cl-ink-hover)]"><Plus size={13} /> بند</button>
+          <button onClick={addItemRow} className="px-3 py-1.5 rounded-lg bg-[color:var(--cl-ink)] text-white text-xs font-semibold flex items-center gap-1 hover:bg-[color:var(--cl-ink-hover)]"><Plus size={13} /> بند</button>
         </div>
         <div className="overflow-x-auto">
         <table className="w-full text-sm" style={{ minWidth: 1280 }}>
@@ -6289,7 +6296,8 @@ function StatementForm({ cfg, initial, parties, projects, existing, payments, on
               return (
                 <tr key={it.id}>
                   <td className="py-2 px-3 mono text-[color:var(--cl-muted)]">{i + 1}</td>
-                  <td className="py-2 px-3"><input className={stCellInput} value={it.desc} onChange={(e) => setItem(it.id, { desc: e.target.value })} placeholder="وصف البند" /></td>
+                  <td className="py-2 px-3"><input className={stCellInput} value={it.desc} onChange={(e) => setItem(it.id, { desc: e.target.value })} placeholder="وصف البند"
+                    ref={it.id === focusItemId ? (el) => { if (el) { el.focus(); el.scrollIntoView({ block: "nearest" }); setFocusItemId(null); } } : undefined} /></td>
                   <td className="py-2 px-3">{unitsReady
                     ? <UnitSelect compact value={it.unit} onChange={(v) => setItem(it.id, { unit: v })} units={units} onAddUnit={onAddUnit} />
                     : <input className={stCellInput} value={it.unit} onChange={(e) => setItem(it.id, { unit: e.target.value })} placeholder="م² / طن" />}</td>
@@ -6331,6 +6339,13 @@ function StatementForm({ cfg, initial, parties, projects, existing, payments, on
                 </tr>
               );
             })}
+            <tr>
+              <td colSpan={12} className="py-2 px-3 border-t border-[color:var(--cl-sep)]">
+                <button type="button" onClick={addItemRow} className="px-3 py-1.5 rounded-lg border border-dashed border-[color:var(--cl-line)] text-xs font-bold text-[color:var(--cl-accent)] hover:border-[color:var(--cl-accent-bg)] hover:bg-[color:rgb(var(--cl-accent-rgb)/0.06)] flex items-center gap-1.5 transition">
+                  <Plus size={13} /> بند جديد
+                </button>
+              </td>
+            </tr>
           </tbody>
           <tfoot>
             <tr className="bg-[color:var(--cl-inset)]">
