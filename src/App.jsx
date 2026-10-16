@@ -6063,6 +6063,43 @@ function StatementForm({ cfg, initial, parties, projects, existing, payments, on
 
   const calc = useMemo(() => calcStatement(rows, adjustments), [rows, adjustments]);
 
+  // مستخلص جديد: آخر مستخلص لنفس الطرف (ولو اخترت مشروع، آخر واحد على نفس المشروع) — نبدأ منه
+  const lastSt = useMemo(() => {
+    const name = partyName.trim();
+    if (initial || !name) return null;
+    const numOf = (n) => parseInt(n, 10) || 0;
+    const mine = existing.filter((s) => s.partyName === name);
+    const pool = projectId && mine.some((s) => s.projectId === projectId) ? mine.filter((s) => s.projectId === projectId) : mine;
+    return [...pool].sort((a, b) => (b.date || "").localeCompare(a.date || "") || numOf(b.number) - numOf(a.number))[0] || null;
+  }, [initial, partyName, projectId, existing]);
+  const [filledFrom, setFilledFrom] = useState(null); // رقم المستخلص اللي البنود اتملت منه
+  const itemsBlank = items.every((i) => !String(i.desc || "").trim() && !i.price && !i.totalIn);
+  const fillFromLast = (st) => {
+    if (!st) return;
+    const numOf = (n) => parseInt(n, 10) || 0;
+    // البنود بنفس الوصف والوحدة والسعر — السابق بيتجاب لوحده من المستخلص اللي فات، والنسبة الحالية تبدأ 0 عشان ترفعها
+    setItems(st.items.length
+      ? st.items.map((i) => ({ id: stUid("si_"), desc: i.desc, unit: i.unit, price: i.price, totalIn: "", curPctIn: "0", prevQtyManual: "0", prevPctManual: "0" }))
+      : [{ id: stUid("si_"), desc: "", unit: "", price: "", totalIn: "", curPctIn: "", prevQtyManual: "0", prevPctManual: "0" }]);
+    setAdjustments((st.adjustments || []).map((a) => ({ ...a, id: stUid("sa_") })));
+    if (!projectId && st.projectId) setProjectId(st.projectId);
+    if (!workItemId && st.workItemId) setWorkItemId(st.workItemId);
+    if (!workItemLevel && st.workItemLevel) setWorkItemLevel(st.workItemLevel);
+    if (!workType && st.workType) setWorkType(st.workType);
+    if (!String(number).trim() && numOf(st.number)) setNumber(String(numOf(st.number) + 1));
+    setFilledFrom(st.number || "—");
+  };
+  // أول ما تختار الطرف والبنود لسه فاضية → تتملى من آخر مستخلص له
+  useEffect(() => {
+    if (!initial && !draft && lastSt && itemsBlank && filledFrom === null) fillFromLast(lastSt);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [lastSt?.id]);
+  const clearFilled = () => {
+    setItems([{ id: stUid("si_"), desc: "", unit: "", price: "", totalIn: "", curPctIn: "", prevQtyManual: "0", prevPctManual: "0" }]);
+    setAdjustments([]);
+    setFilledFrom("");
+  };
+
   // الحساب مع الطرف (تلقائي)
   const acct = useMemo(() => stAccount({ id: initial?.id, partyName, date, number }, existing, payments), [initial?.id, partyName, date, number, existing, payments]);
   const hasAcct = stHasAcct(acct);
@@ -6121,6 +6158,25 @@ function StatementForm({ cfg, initial, parties, projects, existing, payments, on
         <div className="rounded-xl border border-[#D6A23C]/50 bg-[#D6A23C]/10 p-4 text-sm space-y-1">
           <div className="font-bold text-[color:var(--cl-text)]">اتقرا من ملف "{draft.fileName}": {draft.formItems.length} بند{draft.adjustments?.length ? ` و${draft.adjustments.length} خصم/إضافة` : ""} — راجع البيانات ودوس "حفظ المستخلص"</div>
           {draft.warnings.map((w, i) => <div key={i} className="text-[12px] text-[color:var(--cl-soft)]">⚠ {w}</div>)}
+        </div>
+      )}
+
+      {!initial && lastSt && (
+        <div className="rounded-xl border border-[color:var(--cl-accent-bg)]/40 bg-[color:rgb(var(--cl-accent-rgb)/0.08)] px-4 py-3 text-sm flex flex-wrap items-center justify-between gap-3">
+          <div className="text-[color:var(--cl-text)]">
+            {filledFrom ? (
+              <><b>البنود اتملت من المستخلص السابق رقم {filledFrom}</b> ({lastSt.date}) — السابق متحسب لوحده، والنسبة الحالية بادئة من 0: ارفع النسب أو زوّد بنود جديدة.</>
+            ) : (
+              <>آخر مستخلص لـ <b>{lastSt.partyName}</b>{lastSt.projectId ? ` على "${projects.find((p) => p.id === lastSt.projectId)?.name || "—"}"` : ""}: رقم <b>{lastSt.number || "—"}</b> بتاريخ {lastSt.date} — {lastSt.items.length} بند.</>
+            )}
+          </div>
+          <div className="flex gap-2">
+            {filledFrom ? (
+              <button type="button" onClick={clearFilled} className="px-3 py-1.5 rounded-lg border border-[color:var(--cl-line)] text-xs font-semibold text-[color:var(--cl-soft)] hover:bg-[color:var(--cl-sub)]">ابدأ فاضي</button>
+            ) : (
+              <button type="button" onClick={() => fillFromLast(lastSt)} className="px-3 py-1.5 rounded-lg bg-[color:var(--cl-accent-bg)] text-[color:var(--cl-on-accent)] text-xs font-bold hover:bg-[color:var(--cl-accent-hover)]">ابدأ من المستخلص السابق</button>
+            )}
+          </div>
         </div>
       )}
 
