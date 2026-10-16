@@ -1260,6 +1260,7 @@ function ContractingApp({ currentUsername, onLogout }) {
           <div className="p-8">
             <DirectPaymentsModule
               payments={statementPayments}
+              custodyLines={costs.filter((c) => c.custodyId)}
               statements={statements}
               registeredParties={registeredParties}
               projects={projects}
@@ -7175,7 +7176,7 @@ function BulkPaymentsPanel({ ctx, onClose, onAddPayment, onAddCustody, initialRo
   );
 }
 
-function DirectPaymentsModule({ payments, statements = [], registeredParties = [], projects, workItems, wiLevels = [], levelsReady = false, onAddLevel, ready, onAddPayment, onDeletePayment, custodies = [], onAddCustody, onDeleteCustody }) {
+function DirectPaymentsModule({ payments, custodyLines = [], statements = [], registeredParties = [], projects, workItems, wiLevels = [], levelsReady = false, onAddLevel, ready, onAddPayment, onDeletePayment, custodies = [], onAddCustody, onDeleteCustody }) {
   // العُهد بتظهر في نفس الجدول (من جدول custodies) — مش تكلفة فعلية لحد ما تتصفّى من "تصفية العهد"
   const custodyRows = useMemo(() => custodies.map((c) => ({ id: c.id, kind: "custody", partyName: c.personName, date: c.dateGiven || "", amount: Number(c.amountGiven) || 0, projectId: c.projectId, note: c.notes || "", status: c.status, isCustody: true })), [custodies]);
   const all = useMemo(() => [...payments, ...custodyRows].sort((a, b) => (b.date || "").localeCompare(a.date || "")), [payments, custodyRows]);
@@ -7265,12 +7266,20 @@ function DirectPaymentsModule({ payments, statements = [], registeredParties = [
     const st = stById.get(p.statementId);
     return st ? { projectId: st.projectId, workItemId: st.workItemId, level: st.workItemLevel } : { projectId: p.projectId, workItemId: p.workItemId, level: p.workItemLevel };
   };
+  // العهدة مش مربوطة ببند — بنود تصفيتها هي اللي عليها البند. فلما تفلتر ببند/بند فرعي، العهدة بتظهر بالمصروف منها على البند ده بس
+  const custodyOnItem = (p) => custodyLines.filter((l) => l.custodyId === p.id && l.workItemId === fWI && (!fLv || (fLv === "_none" ? !l.costLevel1 : lvUnder(l.costLevel1, fLv))));
   const filtered = all
+    .map((p) => {
+      if (!p.isCustody || !fWI) return p;
+      const ls = custodyOnItem(p);
+      return ls.length ? { ...p, amountGiven: p.amount, amount: stRound(ls.reduce((a, l) => a + (Number(l.qty) || 0) * (Number(l.price) || 0), 0)), onItem: ls.length } : null;
+    })
+    .filter(Boolean)
     .filter((p) => !fType || p.kind === fType)
     .filter((p) => !fCat || p.category === fCat)
     .filter((p) => { const t = target(p); return !fProj || (fProj === "_none" ? !t.projectId : t.projectId === fProj); })
-    .filter((p) => !fWI || target(p).workItemId === fWI)
-    .filter((p) => !fLv || (fLv === "_none" ? !target(p).level : lvUnder(target(p).level, fLv)))
+    .filter((p) => !fWI || p.onItem || target(p).workItemId === fWI)
+    .filter((p) => !fLv || p.onItem || (fLv === "_none" ? !target(p).level : lvUnder(target(p).level, fLv)))
     .filter((p) => !q || p.partyName.includes(q) || (p.note || "").includes(q) || (p.category || "").includes(q));
   const total = stRound(filtered.reduce((s, p) => s + p.amount, 0));
   const sumKind = (k) => stRound(all.filter((p) => p.kind === k).reduce((s, p) => s + p.amount, 0));
@@ -7427,7 +7436,7 @@ function DirectPaymentsModule({ payments, statements = [], registeredParties = [
         {fWI && (
           <select value={fLv} onChange={(e) => setFLv(e.target.value)} className="border border-[color:var(--cl-line)] rounded-lg px-3 py-2 text-sm bg-[color:var(--cl-card)] text-[color:var(--cl-text)]">
             <option value="">كل البنود الفرعية</option>
-            {Array.from(new Set([...lvPaths(wiLevels, fWI), ...all.filter((p) => target(p).workItemId === fWI).map((p) => target(p).level).filter(Boolean)])).map((n) => <option key={n} value={n}>{lvLabel(n)}</option>)}
+            {Array.from(new Set([...lvPaths(wiLevels, fWI), ...all.filter((p) => target(p).workItemId === fWI).map((p) => target(p).level).filter(Boolean), ...custodyLines.filter((l) => l.workItemId === fWI).map((l) => l.costLevel1).filter(Boolean)])).map((n) => <option key={n} value={n}>{lvLabel(n)}</option>)}
             <option value="_none">— بدون بند فرعي —</option>
           </select>
         )}
@@ -7458,7 +7467,7 @@ function DirectPaymentsModule({ payments, statements = [], registeredParties = [
                   <td className="py-3 px-4"><span className={`text-[11px] px-2 py-0.5 rounded-full ${p.kind === "custody" ? "bg-[#6B5CA5]/15 text-[#9B8CD5]" : p.kind === "other" ? "bg-[color:var(--cl-chip)] text-[color:var(--cl-soft)]" : "bg-[color:rgb(var(--cl-accent-rgb)/0.15)] text-[color:var(--cl-accent)]"}`}>{dpTypeLabel(p.kind)}</span></td>
                   <td className="py-3 px-4 font-semibold text-[color:var(--cl-text)]">{p.partyName}{p.note && <span className="block text-[11px] font-normal text-[color:var(--cl-muted)]">{p.note}</span>}</td>
                   <td className="py-3 px-4 text-[color:var(--cl-soft)]">{p.isCustody ? <span className={p.status === "مصفاة" ? "text-[color:var(--cl-green)]" : "text-[#D6A23C]"}>عهدة {p.status || "مفتوحة"}</span> : p.kind === "other" ? (p.category || "—") : st ? `مستخلص #${st.number}` : "تحت الحساب"}</td>
-                  <td className="py-3 px-4 text-[color:var(--cl-soft)]">{t.projectId ? <>{projName(t.projectId)}{t.workItemId && <> › {wiName(t.workItemId)}</>}{t.level && <> › {t.level}</>}</> : <span className="text-[color:var(--cl-muted)]">بدون مشروع</span>}</td>
+                  <td className="py-3 px-4 text-[color:var(--cl-soft)]">{p.onItem ? <>{projName(t.projectId)} › {wiName(fWI)}<span className="block text-[11px] text-[color:var(--cl-muted)]">من تصفية العهدة ({p.onItem} بند) — العهدة كلها {stMoney(p.amountGiven)}</span></> : t.projectId ? <>{projName(t.projectId)}{t.workItemId && <> › {wiName(t.workItemId)}</>}{t.level && <> › {t.level}</>}</> : <span className="text-[color:var(--cl-muted)]">بدون مشروع</span>}</td>
                   <td className="py-3 px-4 text-[color:var(--cl-soft)]">{p.isCustody ? "—" : p.method || "—"}</td>
                   <td className="py-3 px-4 mono font-bold">{stMoney(p.amount)}</td>
                   <td className="py-3 px-2"><button onClick={() => (p.isCustody ? onDeleteCustody(p.id) : onDeletePayment(p.id))} title="حذف" className="p-1.5 rounded-md text-[color:var(--cl-red)] opacity-0 group-hover:opacity-100 hover:bg-[#C1453B]/10 transition"><Trash2 size={14} /></button></td>
