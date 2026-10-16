@@ -1028,7 +1028,7 @@ function ContractingApp({ currentUsername, onLogout }) {
   const navGroups = [
     { title: "نظرة عامة", keys: ["dashboard", "analytics"] },
     { title: "التخطيط والتنفيذ", keys: ["items", "budget"] }, // "التكاليف الفعلية" اتنقلت لمركز التقارير
-    { title: "المالية والتحصيل", keys: ["extracts", "treasury", "custody"] },
+    { title: "المالية والتحصيل", keys: ["extracts", "treasury"] }, // "تصفية العهد" اتنقلت لقسم "التكاليف" تحت
   ];
 
   // رصيد الخزينة الحالي (نفس معادلة تبويب الخزينة: رصيد البداية + الإيداعات − المصروفات)
@@ -1173,11 +1173,12 @@ function ContractingApp({ currentUsername, onLogout }) {
           ))}
         </nav>
 
-        {/* المستخلصات: مقاولين وموردين */}
+        {/* التكاليف: المستخلصات + المدفوعات + تصفية العهد (تصفية العهد بتاعة المشروع المختار فوق) */}
         <div className="mt-4 px-4 pt-4 border-t border-white/10 space-y-0.5">
-          <div className="text-[11px] text-white/45 font-bold tracking-wide mb-1.5 px-1">المستخلصات والمدفوعات</div>
+          <div className="text-[11px] text-white/45 font-bold tracking-wide mb-1.5 px-1">التكاليف</div>
           <SidebarItem icon={HardHat} label="المستخلصات (مقاولين وموردين)" active={view === "statements"} onClick={() => setView("statements")} />
           <SidebarItem icon={Banknote} label="المدفوعات" active={view === "payments"} onClick={() => setView("payments")} />
+          <SidebarItem icon={Landmark} label="تصفية العهد" active={view === "project" && tab === "custody"} onClick={() => { setTab("custody"); setView("project"); }} />
         </div>
 
         {/* عام */}
