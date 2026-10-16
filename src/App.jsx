@@ -3658,10 +3658,8 @@ function CostExcelImportPanel({ pWorkItems, activeProjectId, onImport, onClose }
 
 // تصنيف التكلفة في شاشة التكاليف: بنود تصفية العُهد (custody_id) بتتجمع تحت "عهد" مهما كان نوعها المتخزن
 const costCat = (c) => (c.custodyId ? "عهد" : c.type || "مصروفات");
-// المستويات الأساسية تحت كل بند (بتظهر دايمًا حتى لو فاضية)، وبعدها أي نوع تاني ليه تكاليف
-const COST_MAIN_CATS = ["مشتريات", "مصنعيات", "عهد"];
+// ترتيب المستويات تحت كل بند — المستوى بيظهر بس لو عليه تكاليف
 const COST_CAT_ORDER = ["مشتريات", "مصنعيات", "عهد", "مصروفات", "مصروفات عمومية"];
-const unassignedKey = (k) => k === "__unassigned__";
 const costCatOrder = (k) => { const i = COST_CAT_ORDER.indexOf(k); return i < 0 ? 99 : i; };
 const COST_CAT_LABELS = { "مشتريات": "توريدات", "مصنعيات": "أعمال مقاولين", "عهد": "مصروفات من عهد" };
 const costCatLabel = (k) => COST_CAT_LABELS[k] || COST_TYPES.find((t) => t.key === k)?.label || k;
@@ -3784,7 +3782,7 @@ function CostsTab({ pCosts, pWorkItems, activeProjectId, onAddCost, onAddCostsBu
         .sort((a, b) => b.totalValue - a.totalValue);
 
       const groupTotal = subItems.reduce((s, it) => s + it.totalValue, 0);
-      const cats = [...new Set([...(filter === "الكل" && !unassignedKey(wiKey) ? COST_MAIN_CATS : []), ...subItems.map((it) => it.cat)])]
+      const cats = [...new Set(subItems.map((it) => it.cat))]
         .sort((a, b) => costCatOrder(a) - costCatOrder(b))
         .map((cat) => {
           const items = subItems.filter((it) => it.cat === cat);
@@ -3800,7 +3798,7 @@ function CostsTab({ pCosts, pWorkItems, activeProjectId, onAddCost, onAddCostsBu
         groupTotal,
       };
     });
-  }, [filtered, pWorkItems, filter]);
+  }, [filtered, pWorkItems]);
 
   const grandTotal = pivot.reduce((s, g) => s + g.groupTotal, 0);
 
@@ -3938,14 +3936,14 @@ function CostsTab({ pCosts, pWorkItems, activeProjectId, onAddCost, onAddCostsBu
                     const catClosed = collapsedGroups[catKey];
                     return (
                   <div key={catKey} className="border-t border-[color:var(--cl-sep)]">
-                    <button onClick={() => cg.items.length && toggleGroup(catKey)} className="w-full flex items-center justify-between px-4 py-2 pr-8 hover:bg-[color:var(--cl-sub)] transition text-right">
+                    <button onClick={() => toggleGroup(catKey)} className="w-full flex items-center justify-between px-4 py-2 pr-8 hover:bg-[color:var(--cl-sub)] transition text-right">
                       <div className="flex items-center gap-2 min-w-0">
                         <ChevronDown size={13} className={`text-[color:var(--cl-muted)] shrink-0 transition-transform ${catClosed ? "-rotate-90" : ""}`} />
                         <span className="w-2 h-2 rounded-full shrink-0" style={{ backgroundColor: meta?.color || "#9AA3B2" }} />
                         <span className="text-sm font-bold" style={{ color: meta?.color }}>{costCatLabel(cg.cat)}</span>
                         <span className="text-[11px] text-[color:var(--cl-muted)] mono shrink-0">({cg.items.length})</span>
                       </div>
-                      {cg.items.length ? <span className="text-sm font-bold mono shrink-0" style={{ color: meta?.color }}>{money(cg.total)}</span> : <span className="text-[11px] text-[color:var(--cl-muted)] shrink-0">لا يوجد</span>}
+                      <span className="text-sm font-bold mono shrink-0" style={{ color: meta?.color }}>{money(cg.total)}</span>
                     </button>
                   {!catClosed && cg.items.map((it) => {
                     const itemKey = g.key + "::" + it.cat + "::" + it.desc;
