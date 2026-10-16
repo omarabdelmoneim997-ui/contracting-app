@@ -718,8 +718,18 @@ function ContractingApp({ currentUsername, onLogout }) {
 
   async function addWorkItem(w) {
     const { error } = await supabase.from("work_items").insert([{ id: w.id, project_id: w.projectId, name: w.name, unit: w.unit, qty: w.qty, price: w.price }]);
-    if (error) { alert("حصل خطأ أثناء حفظ بند العمل: " + error.message); return; }
+    if (error) { alert("حصل خطأ أثناء حفظ بند العمل: " + error.message); return null; }
     setWorkItems((prev) => [...prev, w]);
+    return w;
+  }
+
+  // إضافة بند عمل سريعة من فورم المستخلص/الدفعة (بالاسم بس — الكمية والسعر تتظبط بعدين من الأعمال والمقايسة)
+  async function quickAddWorkItem(projectId, name) {
+    const n = String(name || "").trim();
+    if (!projectId || !n) return null;
+    const exists = workItems.find((w) => w.projectId === projectId && w.name.trim() === n);
+    if (exists) return exists;
+    return addWorkItem({ id: "w_" + Math.random().toString(36).slice(2, 8), projectId, name: n, unit: "-", qty: 0, price: 0 });
   }
 
   async function addCost(c) {
@@ -1261,6 +1271,7 @@ function ContractingApp({ currentUsername, onLogout }) {
             <DirectPaymentsModule
               payments={statementPayments}
               custodyLines={costs.filter((c) => c.custodyId)}
+              onAddWorkItem={quickAddWorkItem}
               statements={statements}
               registeredParties={registeredParties}
               projects={projects}
@@ -1311,6 +1322,7 @@ function ContractingApp({ currentUsername, onLogout }) {
               wiLevels={wiLevels}
               levelsReady={levelsReady}
               onAddLevel={addLevel}
+              onAddWorkItem={quickAddWorkItem}
             />
           </div>
         ) : (
@@ -5986,7 +5998,7 @@ function parseStatementExcel(file, cfg, ctx) {
 
 const stCellInput = "w-full border border-[color:var(--cl-line)] rounded-md px-2 py-1.5 text-sm outline-none focus:border-[color:var(--cl-accent-bg)] bg-[color:var(--cl-card)] text-[color:var(--cl-text)]";
 
-function StatementForm({ cfg, initial, parties, projects, existing, payments, onCancel, onSave, onAddPayment, onDeletePayment, registry, kindWorkTypes, registryReady, onSaveParty, onAddWorkType, workItems = [], costLinkReady, units = [], unitsReady = false, onAddUnit, payCostReady = false, draft = null, wiLevels = [], levelsReady = false, onAddLevel }) {
+function StatementForm({ cfg, initial, parties, projects, existing, payments, onCancel, onSave, onAddPayment, onDeletePayment, registry, kindWorkTypes, registryReady, onSaveParty, onAddWorkType, workItems = [], costLinkReady, units = [], unitsReady = false, onAddUnit, payCostReady = false, draft = null, wiLevels = [], levelsReady = false, onAddLevel, onAddWorkItem }) {
   const src = initial || draft; // draft = مستخلص جاي من ملف إكسيل (جديد، لسه متحفظش)
   const [partyName, setPartyName] = useState(src?.partyName || "");
   const [workItemId, setWorkItemId] = useState(src?.workItemId || "");
@@ -6217,11 +6229,13 @@ function StatementForm({ cfg, initial, parties, projects, existing, payments, on
         <SelectField label="المشروع (اختياري)" value={projectId} onChange={(v) => { setProjectId(v); if (v !== projectId) { setWorkItemId(""); setWorkItemLevel(""); } }} options={[{ value: "", label: "— بدون مشروع —" }, ...projects.map((p) => ({ value: p.id, label: p.name }))]} />
         {costLinkReady && projectId && (
           <div className="col-span-4 rounded-lg bg-[color:var(--cl-inset)] border border-[color:var(--cl-sep)] p-3 grid grid-cols-4 gap-3 items-end">
-            <SelectField
+            <WorkItemSelect
               label={`بند العمل في المشروع${status === "معتمد" ? " *" : ""}`}
               value={workItemId}
               onChange={(v) => { setWorkItemId(v); if (v !== workItemId) setWorkItemLevel(""); }}
-              options={[{ value: "", label: "— اختار بند العمل —" }, ...projWorkItems.map((w) => ({ value: w.id, label: w.name }))]}
+              items={projWorkItems}
+              projectId={projectId}
+              onAddWorkItem={onAddWorkItem}
             />
             {levelsReady && (
               <div>
@@ -6456,7 +6470,7 @@ function StatementForm({ cfg, initial, parties, projects, existing, payments, on
   );
 }
 
-function StatementsModule({ kind, statements, payments, projects, dbError, onSave, onDelete, onAddPayment, onDeletePayment, registeredParties = [], workTypes = [], registryDbError, onSaveParty, onDeleteParty, onImportParties, onAddWorkType, onDeleteWorkType, workItems = [], costLinkReady = false, units = [], unitsReady = false, onAddUnit, onDeleteUnit, payCostReady = false, wiLevels = [], levelsReady = false, onAddLevel }) {
+function StatementsModule({ kind, statements, payments, projects, dbError, onSave, onDelete, onAddPayment, onDeletePayment, registeredParties = [], workTypes = [], registryDbError, onSaveParty, onDeleteParty, onImportParties, onAddWorkType, onDeleteWorkType, workItems = [], costLinkReady = false, units = [], unitsReady = false, onAddUnit, onDeleteUnit, payCostReady = false, wiLevels = [], levelsReady = false, onAddLevel , onAddWorkItem }) {
   const cfg = { ...ST_KINDS[kind], kind };
   const Icon = cfg.icon;
   const [mode, setMode] = useState("list"); // list | form | parties | registry | worktypes
@@ -6513,7 +6527,7 @@ function StatementsModule({ kind, statements, payments, projects, dbError, onSav
         cfg={cfg} initial={editing} parties={parties} projects={projects} existing={list} payments={pays} onAddPayment={onAddPayment} onDeletePayment={onDeletePayment}
         registry={registry} kindWorkTypes={kindWorkTypes} registryReady={registryReady} onSaveParty={onSaveParty} onAddWorkType={onAddWorkType}
         workItems={workItems} costLinkReady={costLinkReady} units={units} unitsReady={unitsReady} onAddUnit={onAddUnit} payCostReady={payCostReady} draft={editing ? null : draft}
-        wiLevels={wiLevels} levelsReady={levelsReady} onAddLevel={onAddLevel}
+        wiLevels={wiLevels} levelsReady={levelsReady} onAddLevel={onAddLevel} onAddWorkItem={onAddWorkItem}
         onCancel={() => { setMode("list"); setEditing(null); setDraft(null); }}
         onSave={async (st) => { const ok = await onSave(st); if (ok !== false) { setMode("list"); setEditing(null); setDraft(null); } }}
       />
@@ -7176,7 +7190,7 @@ function BulkPaymentsPanel({ ctx, onClose, onAddPayment, onAddCustody, initialRo
   );
 }
 
-function DirectPaymentsModule({ payments, custodyLines = [], statements = [], registeredParties = [], projects, workItems, wiLevels = [], levelsReady = false, onAddLevel, ready, onAddPayment, onDeletePayment, custodies = [], onAddCustody, onDeleteCustody }) {
+function DirectPaymentsModule({ payments, custodyLines = [], onAddWorkItem, statements = [], registeredParties = [], projects, workItems, wiLevels = [], levelsReady = false, onAddLevel, ready, onAddPayment, onDeletePayment, custodies = [], onAddCustody, onDeleteCustody }) {
   // العُهد بتظهر في نفس الجدول (من جدول custodies) — مش تكلفة فعلية لحد ما تتصفّى من "تصفية العهد"
   const custodyRows = useMemo(() => custodies.map((c) => ({ id: c.id, kind: "custody", partyName: c.personName, date: c.dateGiven || "", amount: Number(c.amountGiven) || 0, projectId: c.projectId, note: c.notes || "", status: c.status, isCustody: true })), [custodies]);
   const all = useMemo(() => [...payments, ...custodyRows].sort((a, b) => (b.date || "").localeCompare(a.date || "")), [payments, custodyRows]);
@@ -7369,7 +7383,7 @@ function DirectPaymentsModule({ payments, custodyLines = [], statements = [], re
               <>
                 <SelectField label="المشروع (اختياري)" value={form.projectId} onChange={(v) => set({ projectId: v, workItemId: "", workItemLevel: "" })} options={[{ value: "", label: "— بدون مشروع —" }, ...projects.map((p) => ({ value: p.id, label: p.name }))]} />
                 {form.projectId ? (
-                  <SelectField label="بند العمل *" value={form.workItemId} onChange={(v) => set({ workItemId: v, workItemLevel: "" })} options={[{ value: "", label: "— اختار بند العمل —" }, ...projWIs.map((w) => ({ value: w.id, label: w.name }))]} />
+                  <WorkItemSelect label="بند العمل *" value={form.workItemId} onChange={(v) => set({ workItemId: v, workItemLevel: "" })} items={projWIs} projectId={form.projectId} onAddWorkItem={onAddWorkItem} />
                 ) : <div className="text-[11px] text-[color:var(--cl-muted)] self-end pb-2">من غير مشروع الدفعة مش بتدخل تكاليف أي مشروع.</div>}
               </>
             )}
@@ -7752,6 +7766,36 @@ function SelectField({ label, value, onChange, options, small }) {
           <option key={o.value} value={o.value}>{o.label}</option>
         ))}
       </select>
+    </div>
+  );
+}
+
+// اختيار بند العمل + "إضافة بند عمل جديد" من نفس القايمة (من غير ما تخرج من الفورم)
+function WorkItemSelect({ label, value, onChange, items = [], projectId, onAddWorkItem, small, placeholder = "— اختار بند العمل —" }) {
+  const [adding, setAdding] = useState(false);
+  const [draft, setDraft] = useState("");
+  const cls = `w-full border border-[color:var(--cl-line)] rounded-lg px-3 ${small ? "py-1.5 text-xs" : "py-2 text-sm"} outline-none focus:border-[color:var(--cl-accent-bg)] transition bg-[color:var(--cl-card)] text-[color:var(--cl-text)]`;
+  const cancel = () => { setAdding(false); setDraft(""); };
+  const save = async () => { const w = await onAddWorkItem(projectId, draft); if (w) { onChange(w.id); cancel(); } };
+  return (
+    <div>
+      <label className="block text-[11px] font-semibold text-[color:var(--cl-soft)] mb-1">{label}</label>
+      {adding ? (
+        <div>
+          <div className="flex gap-1">
+            <input autoFocus value={draft} onChange={(e) => setDraft(e.target.value)} placeholder="اسم بند العمل الجديد" onKeyDown={(e) => { if (e.key === "Enter") save(); if (e.key === "Escape") cancel(); }} className={cls + " min-w-0"} />
+            <button type="button" onClick={save} title="حفظ" className="px-2 rounded-md bg-[color:var(--cl-accent-bg)] text-[color:var(--cl-on-accent)] text-xs font-bold shrink-0">✓</button>
+            <button type="button" onClick={cancel} title="إلغاء" className="px-1.5 rounded-md border border-[color:var(--cl-line)] text-[color:var(--cl-soft)] shrink-0"><X size={12} /></button>
+          </div>
+          <div className="text-[10px] text-[color:var(--cl-muted)] mt-0.5">الكمية والسعر تقدر تظبطهم بعدين من "الأعمال والمقايسة"</div>
+        </div>
+      ) : (
+        <select value={value || ""} onChange={(e) => (e.target.value === "__add" ? setAdding(true) : onChange(e.target.value))} className={cls}>
+          <option value="">{placeholder}</option>
+          {items.map((w) => <option key={w.id} value={w.id}>{w.name}</option>)}
+          {onAddWorkItem && projectId && <option value="__add">+ بند عمل جديد…</option>}
+        </select>
+      )}
     </div>
   );
 }
