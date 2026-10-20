@@ -36,7 +36,7 @@ const GENERAL_EXPENSE_ITEMS = [
 /* --------------------------------- helpers --------------------------------- */
 
 const money = (n) =>
-  (Math.round(n || 0)).toLocaleString("en-US") + " ج.م";
+  (Math.round(n || 0)).toLocaleString("en-US") + " EGP";
 
 const fmt = (n, d = 0) =>
   (n || 0).toLocaleString("en-US", { maximumFractionDigits: d });
@@ -297,7 +297,7 @@ function ThemeSettings() {
             {Object.entries(THEME_FONTS).map(([k, v]) => <option key={k} value={k}>{v.label}</option>)}
           </select>
           <div className="mt-2 px-3 py-2 rounded-lg bg-[color:var(--cl-sub)] border border-[color:var(--cl-sep)] text-sm" style={{ fontFamily: `${f.css}, sans-serif` }}>
-            تجربة الخط — إجمالي المستخلصات 1,250,000 ج.م
+            تجربة الخط — إجمالي المستخلصات 1,250,000 EGP
           </div>
         </div>
       )}
@@ -5555,7 +5555,7 @@ function printStatement(s, cfg, projectName, acct = { prevNet: 0, prevPaid: 0, p
   const acctRows = hasAcct
     ? `<tr><td colspan="10">(+) صافي المستخلصات السابقة المعتمدة</td><td>${stMoney(acct.prevNet)}</td></tr>
 <tr><td colspan="10">(−) السابق صرفه${acct.lastPay ? ` <span style="color:#6B7280;font-size:10px">(آخر دفعة ${stMoney(acct.lastPay.amount)} بتاريخ ${stEsc(acct.lastPay.date)})</span>` : ""}</td><td>${stMoney(stPaidTotal(acct))}</td></tr>
-<tr class="net"><td colspan="10">المستحق صرفه الآن</td><td>${stMoney(stDueNow(calc.net, acct))} ج.م</td></tr>`
+<tr class="net"><td colspan="10">المستحق صرفه الآن</td><td>${stMoney(stDueNow(calc.net, acct))} EGP</td></tr>`
     : "";
   const itemRows = s.items.map((it, i) => `<tr><td>${i + 1}</td><td>${stEsc(it.desc)}</td><td>${stEsc(it.unit)}</td><td>${stQty(stPrevQty(it))}</td><td>${stQty(stCurQty(it))}</td><td>${stQty(stTotalQty(it))}</td><td>${stMoney(it.price)}</td><td>${stMoney(stPrev(it))}٪</td><td>${stMoney(stCur(it))}٪</td><td>${stMoney(stTotalPct(it))}٪</td><td>${stMoney(stTotalValue(it))}</td></tr>`).join("");
   const adjRows = s.adjustments.map((a, i) => `<tr><td colspan="10">${stEsc(a.name)} ${a.kind === "percent" ? `(${stEsc(a.value)}٪ ${a.base === "running" ? "من الإجمالي بعد السابق" : "من إجمالي الأعمال"})` : ""}</td><td>${a.effect === "add" ? "+" : "−"} ${stMoney(calc.adjAmounts[i])}</td></tr>`).join("");
@@ -5583,7 +5583,7 @@ ${itemRows}
 <tr><td colspan="10">(−) أعمال المستخلصات السابقة</td><td>${stMoney(calc.prevValue)}</td></tr>
 <tr><td colspan="10"><b>أعمال هذا المستخلص</b></td><td><b>${stMoney(calc.subtotal)}</b></td></tr>
 ${adjRows}
-<tr class="net"><td colspan="10">${hasAcct ? "صافي هذا المستخلص" : "صافي المستحق"}</td><td>${stMoney(calc.net)} ج.م</td></tr>
+<tr class="net"><td colspan="10">${hasAcct ? "صافي هذا المستخلص" : "صافي المستحق"}</td><td>${stMoney(calc.net)} EGP</td></tr>
 ${acctRows}
 </tbody></table>
 <p><b>نسبة التنفيذ الإجمالية:</b> ${stMoney(calc.totalProgress)}٪ (السابق ${stMoney(calc.prevProgress)}٪ + الحالي ${stMoney(calc.progress)}٪)</p>
@@ -6255,8 +6255,8 @@ function StatementForm({ cfg, initial, parties, projects, existing, payments, on
             <div className={`${levelsReady ? "col-span-2" : "col-span-3"} text-[12px] text-[color:var(--cl-soft)] leading-relaxed`}>
               {status === "معتمد"
                 ? (payCostReady
-                  ? <>لما تحفظ، <b>أعمال هذا المستخلص ({stMoney(calc.subtotal)} ج.م)</b> هتدخل في <b>إجمالي تكلفة المشروع</b> كمستحق لـ{cfg.partyLabel}، وكل دفعة تتصرف له بتنزل في <b>التكاليف الفعلية</b> على بند العمل ده وتقلل المستحق.</>
-                  : <>لما تحفظ، <b>أعمال هذا المستخلص ({stMoney(calc.subtotal)} ج.م)</b> هتتسجّل تلقائي كتكلفة <b>{cfg.kind === "supplier" ? "مشتريات" : "مصنعيات"}</b> على بند العمل ده في تكاليف المشروع.</>)
+                  ? <>لما تحفظ، <b>أعمال هذا المستخلص ({stMoney(calc.subtotal)} EGP)</b> هتدخل في <b>إجمالي تكلفة المشروع</b> كمستحق لـ{cfg.partyLabel}، وكل دفعة تتصرف له بتنزل في <b>التكاليف الفعلية</b> على بند العمل ده وتقلل المستحق.</>
+                  : <>لما تحفظ، <b>أعمال هذا المستخلص ({stMoney(calc.subtotal)} EGP)</b> هتتسجّل تلقائي كتكلفة <b>{cfg.kind === "supplier" ? "مشتريات" : "مصنعيات"}</b> على بند العمل ده في تكاليف المشروع.</>)
                 : <>المستخلص لسه <b>مسودة</b> — مش هيتسجّل كتكلفة على المشروع غير لما تخلّيه <b>معتمد</b>.</>}
               {projWorkItems.length === 0 && <span className="block text-[color:var(--cl-red)]">المشروع ده مفيهوش بنود أعمال — ضيف بند من تبويب "بنود الأعمال" الأول.</span>}
             </div>
@@ -6456,7 +6456,7 @@ function StatementForm({ cfg, initial, parties, projects, existing, payments, on
                 </td>
                 <td className="py-2.5 px-4 mono text-[color:var(--cl-red)]">{stMoney(stPaidTotal(acct))}</td>
               </tr>
-              <tr className="bg-[color:var(--cl-inset)]"><td className="py-2.5 px-4 font-bold text-[color:var(--cl-text)]">المستحق صرفه الآن</td><td className="py-2.5 px-4 mono font-bold text-[color:var(--cl-text)]">{stMoney(dueNow)} ج.م</td></tr>
+              <tr className="bg-[color:var(--cl-inset)]"><td className="py-2.5 px-4 font-bold text-[color:var(--cl-text)]">المستحق صرفه الآن</td><td className="py-2.5 px-4 mono font-bold text-[color:var(--cl-text)]">{stMoney(dueNow)} EGP</td></tr>
             </tbody>
           </table>
         </div>
@@ -6466,12 +6466,12 @@ function StatementForm({ cfg, initial, parties, projects, existing, payments, on
         <div className="flex items-center gap-8">
           <div>
             <div className="text-[11px] text-white/50 mb-1">{hasAcct ? "صافي هذا المستخلص" : "صافي المستحق"}</div>
-            <div className="font-bold mono text-2xl">{stMoney(calc.net)} ج.م</div>
+            <div className="font-bold mono text-2xl">{stMoney(calc.net)} EGP</div>
           </div>
           {hasAcct && (
             <div className="border-r border-white/15 pr-8">
               <div className="text-[11px] text-white/50 mb-1">المستحق صرفه الآن</div>
-              <div className={`font-bold mono text-2xl ${dueNow > 0 ? "text-[#E8AA6C]" : "text-white"}`}>{stMoney(dueNow)} ج.م</div>
+              <div className={`font-bold mono text-2xl ${dueNow > 0 ? "text-[#E8AA6C]" : "text-white"}`}>{stMoney(dueNow)} EGP</div>
             </div>
           )}
         </div>
@@ -6609,15 +6609,15 @@ function StatementsModule({ kind, statements, payments, projects, dbError, onSav
       <div className="grid grid-cols-3 gap-3">
         <div className="bg-[color:var(--cl-card)] rounded-xl border border-[color:var(--cl-line)] p-4">
           <div className="text-[11px] text-[color:var(--cl-muted)] mb-1">إجمالي صافي المستخلصات</div>
-          <div className="font-bold mono text-lg text-[color:var(--cl-text)]">{stMoney(grandTotal)} ج.م</div>
+          <div className="font-bold mono text-lg text-[color:var(--cl-text)]">{stMoney(grandTotal)} EGP</div>
         </div>
         <div className="bg-[color:var(--cl-card)] rounded-xl border border-[color:var(--cl-line)] p-4">
           <div className="text-[11px] text-[color:var(--cl-muted)] mb-1">المدفوع</div>
-          <div className="font-bold mono text-lg text-[color:var(--cl-green)]">{stMoney(grandPaid)} ج.م</div>
+          <div className="font-bold mono text-lg text-[color:var(--cl-green)]">{stMoney(grandPaid)} EGP</div>
         </div>
         <div className="bg-[color:var(--cl-ink)] rounded-xl p-4 text-white">
           <div className="text-[11px] text-white/50 mb-1">المتبقي</div>
-          <div className={`font-bold mono text-lg ${grandRemaining > 0 ? "text-[#E8AA6C]" : "text-white"}`}>{stMoney(grandRemaining)} ج.م</div>
+          <div className={`font-bold mono text-lg ${grandRemaining > 0 ? "text-[#E8AA6C]" : "text-white"}`}>{stMoney(grandRemaining)} EGP</div>
         </div>
       </div>
 
@@ -7074,7 +7074,7 @@ function BulkPaymentsPanel({ ctx, onClose, onAddPayment, onAddCustody, initialRo
     }
     setSaving(false);
     setRows([bpNewRow()]);
-    setMsg(`✓ اتحفظ ${done} دفعة بإجمالي ${stMoney(checked.reduce((s, r) => s + Number(r.amount), 0))} ج.م`);
+    setMsg(`✓ اتحفظ ${done} دفعة بإجمالي ${stMoney(checked.reduce((s, r) => s + Number(r.amount), 0))} EGP`);
   };
 
   return (
@@ -7197,7 +7197,7 @@ function BulkPaymentsPanel({ ctx, onClose, onAddPayment, onAddCustody, initialRo
       </div>
       <div className="px-4 py-3 flex items-center gap-3 border-t border-[color:var(--cl-sep)]">
         <button onClick={() => setRows((rs) => [...rs, bpNewRow({ kind: rs[rs.length - 1]?.kind || "other", date: rs[rs.length - 1]?.date || stToday() })])} className="px-3 py-1.5 rounded-lg bg-[color:var(--cl-ink)] text-white text-xs font-semibold flex items-center gap-1 hover:bg-[color:var(--cl-ink-hover)]"><Plus size={13} /> سطر</button>
-        <span className="text-[12px] text-[color:var(--cl-soft)]">{valid.length} دفعة — الإجمالي <b className="mono text-[color:var(--cl-text)]">{stMoney(total)}</b> ج.م</span>
+        <span className="text-[12px] text-[color:var(--cl-soft)]">{valid.length} دفعة — الإجمالي <b className="mono text-[color:var(--cl-text)]">{stMoney(total)}</b> EGP</span>
         {msg && <span className={`text-[12px] ${msg.startsWith("✓") ? "text-[color:var(--cl-green)]" : "text-[color:var(--cl-red)]"}`}>{msg}</span>}
         <button disabled={saving} onClick={saveAll} className="mr-auto px-5 py-2 rounded-lg bg-[color:var(--cl-accent-bg)] text-[color:var(--cl-on-accent)] text-sm font-bold hover:bg-[color:var(--cl-accent-hover)] disabled:opacity-60 flex items-center gap-1.5">{saving && <Loader2 size={14} className="animate-spin" />} حفظ الكل</button>
       </div>
@@ -7430,12 +7430,12 @@ function DirectPaymentsModule({ payments, custodyLines = [], onAddWorkItem, stat
       <div className="grid grid-cols-5 gap-3">
         <div className="bg-[color:var(--cl-ink)] rounded-xl p-4 text-white">
           <div className="text-[11px] text-white/50 mb-1">إجمالي المدفوعات</div>
-          <div className="font-bold mono text-lg">{stMoney(all.reduce((s, p) => s + p.amount, 0))} ج.م</div>
+          <div className="font-bold mono text-lg">{stMoney(all.reduce((s, p) => s + p.amount, 0))} EGP</div>
         </div>
         {DP_TYPES.map((t) => (
           <div key={t.k} className="bg-[color:var(--cl-card)] rounded-xl border border-[color:var(--cl-line)] p-4">
             <div className="text-[11px] text-[color:var(--cl-muted)] mb-1">{t.k === "other" ? "مصروفات (استشاري / مرتبات)" : t.plural}</div>
-            <div className="font-bold mono text-lg text-[color:var(--cl-text)]">{stMoney(sumKind(t.k))} ج.م</div>
+            <div className="font-bold mono text-lg text-[color:var(--cl-text)]">{stMoney(sumKind(t.k))} EGP</div>
           </div>
         ))}
       </div>
