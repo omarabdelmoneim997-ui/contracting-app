@@ -960,6 +960,13 @@ function ContractingApp({ currentUsername, onLogout }) {
     setCustodies((prev) => prev.map((c) => (c.id === id ? { ...c, status: "مصفاة" } : c)));
   }
 
+  // إعادة فتح عهدة اتقفلت — عشان تضيف بنود تصفية تاني وتقفلها بعدين
+  async function reopenCustody(id) {
+    const { error } = await supabase.from("custodies").update({ status: "مفتوحة" }).eq("id", id);
+    if (error) { alert("حصل خطأ أثناء إعادة فتح العهدة: " + error.message); return; }
+    setCustodies((prev) => prev.map((c) => (c.id === id ? { ...c, status: "مفتوحة" } : c)));
+  }
+
   async function addCustodyCategory(cat) {
     const { error } = await supabase.from("custody_categories").insert([{ id: cat.id, name: cat.name }]);
     if (error) { alert("حصل خطأ أثناء إضافة التصنيف (ربما تصنيف بنفس الاسم موجود بالفعل): " + error.message); return; }
@@ -1456,6 +1463,7 @@ function ContractingApp({ currentUsername, onLogout }) {
               onUpdateCustody={updateCustody}
               onDeleteCustody={deleteCustody}
               onSettleCustody={settleCustody}
+              onReopenCustody={reopenCustody}
               onAddCost={addCost}
               onAddCostsBulk={addCostsBulk}
               onUpdateCost={updateCost}
@@ -5079,7 +5087,7 @@ function PersonLedger({ person, transactions, onBack, onAddTransaction, onUpdate
 
 function CustodyTab({
   pCustodies, pCosts, pWorkItems, custodyCategories, activeProjectId,
-  onAddCustody, onUpdateCustody, onDeleteCustody, onSettleCustody,
+  onAddCustody, onUpdateCustody, onDeleteCustody, onSettleCustody, onReopenCustody,
   onAddCost, onAddCostsBulk, onUpdateCost, onDeleteCost, onAddCategory, onDeleteCategory, wiLevels = [], onAddLevel,
 }) {
   const [selectedId, setSelectedId] = useState(null);
@@ -5126,6 +5134,7 @@ function CustodyTab({
         onUpdateCost={onUpdateCost}
         onDeleteCost={onDeleteCost}
         onSettleCustody={onSettleCustody}
+        onReopenCustody={onReopenCustody}
         wiLevels={wiLevels}
         onAddLevel={onAddLevel}
       />
@@ -5258,7 +5267,7 @@ let csSeq = 0;
 const csNewRow = (date = "") => ({ key: "cs" + ++csSeq, workItemId: "", level: "", category: "", customCategory: "", detail: "", date, qty: "1", price: "" });
 const csTotal = (r) => (Number(r.qty) || 0) * (Number(r.price) || 0);
 
-function CustodySettlement({ custody, lines, pWorkItems, custodyCategories, activeProjectId, onBack, onAddCost, onAddCostsBulk, onUpdateCost, onDeleteCost, onSettleCustody, wiLevels = [], onAddLevel }) {
+function CustodySettlement({ custody, lines, pWorkItems, custodyCategories, activeProjectId, onBack, onAddCost, onAddCostsBulk, onUpdateCost, onDeleteCost, onSettleCustody, onReopenCustody, wiLevels = [], onAddLevel }) {
   const [open, setOpen] = useState(false);
   const [editId, setEditId] = useState(null);
   const [form, setForm] = useState({ workItemId: "", level: "", category: "", customCategory: "", qty: "1", price: "", date: "", detail: "" });
@@ -5354,7 +5363,7 @@ function CustodySettlement({ custody, lines, pWorkItems, custodyCategories, acti
   const remaining = custody.amountGiven - totalSettled;
 
   const finalize = () => {
-    if (!window.confirm("متأكد إنك عايز تقفل تصفية العهدة دي نهائيًا؟ مش هتقدر تضيف بنود جديدة بعد كده.")) return;
+    if (!window.confirm("متأكد إنك عايز تقفل تصفية العهدة دي؟ لو احتجت تضيف بنود بعد كده، تقدر تفتحها تاني من زرار \"إعادة فتح العهدة\".")) return;
     onSettleCustody(custody.id);
   };
 
@@ -5562,10 +5571,19 @@ function CustodySettlement({ custody, lines, pWorkItems, custodyCategories, acti
         </table>
       </div>
 
+      {isLocked && onReopenCustody && (
+        <div className="flex flex-wrap items-center justify-between gap-3 rounded-xl border border-[color:var(--cl-line)] bg-[color:var(--cl-inset)] px-4 py-3">
+          <div className="text-sm text-[color:var(--cl-soft)]">العهدة دي <b className="text-[color:var(--cl-green)]">مصفاة</b> ومقفولة. لو لسه فيه مصروفات منها محتاج تسجّلها، افتحها تاني وكمّل التصفية وبعدين اقفلها.</div>
+          <button onClick={() => { if (window.confirm("تفتح العهدة دي تاني عشان تضيف بنود تصفية؟")) onReopenCustody(custody.id); }} className="px-4 py-2 rounded-lg border border-[color:var(--cl-accent-bg)] text-[color:var(--cl-accent)] text-sm font-semibold hover:bg-[color:rgb(var(--cl-accent-rgb)/0.08)] transition flex items-center gap-2">
+            <RotateCcw size={15} /> إعادة فتح العهدة
+          </button>
+        </div>
+      )}
+
       {!isLocked && (
         <div className="flex justify-end">
           <button onClick={finalize} className="px-5 py-2.5 rounded-lg bg-[#3F7D63] text-white font-semibold hover:bg-[#356B54] transition flex items-center gap-2">
-            <CheckCircle2 size={16} /> إنهاء وتصفية العهدة نهائيًا
+            <CheckCircle2 size={16} /> إنهاء وتصفية العهدة
           </button>
         </div>
       )}
