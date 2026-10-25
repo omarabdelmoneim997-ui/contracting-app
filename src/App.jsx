@@ -1462,6 +1462,8 @@ function ContractingApp({ currentUsername, onLogout }) {
               onDeleteCost={deleteCost}
               onAddCategory={addCustodyCategory}
               onDeleteCategory={deleteCustodyCategory}
+              wiLevels={wiLevels}
+              onAddLevel={addLevel}
             />
           )}
           {tab === "treasury" && (
@@ -2326,23 +2328,45 @@ function CustodyReport({ s }) {
   const spent = rSum(lines, lineTotal);
   const left = received - spent;
 
-  // حسب البند ← البند الفرعي
-  const byItem = new Map();
-  lines.forEach((l) => {
-    const k = l.workItemId || "_none";
-    if (!byItem.has(k)) byItem.set(k, []);
-    byItem.get(k).push(l);
-  });
-  const groups = [...byItem.entries()].map(([k, ls]) => ({ key: k, name: itemName(k === "_none" ? null : k), lines: ls, total: rSum(ls, lineTotal) })).sort((a, b) => b.total - a.total);
-  const itemRows = [];
-  groups.forEach((g) => {
-    itemRows.push({ className: "bg-[color:var(--cl-inset)] font-bold", cells: [g.name, g.lines.length, fmt(g.total), rPct(spent > 0 ? (g.total / spent) * 100 : null)] });
-    const byLv = new Map();
-    g.lines.forEach((l) => { const lv = (l.costLevel1 || "").trim(); if (lv) byLv.set(lv, [...(byLv.get(lv) || []), l]); });
-    [...byLv.entries()].sort((a, b) => rSum(b[1], lineTotal) - rSum(a[1], lineTotal)).forEach(([lv, ls]) => {
-      itemRows.push({ cells: [<span className="pr-4 text-[color:var(--cl-soft)]">↳ {lv}</span>, ls.length, fmt(rSum(ls, lineTotal)), ""] });
+  // شجرة: البند ← البنود الفرعية (بأي عمق) ← بنود التصفية — كل مستوى بإجمالي اللي تحته
+  const tree = useMemo(() => {
+    const root = { key: "root", children: new Map(), lines: [] };
+    lines.forEach((l) => {
+      const wk = l.workItemId || "_none";
+      if (!root.children.has(wk)) root.children.set(wk, { key: wk, label: itemName(l.workItemId), children: new Map(), lines: [] });
+      let node = root.children.get(wk);
+      const parts = String(l.costLevel1 || "").split(LV_SEP).map((x) => x.trim()).filter(Boolean);
+      parts.forEach((part, i) => {
+        const key = node.key + "›" + part;
+        if (!node.children.has(part)) node.children.set(part, { key, label: part, children: new Map(), lines: [] });
+        node = node.children.get(part);
+      });
+      node.lines.push(l);
     });
+    const finish = (n, depth) => {
+      const kids = [...n.children.values()].map((c) => finish(c, depth + 1));
+      const total = rSum(kids, (c) => c.total) + rSum(n.lines, lineTotal);
+      const count = rSum(kids, (c) => c.count) + n.lines.length;
+      return { ...n, depth, kids: kids.sort((a, b) => b.total - a.total), total, count };
+    };
+    return finish(root, -1).kids;
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [lines, s.works]);
+  const [openKeys, setOpenKeys] = useState(() => new Set());
+  const toggle = (k) => setOpenKeys((p) => { const n = new Set(p); n.has(k) ? n.delete(k) : n.add(k); return n; });
+  const allKeys = [];
+  const collect = (ns) => ns.forEach((n) => { allKeys.push(n.key); collect(n.kids); });
+  collect(tree);
+  const treeRows = [];
+  const walk = (ns) => ns.forEach((n) => {
+    const hasKids = n.kids.length > 0 || n.lines.length > 0;
+    treeRows.push({ type: "node", n, hasKids, open: openKeys.has(n.key) });
+    if (openKeys.has(n.key)) {
+      walk(n.kids);
+      [...n.lines].sort((a, b) => rDay(a.date).localeCompare(rDay(b.date))).forEach((l) => treeRows.push({ type: "line", l, depth: n.depth + 1 }));
+    }
   });
+  walk(tree);
 
   // كل صاحب عهدة (لما مفيش اختيار)
   const personRows = persons.map((p) => {
@@ -2387,13 +2411,56 @@ function CustodyReport({ s }) {
           </RptSection>
         )}
 
-        <RptSection title="المصروف حسب البند" hint="كل بند عمل اتصرف عليه من العهدة، وتحته البنود الفرعية لو متسجّلة.">
-          <RptTable
-            heads={[{ label: "البند" }, { label: "عدد البنود", num: true }, { label: "المصروف", num: true }, { label: "النسبة", num: true }]}
-            rows={itemRows}
-            footer={["الإجمالي", lines.length, fmt(spent), spent > 0 ? "100٪" : "—"]}
-            empty="لا توجد بنود تصفية في الفترة دي"
-          />
+        <RptSection title="المصروف حسب البند" hint="دوس على + جنب البند عشان يفتح البنود الفرعية اللي تحته، وآخر مستوى بيفتح بنود التصفية نفسها.">
+          <div className="no-print flex gap-2 -mt-1 mb-1">
+            <button onClick={() => setOpenKeys(new Set(allKeys))} className="px-2.5 py-1 rounded-md border border-[color:var(--cl-line)] text-[11px] font-semibold text-[color:var(--cl-soft)] hover:bg-[color:var(--cl-inset)]">فتح الكل</button>
+            <button onClick={() => setOpenKeys(new Set())} className="px-2.5 py-1 rounded-md border border-[color:var(--cl-line)] text-[11px] font-semibold text-[color:var(--cl-soft)] hover:bg-[color:var(--cl-inset)]">قفل الكل</button>
+          </div>
+          <div className="border border-[color:var(--cl-line)] rounded-lg overflow-hidden">
+            <table className="w-full text-[12px]">
+              <thead className="bg-[color:var(--cl-ink)] text-white">
+                <tr>
+                  <th className="text-right py-2 px-3 font-semibold">البند / البند الفرعي</th>
+                  <th className="text-right py-2 px-3 font-semibold w-24">عدد البنود</th>
+                  <th className="text-right py-2 px-3 font-semibold w-32">المصروف</th>
+                  <th className="text-right py-2 px-3 font-semibold w-20">النسبة</th>
+                </tr>
+              </thead>
+              <tbody className="divide-y divide-[color:var(--cl-sep)]">
+                {treeRows.length === 0 && <tr><td colSpan={4} className="py-6 text-center text-[color:var(--cl-muted)]">لا توجد بنود تصفية في الفترة دي</td></tr>}
+                {treeRows.map((r) => r.type === "node" ? (
+                  <tr key={r.n.key} className={r.n.depth === 0 ? "bg-[color:var(--cl-inset)] font-bold" : ""}>
+                    <td className="py-2 px-3" style={{ paddingRight: 12 + r.n.depth * 22 }}>
+                      <span className="inline-flex items-center gap-1.5">
+                        {r.hasKids ? (
+                          <button onClick={() => toggle(r.n.key)} title={r.open ? "قفل" : "فتح اللي تحته"} className="w-5 h-5 rounded border border-[color:var(--cl-line)] bg-[color:var(--cl-card)] text-[color:var(--cl-accent)] font-bold leading-none flex items-center justify-center hover:border-[color:var(--cl-accent-bg)]">{r.open ? "−" : "+"}</button>
+                        ) : <span className="w-5" />}
+                        <span className={r.n.depth === 0 ? "text-[color:var(--cl-text)]" : "text-[color:var(--cl-soft)] font-semibold"}>{r.n.label}</span>
+                      </span>
+                    </td>
+                    <td className="py-2 px-3 mono">{r.n.count}</td>
+                    <td className="py-2 px-3 mono font-bold">{fmt(r.n.total)}</td>
+                    <td className="py-2 px-3 mono">{r.n.depth === 0 ? rPct(spent > 0 ? (r.n.total / spent) * 100 : null) : ""}</td>
+                  </tr>
+                ) : (
+                  <tr key={r.l.id} className="text-[color:var(--cl-soft)]">
+                    <td className="py-1.5 px-3" style={{ paddingRight: 12 + r.depth * 22 + 26 }}>
+                      <span className="mono text-[10px] text-[color:var(--cl-muted)]">{rDay(r.l.date)}</span> · {r.l.desc}
+                      <span className="mono text-[10px] text-[color:var(--cl-muted)]"> ({fmt(r.l.qty, 2)} × {fmt(r.l.price, 2)})</span>
+                    </td>
+                    <td className="py-1.5 px-3" />
+                    <td className="py-1.5 px-3 mono">{fmt(lineTotal(r.l))}</td>
+                    <td className="py-1.5 px-3" />
+                  </tr>
+                ))}
+              </tbody>
+              {treeRows.length > 0 && (
+                <tfoot className="bg-[color:var(--cl-inset)] font-bold">
+                  <tr><td className="py-2 px-3">الإجمالي</td><td className="py-2 px-3 mono">{lines.length}</td><td className="py-2 px-3 mono">{fmt(spent)}</td><td className="py-2 px-3 mono">{spent > 0 ? "100٪" : "—"}</td></tr>
+                </tfoot>
+              )}
+            </table>
+          </div>
         </RptSection>
 
         {who && (
@@ -5013,7 +5080,7 @@ function PersonLedger({ person, transactions, onBack, onAddTransaction, onUpdate
 function CustodyTab({
   pCustodies, pCosts, pWorkItems, custodyCategories, activeProjectId,
   onAddCustody, onUpdateCustody, onDeleteCustody, onSettleCustody,
-  onAddCost, onAddCostsBulk, onUpdateCost, onDeleteCost, onAddCategory, onDeleteCategory,
+  onAddCost, onAddCostsBulk, onUpdateCost, onDeleteCost, onAddCategory, onDeleteCategory, wiLevels = [], onAddLevel,
 }) {
   const [selectedId, setSelectedId] = useState(null);
   const [open, setOpen] = useState(false);
@@ -5059,6 +5126,8 @@ function CustodyTab({
         onUpdateCost={onUpdateCost}
         onDeleteCost={onDeleteCost}
         onSettleCustody={onSettleCustody}
+        wiLevels={wiLevels}
+        onAddLevel={onAddLevel}
       />
     );
   }
@@ -5186,13 +5255,13 @@ const csDesc = (r) => {
   return cat ? (det ? `${cat} - ${det}` : cat) : det;
 };
 let csSeq = 0;
-const csNewRow = (date = "") => ({ key: "cs" + ++csSeq, workItemId: "", category: "", customCategory: "", detail: "", date, qty: "1", price: "" });
+const csNewRow = (date = "") => ({ key: "cs" + ++csSeq, workItemId: "", level: "", category: "", customCategory: "", detail: "", date, qty: "1", price: "" });
 const csTotal = (r) => (Number(r.qty) || 0) * (Number(r.price) || 0);
 
-function CustodySettlement({ custody, lines, pWorkItems, custodyCategories, activeProjectId, onBack, onAddCost, onAddCostsBulk, onUpdateCost, onDeleteCost, onSettleCustody }) {
+function CustodySettlement({ custody, lines, pWorkItems, custodyCategories, activeProjectId, onBack, onAddCost, onAddCostsBulk, onUpdateCost, onDeleteCost, onSettleCustody, wiLevels = [], onAddLevel }) {
   const [open, setOpen] = useState(false);
   const [editId, setEditId] = useState(null);
-  const [form, setForm] = useState({ workItemId: "", category: "", customCategory: "", qty: "1", price: "", date: "", detail: "" });
+  const [form, setForm] = useState({ workItemId: "", level: "", category: "", customCategory: "", qty: "1", price: "", date: "", detail: "" });
   // إضافة كذا بند مرة واحدة
   const [rows, setRows] = useState(() => [csNewRow(stToday())]);
   const [bulkErr, setBulkErr] = useState("");
@@ -5213,6 +5282,7 @@ function CustodySettlement({ custody, lines, pWorkItems, custodyCategories, acti
       id: "c_" + Math.random().toString(36).slice(2, 8) + Date.now().toString(36).slice(-3),
       projectId: activeProjectId,
       workItemId: r.workItemId || null,
+      costLevel1: r.workItemId ? r.level || "" : "",
       custodyId: custody.id,
       type: r.workItemId ? "مصروفات" : "مصروفات عمومية",
       desc: csDesc(r),
@@ -5228,7 +5298,7 @@ function CustodySettlement({ custody, lines, pWorkItems, custodyCategories, acti
 
   const isLocked = custody.status === "مصفاة";
 
-  const resetForm = () => setForm({ workItemId: "", category: "", customCategory: "", qty: "1", price: "", date: "", detail: "" });
+  const resetForm = () => setForm({ workItemId: "", level: "", category: "", customCategory: "", qty: "1", price: "", date: "", detail: "" });
 
   const categoryName = form.category === "__custom__" ? form.customCategory : form.category;
   const finalDesc = categoryName ? (form.detail ? `${categoryName} - ${form.detail}` : categoryName) : form.detail;
@@ -5239,6 +5309,7 @@ function CustodySettlement({ custody, lines, pWorkItems, custodyCategories, acti
       onUpdateCost(editId, {
         type: form.workItemId ? "مصروفات" : "مصروفات عمومية",
         workItemId: form.workItemId || null,
+        costLevel1: form.workItemId ? form.level || "" : "",
         desc: finalDesc,
         qty: Number(form.qty),
         unit: "-",
@@ -5251,6 +5322,7 @@ function CustodySettlement({ custody, lines, pWorkItems, custodyCategories, acti
         id: "c_" + Math.random().toString(36).slice(2, 8),
         projectId: activeProjectId,
         workItemId: form.workItemId || null,
+        costLevel1: form.workItemId ? form.level || "" : "",
         custodyId: custody.id,
         type: form.workItemId ? "مصروفات" : "مصروفات عمومية",
         desc: finalDesc,
@@ -5266,7 +5338,7 @@ function CustodySettlement({ custody, lines, pWorkItems, custodyCategories, acti
 
   const startEdit = (c) => {
     setEditId(c.id);
-    setForm({ workItemId: c.workItemId || "", category: "", customCategory: "", qty: String(c.qty), price: String(c.price), date: c.date, detail: c.desc });
+    setForm({ workItemId: c.workItemId || "", level: c.costLevel1 || "", category: "", customCategory: "", qty: String(c.qty), price: String(c.price), date: c.date, detail: c.desc });
     setOpen(true);
   };
 
@@ -5337,6 +5409,7 @@ function CustodySettlement({ custody, lines, pWorkItems, custodyCategories, acti
                     <th className="text-right font-semibold pb-1.5 w-8">#</th>
                     <th className="text-right font-semibold pb-1.5 px-1 w-40">التاريخ</th>
                     <th className="text-right font-semibold pb-1.5 px-1">بند العمل (اختياري)</th>
+                    <th className="text-right font-semibold pb-1.5 px-1">البند الفرعي</th>
                     <th className="text-right font-semibold pb-1.5 px-1">التصنيف</th>
                     <th className="text-right font-semibold pb-1.5 px-1">التفاصيل</th>
                     <th className="text-right font-semibold pb-1.5 px-1 w-20">العدد</th>
@@ -5351,10 +5424,15 @@ function CustodySettlement({ custody, lines, pWorkItems, custodyCategories, acti
                       <td className="py-1 text-[11px] text-[color:var(--cl-muted)] mono pt-3">{i + 1}</td>
                       <td className="py-1 px-1"><DateInput value={r.date} onChange={(v) => updRow(r.key, { date: v })} /></td>
                       <td className="py-1 px-1">
-                        <select className={cell} value={r.workItemId} onChange={(e) => updRow(r.key, { workItemId: e.target.value })}>
+                        <select className={cell} value={r.workItemId} onChange={(e) => updRow(r.key, { workItemId: e.target.value, level: "" })}>
                           <option value="">— غير مرتبط ببند —</option>
                           {pWorkItems.map((w) => <option key={w.id} value={w.id}>{w.name}</option>)}
                         </select>
+                      </td>
+                      <td className="py-1 px-1 min-w-[170px]">
+                        {r.workItemId
+                          ? <LevelSelect value={r.level} onChange={(v) => updRow(r.key, { level: v })} levels={wiLevels} workItemId={r.workItemId} onAddLevel={onAddLevel} />
+                          : <div className="text-[11px] text-[color:var(--cl-muted)] pt-2.5">اختار البند الأول</div>}
                       </td>
                       <td className="py-1 px-1">
                         <select className={cell} value={r.category} onChange={(e) => updRow(r.key, { category: e.target.value })}>
@@ -5406,9 +5484,15 @@ function CustodySettlement({ custody, lines, pWorkItems, custodyCategories, acti
           <SelectField
             label="بند العمل (اختياري)"
             value={form.workItemId}
-            onChange={(v) => setForm((f) => ({ ...f, workItemId: v }))}
+            onChange={(v) => setForm((f) => ({ ...f, workItemId: v, level: v === f.workItemId ? f.level : "" }))}
             options={[{ value: "", label: "— غير مرتبط ببند —" }, ...pWorkItems.map((w) => ({ value: w.id, label: w.name }))]}
           />
+          {form.workItemId && (
+            <div>
+              <label className="block text-[11px] font-semibold text-[color:var(--cl-soft)] mb-1">البند الفرعي</label>
+              <LevelSelect value={form.level} onChange={(v) => setForm((f) => ({ ...f, level: v }))} levels={wiLevels} workItemId={form.workItemId} onAddLevel={onAddLevel} />
+            </div>
+          )}
           <SelectField
             label="تصنيف عام (لو مفيش بند عمل)"
             value={form.category}
@@ -5457,7 +5541,7 @@ function CustodySettlement({ custody, lines, pWorkItems, custodyCategories, acti
               <tr key={c.id} className="hover:bg-[color:var(--cl-sub)] transition group">
                 <td className="py-3 px-4 mono text-[color:var(--cl-text)]">{c.date}</td>
                 <td className="py-3 px-4 text-[color:var(--cl-soft)]">{c.desc}</td>
-                <td className="py-3 px-4 text-[color:var(--cl-soft)]">{pWorkItems.find((w) => w.id === c.workItemId)?.name || "—"}</td>
+                <td className="py-3 px-4 text-[color:var(--cl-soft)]">{pWorkItems.find((w) => w.id === c.workItemId)?.name || "—"}{c.costLevel1 && <span className="block text-[11px] text-[color:var(--cl-muted)]">{c.costLevel1}</span>}</td>
                 <td className="py-3 px-4 mono text-[color:var(--cl-soft)]">{fmt(c.qty, 2)}</td>
                 <td className="py-3 px-4 mono text-[color:var(--cl-soft)]">{fmt(c.price, 2)}</td>
                 <td className="py-3 px-4 mono font-bold">{money(c.qty * c.price)}</td>
