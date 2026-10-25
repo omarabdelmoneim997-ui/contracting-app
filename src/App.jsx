@@ -1530,6 +1530,7 @@ const REPORT_LIST = [
   { key: "extracts", title: "تقرير المستخلصات والتحصيلات", desc: "إجمالي المستخلصات والمحصل والمتبقي ونسبة التحصيل لكل مستخلص.", icon: FileCheck2 },
   { key: "treasury", title: "تقرير الخزينة والسيولة", desc: "الرصيد الحالي، المقبوضات والمدفوعات، التمويلات والسداد، وصافي حركة النقد.", icon: Vault },
   { key: "financing", title: "تقرير التمويلات والسلف", desc: "إجمالي التمويلات والسداد والرصيد المستحق وكشف حساب لكل ممول.", icon: HandCoins },
+  { key: "custody", title: "تقرير العُهد", desc: "لكل صاحب عهدة: إجمالي اللي استلمه واللي صرفه والمتبقي معاه، والمصروف حسب كل بند.", icon: Landmark },
   { key: "items", title: "تقرير البنود", desc: "كل بند رئيسي وتحته تفاصيل التكلفة ومستوى التكلفة الأول والثاني.", icon: Layers },
 ];
 
@@ -2310,6 +2311,120 @@ function PaidCostsReport({ s }) {
   );
 }
 
+/* -------- تقرير العُهد (لكل صاحب عهدة) -------- */
+function CustodyReport({ s }) {
+  const persons = useMemo(() => Array.from(new Set(s.custodies.map((c) => (c.personName || "").trim()).filter(Boolean))).sort((a, b) => a.localeCompare(b, "ar")), [s.custodies]);
+  const [person, setPerson] = useState("");
+  const who = person && persons.includes(person) ? person : "";
+  const lineTotal = (l) => (Number(l.qty) || 0) * (Number(l.price) || 0);
+  const itemName = (id) => (id ? s.works.find((w) => w.id === id)?.name || "بند محذوف" : "غير مرتبط ببند");
+
+  const cus = s.custodies.filter((c) => !who || (c.personName || "").trim() === who);
+  const cusIds = new Set(cus.map((c) => c.id));
+  const lines = s.custodyLines.filter((l) => cusIds.has(l.custodyId));
+  const received = rSum(cus.filter((c) => s.inRange(c.dateGiven)), (c) => Number(c.amountGiven) || 0);
+  const spent = rSum(lines, lineTotal);
+  const left = received - spent;
+
+  // حسب البند ← البند الفرعي
+  const byItem = new Map();
+  lines.forEach((l) => {
+    const k = l.workItemId || "_none";
+    if (!byItem.has(k)) byItem.set(k, []);
+    byItem.get(k).push(l);
+  });
+  const groups = [...byItem.entries()].map(([k, ls]) => ({ key: k, name: itemName(k === "_none" ? null : k), lines: ls, total: rSum(ls, lineTotal) })).sort((a, b) => b.total - a.total);
+  const itemRows = [];
+  groups.forEach((g) => {
+    itemRows.push({ className: "bg-[color:var(--cl-inset)] font-bold", cells: [g.name, g.lines.length, fmt(g.total), rPct(spent > 0 ? (g.total / spent) * 100 : null)] });
+    const byLv = new Map();
+    g.lines.forEach((l) => { const lv = (l.costLevel1 || "").trim(); if (lv) byLv.set(lv, [...(byLv.get(lv) || []), l]); });
+    [...byLv.entries()].sort((a, b) => rSum(b[1], lineTotal) - rSum(a[1], lineTotal)).forEach(([lv, ls]) => {
+      itemRows.push({ cells: [<span className="pr-4 text-[color:var(--cl-soft)]">↳ {lv}</span>, ls.length, fmt(rSum(ls, lineTotal)), ""] });
+    });
+  });
+
+  // كل صاحب عهدة (لما مفيش اختيار)
+  const personRows = persons.map((p) => {
+    const pc = s.custodies.filter((c) => (c.personName || "").trim() === p);
+    const ids = new Set(pc.map((c) => c.id));
+    const r = rSum(pc.filter((c) => s.inRange(c.dateGiven)), (c) => Number(c.amountGiven) || 0);
+    const sp = rSum(s.custodyLines.filter((l) => ids.has(l.custodyId)), lineTotal);
+    return { p, n: pc.length, open: pc.filter((c) => c.status !== "مصفاة").length, r, sp, left: r - sp };
+  }).filter((x) => x.r || x.sp).sort((a, b) => b.r - a.r);
+
+  const leftCell = (v) => <span className={v > 0 ? "text-[#D6A23C]" : v < 0 ? "text-[color:var(--cl-red)]" : "text-[color:var(--cl-green)]"}>{v < 0 ? `(${fmt(-v)}) مستحق له` : fmt(v)}</span>;
+
+  return (
+    <div className="space-y-4">
+      <div className="no-print bg-[color:var(--cl-card)] rounded-xl border border-[color:var(--cl-line)] p-4 flex flex-wrap items-end gap-4">
+        <label className="text-[11px] text-[color:var(--cl-muted)] font-semibold">
+          صاحب العهدة
+          <select value={who} onChange={(e) => setPerson(e.target.value)} className="block mt-1 min-w-[220px] px-3 py-2 rounded-lg border border-[color:var(--cl-line)] bg-[color:var(--cl-card)] text-sm text-[color:var(--cl-text)]">
+            <option value="">كل أصحاب العُهد</option>
+            {persons.map((p) => <option key={p} value={p}>{p}</option>)}
+          </select>
+        </label>
+      </div>
+
+      <ReportShell title={who ? `تقرير العُهد — ${who}` : "تقرير العُهد"} s={s}
+        notice="المستلم = مبالغ العُهد اللي اتسلّمت في الفترة. المصروف = بنود تصفية العُهد دي (العدد × السعر) في الفترة.">
+        <div className="grid grid-cols-4 gap-3">
+          <RptKpi label="إجمالي اللي استلمه" value={money(received)} />
+          <RptKpi label="إجمالي اللي صرفه" value={money(spent)} color="#E8672C" />
+          <RptKpi label={left >= 0 ? "المتبقي معاه" : "مستحق له"} value={money(Math.abs(left))} color={left > 0 ? "#D6A23C" : left < 0 ? "#C1453B" : "#3F7D63"} />
+          <RptKpi label="عدد العُهد" value={fmt(cus.length)} sub={`${cus.filter((c) => c.status !== "مصفاة").length} مفتوحة · ${cus.filter((c) => c.status === "مصفاة").length} مصفاة`} />
+        </div>
+
+        {!who && (
+          <RptSection title="كل أصحاب العُهد">
+            <RptTable
+              heads={[{ label: "صاحب العهدة" }, { label: "عدد العُهد", num: true }, { label: "استلم", num: true }, { label: "صرف", num: true }, { label: "المتبقي معاه", num: true }]}
+              rows={personRows.map((x) => ({ cells: [<b>{x.p}</b>, `${x.n}${x.open ? ` (${x.open} مفتوحة)` : ""}`, fmt(x.r), fmt(x.sp), leftCell(x.left)] }))}
+              footer={["الإجمالي", cus.length, fmt(received), fmt(spent), leftCell(left)]}
+              empty="لا توجد عُهد في الفترة دي"
+            />
+          </RptSection>
+        )}
+
+        <RptSection title="المصروف حسب البند" hint="كل بند عمل اتصرف عليه من العهدة، وتحته البنود الفرعية لو متسجّلة.">
+          <RptTable
+            heads={[{ label: "البند" }, { label: "عدد البنود", num: true }, { label: "المصروف", num: true }, { label: "النسبة", num: true }]}
+            rows={itemRows}
+            footer={["الإجمالي", lines.length, fmt(spent), spent > 0 ? "100٪" : "—"]}
+            empty="لا توجد بنود تصفية في الفترة دي"
+          />
+        </RptSection>
+
+        {who && (
+          <RptSection title="العُهد">
+            <RptTable
+              heads={[{ label: "تاريخ الاستلام" }, ...(s.multi ? [{ label: "المشروع" }] : []), { label: "الحالة" }, { label: "المبلغ", num: true }, { label: "المصروف منها", num: true }, { label: "المتبقي", num: true }]}
+              rows={[...cus].sort((a, b) => rDay(a.dateGiven).localeCompare(rDay(b.dateGiven))).map((c) => {
+                const sp = rSum(lines.filter((l) => l.custodyId === c.id), lineTotal);
+                const amt = Number(c.amountGiven) || 0;
+                return { cells: [rDay(c.dateGiven) || "—", ...(s.multi ? [s.projName(c.projectId)] : []), c.status || "مفتوحة", fmt(amt), fmt(sp), leftCell(amt - sp)] };
+              })}
+            />
+          </RptSection>
+        )}
+
+        {who && (
+          <RptSection title="كشف بنود التصفية">
+            <RptTable
+              heads={[{ label: "التاريخ" }, { label: "البند" }, { label: "الوصف" }, { label: "العدد", num: true }, { label: "السعر", num: true }, { label: "الإجمالي", num: true }]}
+              rows={[...lines].sort((a, b) => rDay(a.date).localeCompare(rDay(b.date))).map((l) => ({
+                cells: [rDay(l.date) || "—", <span>{itemName(l.workItemId)}{l.costLevel1 && <span className="text-[10px] text-[color:var(--cl-muted)] block">{l.costLevel1}</span>}</span>, l.desc, fmt(l.qty, 2), fmt(l.price, 2), <b>{fmt(lineTotal(l))}</b>],
+              }))}
+              footer={["", "", "", "", "الإجمالي", fmt(spent)]}
+            />
+          </RptSection>
+        )}
+      </ReportShell>
+    </div>
+  );
+}
+
 /* -------- مركز التقارير (الواجهة الرئيسية) -------- */
 function ReportsCenter({ projects, workItems, costs, extracts, collections, treasuryEntries, financePersons, financeTransactions, expectedCosts, defaultProjectId, costsManager, statements = [], statementPayments = [], custodies = [] }) {
   const [reportKey, setReportKey] = useState(null);
@@ -2345,6 +2460,9 @@ function ReportsCenter({ projects, workItems, costs, extracts, collections, trea
     treasuryAll: treasuryEntries.filter(inScope),
     expected: expectedCosts.filter(inScope),
     persons: financePersons,
+    custodies: custodies.filter(inScope),
+    // بنود تصفية العُهد في الفترة
+    custodyLines: costs.filter((c) => c.custodyId && inRange(c.date)),
     financeAll: financeTransactions,
     finTx: financeTransactions.filter((t) => inRange(t.date)),
     wiLevels: costsManager?.wiLevels || [],
@@ -2475,6 +2593,7 @@ function ReportsCenter({ projects, workItems, costs, extracts, collections, trea
       {reportKey === "treasury" && <TreasuryReport s={s} />}
       {reportKey === "financing" && <FinancingReport s={s} />}
       {reportKey === "items" && <ItemsReport s={s} />}
+      {reportKey === "custody" && <CustodyReport s={s} />}
     </div>
   );
 }
