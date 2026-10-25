@@ -1464,6 +1464,7 @@ function ContractingApp({ currentUsername, onLogout }) {
               onDeleteCustody={deleteCustody}
               onSettleCustody={settleCustody}
               onReopenCustody={reopenCustody}
+              projectName={project?.name || ""}
               onAddCost={addCost}
               onAddCostsBulk={addCostsBulk}
               onUpdateCost={updateCost}
@@ -5088,7 +5089,7 @@ function PersonLedger({ person, transactions, onBack, onAddTransaction, onUpdate
 function CustodyTab({
   pCustodies, pCosts, pWorkItems, custodyCategories, activeProjectId,
   onAddCustody, onUpdateCustody, onDeleteCustody, onSettleCustody, onReopenCustody,
-  onAddCost, onAddCostsBulk, onUpdateCost, onDeleteCost, onAddCategory, onDeleteCategory, wiLevels = [], onAddLevel,
+  onAddCost, onAddCostsBulk, onUpdateCost, onDeleteCost, onAddCategory, onDeleteCategory, wiLevels = [], onAddLevel, projectName = "",
 }) {
   const [selectedId, setSelectedId] = useState(null);
   const [open, setOpen] = useState(false);
@@ -5135,6 +5136,7 @@ function CustodyTab({
         onDeleteCost={onDeleteCost}
         onSettleCustody={onSettleCustody}
         onReopenCustody={onReopenCustody}
+        projectName={projectName}
         wiLevels={wiLevels}
         onAddLevel={onAddLevel}
       />
@@ -5257,6 +5259,60 @@ function CustodyTab({
   );
 }
 
+// طباعة تصفية عهدة واحدة: بياناتها + بنود التصفية متجمعة بالبند + الإجماليات + التوقيعات
+function printCustody(custody, lines, pWorkItems, projectName) {
+  const wiName = (id) => (id ? pWorkItems.find((w) => w.id === id)?.name || "بند محذوف" : "غير مرتبط ببند");
+  const tot = (l) => (Number(l.qty) || 0) * (Number(l.price) || 0);
+  const groups = new Map();
+  lines.forEach((l) => { const k = l.workItemId || "_none"; groups.set(k, [...(groups.get(k) || []), l]); });
+  let n = 0;
+  const body = [...groups.entries()].map(([k, ls]) => {
+    const rows = [...ls].sort((a, b) => String(a.costLevel1 || "").localeCompare(String(b.costLevel1 || ""), "ar") || String(a.date || "").localeCompare(String(b.date || ""))).map((l) =>
+      `<tr><td>${++n}</td><td>${stEsc(l.date || "")}</td><td>${stEsc(l.costLevel1 || "—")}</td><td>${stEsc(l.desc || "")}</td><td>${stMoney(l.qty)}</td><td>${stMoney(l.price)}</td><td>${stMoney(tot(l))}</td></tr>`).join("");
+    const sub = ls.reduce((a, l) => a + tot(l), 0);
+    return `<tr class="grp"><td colspan="7">${stEsc(wiName(k === "_none" ? null : k))}</td></tr>${rows}<tr class="sub"><td colspan="6">إجمالي ${stEsc(wiName(k === "_none" ? null : k))}</td><td>${stMoney(sub)}</td></tr>`;
+  }).join("");
+  const spent = lines.reduce((a, l) => a + tot(l), 0);
+  const given = Number(custody.amountGiven) || 0;
+  const left = given - spent;
+  const html = `<!doctype html><html dir="rtl" lang="ar"><head><meta charset="utf-8"><title>تصفية عهدة — ${stEsc(custody.personName)}</title>
+<style>
+body{font-family:'IBM Plex Sans Arabic','Cairo',Tahoma,sans-serif;color:#1E2530;padding:14mm;font-size:13px}
+h1{font-size:20px;margin:0 0 4px} .meta{display:grid;grid-template-columns:repeat(2,1fr);gap:6px 24px;margin:14px 0 18px}
+.meta div span{color:#6B7280} table{width:100%;border-collapse:collapse;margin-top:8px}
+th,td{border:1px solid #cfc8b8;padding:5px 6px;text-align:right;font-size:11px} th{background:#f1ede1}
+tr.grp td{background:#f6f3ea;font-weight:700;font-size:12px} tr.sub td{font-weight:700}
+.sum{display:grid;grid-template-columns:repeat(3,1fr);gap:10px;margin-top:16px} .sum div{border:1px solid #cfc8b8;border-radius:6px;padding:8px 10px}
+.sum span{display:block;color:#6B7280;font-size:11px} .sum b{font-size:15px}
+.sign{display:grid;grid-template-columns:repeat(3,1fr);gap:20px;margin-top:48px;text-align:center} .sign div{border-top:1px solid #999;padding-top:6px;color:#555}
+@media print{@page{size:A4;margin:0}}
+</style></head><body>
+<h1>تصفية عهدة</h1>
+<div class="meta">
+<div><span>المستلم: </span><b>${stEsc(custody.personName)}</b></div>
+${projectName ? `<div><span>المشروع: </span>${stEsc(projectName)}</div>` : ""}
+<div><span>تاريخ الاستلام: </span>${stEsc(custody.dateGiven || "")}</div>
+<div><span>الحالة: </span>${stEsc(custody.status || "مفتوحة")}</div>
+${custody.notes ? `<div><span>ملاحظات: </span>${stEsc(custody.notes)}</div>` : ""}
+<div><span>تاريخ الطباعة: </span>${stEsc(stToday())}</div>
+</div>
+<table><thead><tr><th>#</th><th>التاريخ</th><th>البند الفرعي</th><th>البيان</th><th>العدد</th><th>السعر</th><th>الإجمالي</th></tr></thead><tbody>
+${body || `<tr><td colspan="7" style="text-align:center;color:#888">لا توجد بنود تصفية</td></tr>`}
+<tr class="grp"><td colspan="6">إجمالي المصروف</td><td>${stMoney(spent)}</td></tr>
+</tbody></table>
+<div class="sum">
+<div><span>المبلغ المستلم</span><b>${stMoney(given)} EGP</b></div>
+<div><span>إجمالي المصروف</span><b>${stMoney(spent)} EGP</b></div>
+<div><span>${left >= 0 ? "المتبقي مع المستلم" : "مستحق للمستلم"}</span><b>${stMoney(Math.abs(left))} EGP</b></div>
+</div>
+<div class="sign"><div>المستلم</div><div>المراجعة / الحسابات</div><div>الاعتماد</div></div>
+</body></html>`;
+  const w = window.open("", "_blank", "width=900,height=1000");
+  if (!w) { alert("المتصفح منع فتح نافذة الطباعة. اسمح بالنوافذ المنبثقة لهذا الموقع وحاول تاني."); return; }
+  w.document.open(); w.document.write(html); w.document.close();
+  w.onload = () => { w.focus(); w.print(); };
+}
+
 // وصف بند التصفية = التصنيف - التفاصيل
 const csDesc = (r) => {
   const cat = r.category === "__custom__" ? r.customCategory.trim() : r.category;
@@ -5267,7 +5323,7 @@ let csSeq = 0;
 const csNewRow = (date = "") => ({ key: "cs" + ++csSeq, workItemId: "", level: "", category: "", customCategory: "", detail: "", date, qty: "1", price: "" });
 const csTotal = (r) => (Number(r.qty) || 0) * (Number(r.price) || 0);
 
-function CustodySettlement({ custody, lines, pWorkItems, custodyCategories, activeProjectId, onBack, onAddCost, onAddCostsBulk, onUpdateCost, onDeleteCost, onSettleCustody, onReopenCustody, wiLevels = [], onAddLevel }) {
+function CustodySettlement({ custody, lines, pWorkItems, custodyCategories, activeProjectId, onBack, onAddCost, onAddCostsBulk, onUpdateCost, onDeleteCost, onSettleCustody, onReopenCustody, wiLevels = [], onAddLevel, projectName = "" }) {
   const [open, setOpen] = useState(false);
   const [editId, setEditId] = useState(null);
   const [form, setForm] = useState({ workItemId: "", level: "", category: "", customCategory: "", qty: "1", price: "", date: "", detail: "" });
@@ -5380,11 +5436,16 @@ function CustodySettlement({ custody, lines, pWorkItems, custodyCategories, acti
             استُلمت بتاريخ {custody.dateGiven}{custody.notes ? ` — ${custody.notes}` : ""}
           </p>
         </div>
+        <div className="flex items-center gap-2">
+        <button onClick={() => printCustody(custody, lines, pWorkItems, projectName)} className="px-3 py-2 rounded-lg border border-[color:var(--cl-line)] bg-[color:var(--cl-card)] text-sm font-semibold text-[color:var(--cl-text)] hover:bg-[color:var(--cl-inset)] flex items-center gap-1.5 transition">
+          <Printer size={15} /> طباعة / PDF
+        </button>
         {!isLocked && (
           <button onClick={() => (open ? cancelForm() : setOpen(true))} className="px-3 py-2 rounded-lg bg-[color:var(--cl-ink)] text-white text-sm font-semibold flex items-center gap-1.5 hover:bg-[color:var(--cl-ink-hover)] transition">
             <Plus size={15} /> {open ? "إلغاء" : "إضافة بنود تصفية"}
           </button>
         )}
+        </div>
       </div>
 
       <div className="grid grid-cols-3 gap-3">
