@@ -4188,17 +4188,27 @@ function CostsTab({ pCosts, pWorkItems, activeProjectId, projectName = "", onAdd
   };
   const toggleItem = (key) => setExpandedItems((p) => ({ ...p, [key]: !p[key] }));
 
-  // طباعة الشجرة كلها مفتوحة: البند ← النوع ← البنود الفرعية ← التفاصيل (بالفلتر الحالي)
+  // طباعة الشجرة زي ما هي مفتوحة على الشاشة: اللي مقفول بيتطبع سطر واحد بإجماليه، واللي مفتوح بيتطبع اللي تحته
+  // (ولو تفاصيل بند مفتوحة على الشاشة، حركاتها بتتطبع كمان) — بالفلتر الحالي
   const printCosts = () => {
     const pad = (d) => `padding-right:${8 + d * 18}px`;
+    const mark = (open) => `<span class="mk">${open ? "−" : "+"}</span>`;
     let body = "";
     pivot.forEach((g) => {
-      body += `<tr class="wi"><td style="${pad(0)}">${stEsc(g.name)}</td><td></td><td>${stMoney(g.groupTotal)}</td></tr>`;
+      const gOpen = !collapsedGroups[g.key];
+      body += `<tr class="wi"><td style="${pad(0)}">${mark(gOpen)}${stEsc(g.name)}</td><td></td><td>${stMoney(g.groupTotal)}</td></tr>`;
+      if (!gOpen) return;
       g.cats.forEach((cg) => {
-        body += `<tr class="cat"><td style="${pad(1)}">${stEsc(costCatLabel(cg.cat))}</td><td></td><td>${stMoney(cg.total)}</td></tr>`;
-        costLevelRows(g, cg, true).forEach((r) => {
-          if (r.kind === "level") body += `<tr class="lv"><td style="${pad(2 + r.depth)}">↳ ${stEsc(r.name)}</td><td></td><td>${stMoney(r.total)}</td></tr>`;
-          else body += `<tr><td style="${pad(2 + r.depth)}">${stEsc(r.it.desc)} <span class="mut">(${r.it.entries.length} حركة)</span></td><td>${r.it.unit ? `${stMoney(r.it.totalQty)} ${stEsc(r.it.unit)}` : ""}</td><td>${stMoney(r.it.totalValue)}</td></tr>`;
+        const cOpen = !collapsedGroups[g.key + "##" + cg.cat];
+        body += `<tr class="cat"><td style="${pad(1)}">${mark(cOpen)}${stEsc(costCatLabel(cg.cat))}</td><td></td><td>${stMoney(cg.total)}</td></tr>`;
+        if (!cOpen) return;
+        costLevelRows(g, cg).forEach((r) => {
+          if (r.kind === "level") { body += `<tr class="lv"><td style="${pad(2 + r.depth)}">${mark(!collapsedGroups[r.key])}${stEsc(r.name)}</td><td></td><td>${stMoney(r.total)}</td></tr>`; return; }
+          const itOpen = !!expandedItems[g.key + "::" + r.it.cat + "::" + r.it.level + "::" + r.it.desc];
+          body += `<tr><td style="${pad(2 + r.depth)}">${stEsc(r.it.desc)} <span class="mut">(${r.it.entries.length} حركة)</span></td><td>${r.it.unit ? `${stMoney(r.it.totalQty)} ${stEsc(r.it.unit)}` : ""}</td><td>${stMoney(r.it.totalValue)}</td></tr>`;
+          if (itOpen) r.it.entries.forEach((c) => {
+            body += `<tr class="ent"><td style="${pad(3 + r.depth)}">${stEsc(c.date || "")}${c.costLevel2 ? ` · ${stEsc(c.costLevel2)}` : ""}</td><td>${stMoney(c.qty)} ${stEsc(c.unit || "")} × ${stMoney(c.price)}</td><td>${stMoney(c.qty * c.price)}</td></tr>`;
+          });
         });
       });
     });
@@ -4210,6 +4220,7 @@ h1{font-size:20px;margin:0 0 4px} .meta{display:flex;gap:28px;margin:10px 0 16px
 table{width:100%;border-collapse:collapse} th,td{border:1px solid #cfc8b8;padding:5px 8px;text-align:right;font-size:11.5px}
 th{background:#f1ede1} td:nth-child(2),td:nth-child(3){white-space:nowrap;width:1%}
 tr.wi td{background:#ebe6d6;font-weight:800;font-size:12.5px} tr.cat td{background:#f6f3ea;font-weight:700} tr.lv td{font-weight:600}
+tr.ent td{color:#555;font-size:10.5px} .mk{display:inline-block;width:12px;color:#999;font-weight:700;margin-left:4px}
 .mut{color:#888;font-size:10px} tr.tot td{background:#1E2530;color:#fff;font-weight:800;font-size:13px}
 @media print{@page{size:A4;margin:0}} tr{break-inside:avoid}
 </style></head><body>
