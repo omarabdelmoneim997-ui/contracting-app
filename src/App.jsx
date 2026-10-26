@@ -710,6 +710,19 @@ function ContractingApp({ currentUsername, onLogout }) {
     }
   }
 
+  // تعديل دفعة: نفس أعمدة الإضافة، وبعدها التكلفة الفعلية spc_ بتتحدّث (أو تتشال لو الدفعة بقت من غير مشروع)
+  async function updateStatementPayment(p) {
+    const row = { kind: p.kind, party_name: p.partyName, payment_date: p.date, amount: p.amount, method: p.method || null, note: p.note || null, statement_id: p.statementId || null };
+    if (payCostReady) { row.project_id = p.statementId ? null : p.projectId || null; row.work_item_id = p.statementId ? null : p.workItemId || null; }
+    if (directPayReady) { row.category = p.category || null; row.cost_type = p.costType || null; row.work_item_level = p.statementId ? null : p.workItemLevel || null; }
+    const { error } = await supabase.from("party_payments").update(row).eq("id", p.id);
+    if (error) { alert("حصل خطأ أثناء تعديل الدفعة: " + error.message); return false; }
+    const saved = { ...p, projectId: row.project_id || null, workItemId: row.work_item_id || null, workItemLevel: row.work_item_level || "", category: row.category || "", costType: row.cost_type || "" };
+    setStatementPayments((prev) => prev.map((x) => (x.id === p.id ? saved : x)));
+    if (payCostReady) await syncPaymentCost(saved);
+    return true;
+  }
+
   // حذف كذا دفعة مرة واحدة (التأكيد بيتعمل في الشاشة) — بيشيل الدفعات وتكاليفها الفعلية spc_
   async function deleteStatementPaymentsBulk(ids) {
     if (!ids || !ids.length) return false;
@@ -1295,6 +1308,7 @@ function ContractingApp({ currentUsername, onLogout }) {
               custodyLines={costs.filter((c) => c.custodyId)}
               onAddWorkItem={quickAddWorkItem}
               onDeletePaymentsBulk={deleteStatementPaymentsBulk}
+              onUpdatePayment={updateStatementPayment}
               statements={statements}
               registeredParties={registeredParties}
               projects={projects}
@@ -7678,7 +7692,7 @@ function BulkPaymentsPanel({ ctx, onClose, onAddPayment, onAddCustody, initialRo
   );
 }
 
-function DirectPaymentsModule({ payments, custodyLines = [], onAddWorkItem, onDeletePaymentsBulk, statements = [], registeredParties = [], projects, workItems, wiLevels = [], levelsReady = false, onAddLevel, ready, onAddPayment, onDeletePayment, custodies = [], onAddCustody, onDeleteCustody }) {
+function DirectPaymentsModule({ payments, custodyLines = [], onAddWorkItem, onDeletePaymentsBulk, onUpdatePayment, statements = [], registeredParties = [], projects, workItems, wiLevels = [], levelsReady = false, onAddLevel, ready, onAddPayment, onDeletePayment, custodies = [], onAddCustody, onDeleteCustody }) {
   // العُهد بتظهر في نفس الجدول (من جدول custodies) — مش تكلفة فعلية لحد ما تتصفّى من "تصفية العهد"
   const custodyRows = useMemo(() => custodies.map((c) => ({ id: c.id, kind: "custody", partyName: c.personName, date: c.dateGiven || "", amount: Number(c.amountGiven) || 0, projectId: c.projectId, note: c.notes || "", status: c.status, isCustody: true })), [custodies]);
   const all = useMemo(() => [...payments, ...custodyRows].sort((a, b) => (b.date || "").localeCompare(a.date || "")), [payments, custodyRows]);
@@ -7689,6 +7703,14 @@ function DirectPaymentsModule({ payments, custodyLines = [], onAddWorkItem, onDe
   const empty = { payType: "contractor", date: stToday(), partyName: "", statementId: "", category: "استشاري", costType: "مصروفات", amount: "", method: "تحويل بنكي", projectId: "", workItemId: "", workItemLevel: "", note: "" };
   const [form, setForm] = useState(empty);
   const [open, setOpen] = useState(false);
+  const [editId, setEditId] = useState(null); // الدفعة اللي بتتعدل (null = دفعة جديدة)
+  const startEdit = (p) => {
+    setForm({ ...empty, payType: p.kind, date: p.date || stToday(), partyName: p.partyName || "", statementId: p.statementId || "", category: p.category || "استشاري", costType: p.costType || "مصروفات",
+      amount: String(p.amount ?? ""), method: p.method || "تحويل بنكي", projectId: p.projectId || "", workItemId: p.workItemId || "", workItemLevel: p.workItemLevel || "", note: p.note || "" });
+    setEditId(p.id); setErr(""); setBulk(null); setOpen(true);
+    window.scrollTo({ top: 0, behavior: "smooth" });
+  };
+  const closeForm = () => { setOpen(false); setErr(""); if (editId) { setEditId(null); setForm(empty); } };
   const [err, setErr] = useState("");
   const [fType, setFType] = useState("");
   const [fCat, setFCat] = useState("");
@@ -7743,6 +7765,17 @@ function DirectPaymentsModule({ payments, custodyLines = [], onAddWorkItem, onDe
     }
     const general = !form.statementId;
     if (general && form.projectId && !form.workItemId) return setErr("اختار بند العمل اللي الدفعة هتتحسب عليه.");
+    if (editId) {
+      const ok = await onUpdatePayment({
+        id: editId, kind: form.payType, partyName: name, date: form.date || stToday(), amount, method: form.method,
+        note: form.note.trim(), statementId: isParty ? form.statementId || null : null,
+        projectId: general ? form.projectId || null : null, workItemId: general && form.projectId ? form.workItemId || null : null,
+        workItemLevel: general && form.projectId && form.workItemId ? form.workItemLevel || "" : "",
+        category: isParty ? "" : form.category, costType: isParty ? "" : form.costType,
+      });
+      if (ok !== false) { setEditId(null); setForm(empty); setOpen(false); }
+      return;
+    }
     await onAddPayment({
       id: stUid(isParty ? "sp_" : "dp_"), kind: form.payType, partyName: name, date: form.date || stToday(), amount, method: form.method,
       note: form.note.trim(), statementId: isParty ? form.statementId || null : null,
@@ -7812,7 +7845,7 @@ function DirectPaymentsModule({ payments, custodyLines = [], onAddWorkItem, onDe
           <button onClick={() => { setBulk(bulk ? null : { rows: null, k: Date.now() }); setOpen(false); }} className={`px-3 py-2 rounded-lg border text-sm font-semibold flex items-center gap-1.5 transition ${bulk ? "border-[color:var(--cl-accent-bg)] text-[color:var(--cl-accent)]" : "border-[color:var(--cl-line)] text-[color:var(--cl-text)] hover:bg-[color:var(--cl-sub)]"}`}>
             <Layers size={15} /> دفعات متعددة
           </button>
-          <button onClick={() => { setOpen((o) => !o); setBulk(null); }} className="px-3 py-2 rounded-lg bg-[color:var(--cl-accent-bg)] text-[color:var(--cl-on-accent)] text-sm font-semibold flex items-center gap-1.5 hover:bg-[color:var(--cl-accent-hover)] transition">
+          <button onClick={() => { if (editId) { setEditId(null); setForm(empty); setOpen(true); } else setOpen((o) => !o); setBulk(null); }} className="px-3 py-2 rounded-lg bg-[color:var(--cl-accent-bg)] text-[color:var(--cl-on-accent)] text-sm font-semibold flex items-center gap-1.5 hover:bg-[color:var(--cl-accent-hover)] transition">
             <Plus size={15} /> تسجيل دفعة
           </button>
         </div>
@@ -7823,9 +7856,10 @@ function DirectPaymentsModule({ payments, custodyLines = [], onAddWorkItem, onDe
       )}
 
       {open && (
-        <div className="bg-[color:var(--cl-card)] rounded-xl border border-[color:var(--cl-line)] p-4 space-y-3">
+        <div className={`bg-[color:var(--cl-card)] rounded-xl border p-4 space-y-3 ${editId ? "border-[color:var(--cl-accent-bg)]" : "border-[color:var(--cl-line)]"}`}>
+          {editId && <div className="text-xs font-semibold text-[color:var(--cl-accent)] bg-[color:rgb(var(--cl-accent-rgb)/0.1)] rounded-md px-3 py-1.5">جاري تعديل دفعة موجودة — اعدّل اللي محتاجه ودوس "حفظ التعديل"</div>}
           <div className="flex items-center gap-1 p-1 rounded-xl bg-[color:var(--cl-inset)] border border-[color:var(--cl-line)] w-fit">
-            {DP_TYPES.map((t) => (
+            {DP_TYPES.filter((t) => !editId || t.k !== "custody").map((t) => (
               <button key={t.k} type="button" onClick={() => set({ payType: t.k, partyName: "", statementId: "" })} className={`px-4 py-1.5 rounded-lg text-sm font-bold transition ${form.payType === t.k ? "bg-[color:var(--cl-accent-bg)] text-[color:var(--cl-on-accent)]" : "text-[color:var(--cl-soft)] hover:bg-[color:var(--cl-sub)]"}`}>{t.l}</button>
             ))}
           </div>
@@ -7895,8 +7929,8 @@ function DirectPaymentsModule({ payments, custodyLines = [], onAddWorkItem, onDe
           )}
           <div className="flex items-center justify-end gap-3">
             {err && <span className="text-sm text-[color:var(--cl-red)]">{err}</span>}
-            <button onClick={() => { setOpen(false); setErr(""); }} className="px-4 py-2 rounded-lg border border-[color:var(--cl-line)] text-sm text-[color:var(--cl-soft)] hover:bg-[color:var(--cl-sub)]">إغلاق</button>
-            <button onClick={submit} className="px-5 py-2 rounded-lg bg-[color:var(--cl-accent-bg)] text-[color:var(--cl-on-accent)] text-sm font-bold hover:bg-[color:var(--cl-accent-hover)]">حفظ الدفعة</button>
+            <button onClick={closeForm} className="px-4 py-2 rounded-lg border border-[color:var(--cl-line)] text-sm text-[color:var(--cl-soft)] hover:bg-[color:var(--cl-sub)]">إغلاق</button>
+            <button onClick={submit} className="px-5 py-2 rounded-lg bg-[color:var(--cl-accent-bg)] text-[color:var(--cl-on-accent)] text-sm font-bold hover:bg-[color:var(--cl-accent-hover)]">{editId ? "حفظ التعديل" : "حفظ الدفعة"}</button>
           </div>
         </div>
       )}
@@ -8001,7 +8035,7 @@ function DirectPaymentsModule({ payments, custodyLines = [], onAddWorkItem, onDe
                   <td className="py-3 px-4 text-[color:var(--cl-soft)]">{p.onItem ? <>{projName(t.projectId)} › {wiName(fWI)}<span className="block text-[11px] text-[color:var(--cl-muted)]">من تصفية العهدة ({p.onItem} بند) — العهدة كلها {stMoney(p.amountGiven)}</span></> : t.projectId ? <>{projName(t.projectId)}{t.workItemId && <> › {wiName(t.workItemId)}</>}{t.level && <> › {t.level}</>}</> : <span className="text-[color:var(--cl-muted)]">بدون مشروع</span>}</td>
                   <td className="py-3 px-4 text-[color:var(--cl-soft)]">{p.isCustody ? "—" : p.method || "—"}</td>
                   <td className="py-3 px-4 mono font-bold">{stMoney(p.amount)}</td>
-                  <td className="py-3 px-2"><button onClick={() => (p.isCustody ? onDeleteCustody(p.id) : onDeletePayment(p.id))} title="حذف" className="p-1.5 rounded-md text-[color:var(--cl-red)] opacity-0 group-hover:opacity-100 hover:bg-[#C1453B]/10 transition"><Trash2 size={14} /></button></td>
+                  <td className="py-3 px-2 whitespace-nowrap">{!p.isCustody && onUpdatePayment && <button onClick={() => startEdit(p)} title="تعديل" className="p-1.5 rounded-md text-[color:var(--cl-soft)] hover:bg-[color:var(--cl-line)] hover:text-[color:var(--cl-text)] transition"><Pencil size={14} /></button>}<button onClick={() => (p.isCustody ? onDeleteCustody(p.id) : onDeletePayment(p.id))} title="حذف" className="p-1.5 rounded-md text-[color:var(--cl-red)] hover:bg-[#C1453B]/10 transition"><Trash2 size={14} /></button></td>
                 </tr>
               );
             })}
