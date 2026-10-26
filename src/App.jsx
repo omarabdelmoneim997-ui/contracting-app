@@ -9,7 +9,7 @@ import {
   Landmark, CircleDollarSign, CheckCircle2, Clock, Ruler, Users, Loader2,
   Trash2, Pencil, Printer, Banknote, Upload, ShieldCheck, LogOut,
   LayoutDashboard, ClipboardList, ReceiptText, FileCheck2, HandCoins, Vault, BarChart3,
-  Gauge, Layers, FileSignature, Percent, Hourglass, FolderKanban, UserCircle2, Palette, RotateCcw, CalendarDays,
+  Gauge, Layers, FileSignature, Eye, Percent, Hourglass, FolderKanban, UserCircle2, Palette, RotateCcw, CalendarDays,
 } from "lucide-react";
 import { supabase } from "./supabaseClient";
 
@@ -5831,7 +5831,7 @@ const stPaidTotal = (a) => stRound((a.prevPaid || 0) + (a.paidHere || 0));
 const stDueNow = (net, a) => stRound(net + a.prevNet - a.prevPaid - a.paidHere);
 const stHasAcct = (a) => !!(a.prevNet || a.prevPaid || a.paidHere);
 
-function printStatement(s, cfg, projectName, acct = { prevNet: 0, prevPaid: 0, paidHere: 0 }) {
+function statementHtml(s, cfg, projectName, acct = { prevNet: 0, prevPaid: 0, paidHere: 0 }) {
   const calc = calcStatement(s.items, s.adjustments);
   const hasAcct = stHasAcct(acct);
   const acctRows = hasAcct
@@ -5872,6 +5872,10 @@ ${acctRows}
 ${s.notes ? `<p><b>ملاحظات:</b> ${stEsc(s.notes)}</p>` : ""}
 <div class="sign"><div>المهندس المختص</div><div>المراجعة / الحسابات</div><div>الاعتماد</div></div>
 </body></html>`;
+  return html;
+}
+function printStatement(s, cfg, projectName, acct) {
+  const html = statementHtml(s, cfg, projectName, acct);
   const w = window.open("", "_blank", "width=900,height=1000");
   if (!w) { alert("المتصفح منع فتح نافذة الطباعة. اسمح بالنوافذ المنبثقة لهذا الموقع وحاول تاني."); return; }
   w.document.open(); w.document.write(html); w.document.close();
@@ -6785,7 +6789,8 @@ function StatementsModule({ kind, statements, payments, projects, dbError, onSav
   const [tpl, setTpl] = useState({ projectId: "", partyName: "" });
   const [importing, setImporting] = useState(false);
 
-  useEffect(() => { setMode("list"); setEditing(null); setOpenParty(null); setSearch(""); setWorkFilter(""); setPartyForm(emptyParty); setNewWork(""); }, [kind]);
+  const [viewing, setViewing] = useState(null); // مستخلص بيتعرض (عرض بس من غير تعديل)
+  useEffect(() => { setMode("list"); setEditing(null); setViewing(null); setOpenParty(null); setSearch(""); setWorkFilter(""); setPartyForm(emptyParty); setNewWork(""); }, [kind]);
 
   const registryReady = !registryDbError;
   const registry = useMemo(() => registeredParties.filter((r) => r.kind === kind), [registeredParties, kind]);
@@ -7018,6 +7023,26 @@ function StatementsModule({ kind, statements, payments, projects, dbError, onSav
         )
       )}
 
+      {mode === "view" && viewing && (() => {
+        const v = list.find((x) => x.id === viewing.id) || viewing;
+        const acct = stAccount(v, list, pays);
+        return (
+          <div className="space-y-3">
+            <div className="flex flex-wrap items-center justify-between gap-2">
+              <button onClick={() => { setMode("list"); setViewing(null); }} className="px-3 py-2 rounded-lg border border-[color:var(--cl-line)] bg-[color:var(--cl-card)] text-sm font-semibold text-[color:var(--cl-text)] hover:bg-[color:var(--cl-inset)] flex items-center gap-1.5"><ChevronRight size={15} /> رجوع للمستخلصات</button>
+              <div className="flex gap-2">
+                <button onClick={() => printStatement(v, cfg, projName(v.projectId), acct)} className="px-3 py-2 rounded-lg border border-[color:var(--cl-line)] bg-[color:var(--cl-card)] text-sm font-semibold text-[color:var(--cl-text)] hover:bg-[color:var(--cl-inset)] flex items-center gap-1.5"><Printer size={15} /> طباعة / PDF</button>
+                <button onClick={() => { setEditing(v); setDraft(null); setViewing(null); setMode("form"); }} className="px-3 py-2 rounded-lg bg-[color:var(--cl-accent-bg)] text-[color:var(--cl-on-accent)] text-sm font-semibold hover:bg-[color:var(--cl-accent-hover)] flex items-center gap-1.5"><Pencil size={15} /> تعديل</button>
+              </div>
+            </div>
+            <div className="bg-white rounded-xl border border-[color:var(--cl-line)] overflow-hidden">
+              <iframe title="عرض المستخلص" srcDoc={statementHtml(v, cfg, projName(v.projectId), acct)} className="w-full block" style={{ height: 600, border: 0 }}
+                onLoad={(e) => { try { const d = e.currentTarget.contentDocument; e.currentTarget.style.height = Math.max(400, d.documentElement.scrollHeight + 8) + "px"; } catch (err) { /* ignore */ } }} />
+            </div>
+          </div>
+        );
+      })()}
+
       {mode === "list" && (
         <div className="bg-[color:var(--cl-card)] rounded-xl border border-[color:var(--cl-line)] overflow-hidden">
           <table className="w-full text-sm">
@@ -7030,7 +7055,7 @@ function StatementsModule({ kind, statements, payments, projects, dbError, onSav
                 <th className="text-right py-3 px-4">الصافي</th>
                 <th className="text-right py-3 px-4">مدفوع عليه</th>
                 <th className="text-right py-3 px-4">الحالة</th>
-                <th className="w-28" />
+                <th className="w-36" />
               </tr>
             </thead>
             <tbody className="divide-y divide-[color:var(--cl-sep)]">
@@ -7050,7 +7075,8 @@ function StatementsModule({ kind, statements, payments, projects, dbError, onSav
                     )}
                   </td>
                   <td className="py-3 px-4">
-                    <div className="flex items-center gap-1 opacity-0 group-hover:opacity-100 transition">
+                    <div className="flex items-center gap-1">
+                      <button title="عرض" onClick={() => { setViewing(s); setMode("view"); }} className="p-1.5 rounded-md text-[color:var(--cl-accent)] hover:bg-[color:var(--cl-line)]"><Eye size={14} /></button>
                       <button title="طباعة" onClick={() => printStatement(s, cfg, projName(s.projectId), stAccount(s, list, pays))} className="p-1.5 rounded-md text-[color:var(--cl-soft)] hover:bg-[color:var(--cl-line)]"><Printer size={14} /></button>
                       <button title="تعديل" onClick={() => { setEditing(s); setDraft(null); setMode("form"); }} className="p-1.5 rounded-md text-[color:var(--cl-soft)] hover:bg-[color:var(--cl-line)]"><Pencil size={14} /></button>
                       <button title="حذف" onClick={() => onDelete(s.id)} className="p-1.5 rounded-md text-[color:var(--cl-red)] hover:bg-[#C1453B]/10"><Trash2 size={14} /></button>
