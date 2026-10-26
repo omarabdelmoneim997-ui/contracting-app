@@ -710,6 +710,21 @@ function ContractingApp({ currentUsername, onLogout }) {
     }
   }
 
+  // حذف كذا دفعة مرة واحدة (التأكيد بيتعمل في الشاشة) — بيشيل الدفعات وتكاليفها الفعلية spc_
+  async function deleteStatementPaymentsBulk(ids) {
+    if (!ids || !ids.length) return false;
+    const { error } = await supabase.from("party_payments").delete().in("id", ids);
+    if (error) { alert("حصل خطأ أثناء حذف الدفعات (مفيش حاجة اتمسحت): " + error.message); return false; }
+    setStatementPayments((prev) => prev.filter((p) => !ids.includes(p.id)));
+    const costIds = ids.map(payCostId).filter((cid) => costs.some((c) => c.id === cid));
+    if (costIds.length) {
+      const { error: cErr } = await supabase.from("costs").delete().in("id", costIds);
+      if (cErr) alert("اتمسحت الدفعات، بس حصل خطأ أثناء شيل تكاليفها الفعلية من المشروع: " + cErr.message);
+      else setCosts((prev) => prev.filter((c) => !costIds.includes(c.id)));
+    }
+    return true;
+  }
+
   async function addProject(p) {
     const { error } = await supabase.from("projects").insert([{ id: p.id, name: p.name, client: p.client, location: p.location, budget: p.budget, status: p.status }]);
     if (error) { alert("حصل خطأ أثناء حفظ المشروع: " + error.message); return; }
@@ -1279,6 +1294,7 @@ function ContractingApp({ currentUsername, onLogout }) {
               payments={statementPayments}
               custodyLines={costs.filter((c) => c.custodyId)}
               onAddWorkItem={quickAddWorkItem}
+              onDeletePaymentsBulk={deleteStatementPaymentsBulk}
               statements={statements}
               registeredParties={registeredParties}
               projects={projects}
@@ -7508,7 +7524,7 @@ function BulkPaymentsPanel({ ctx, onClose, onAddPayment, onAddCustody, initialRo
   );
 }
 
-function DirectPaymentsModule({ payments, custodyLines = [], onAddWorkItem, statements = [], registeredParties = [], projects, workItems, wiLevels = [], levelsReady = false, onAddLevel, ready, onAddPayment, onDeletePayment, custodies = [], onAddCustody, onDeleteCustody }) {
+function DirectPaymentsModule({ payments, custodyLines = [], onAddWorkItem, onDeletePaymentsBulk, statements = [], registeredParties = [], projects, workItems, wiLevels = [], levelsReady = false, onAddLevel, ready, onAddPayment, onDeletePayment, custodies = [], onAddCustody, onDeleteCustody }) {
   // العُهد بتظهر في نفس الجدول (من جدول custodies) — مش تكلفة فعلية لحد ما تتصفّى من "تصفية العهد"
   const custodyRows = useMemo(() => custodies.map((c) => ({ id: c.id, kind: "custody", partyName: c.personName, date: c.dateGiven || "", amount: Number(c.amountGiven) || 0, projectId: c.projectId, note: c.notes || "", status: c.status, isCustody: true })), [custodies]);
   const all = useMemo(() => [...payments, ...custodyRows].sort((a, b) => (b.date || "").localeCompare(a.date || "")), [payments, custodyRows]);
@@ -7528,6 +7544,7 @@ function DirectPaymentsModule({ payments, custodyLines = [], onAddWorkItem, stat
   const [importing, setImporting] = useState(false);
   const [fLv, setFLv] = useState("");
   const [search, setSearch] = useState("");
+  const [selected, setSelected] = useState(() => new Set()); // الدفعات المحددة للحذف (العُهد مش بتتحدد — بتتمسح من تصفية العهد)
   const set = (patch) => setForm((f) => ({ ...f, ...patch }));
   const projName = (id) => projects.find((p) => p.id === id)?.name || "";
   const wiName = (id) => workItems.find((w) => w.id === id)?.name || "";
@@ -7775,10 +7792,37 @@ function DirectPaymentsModule({ payments, custodyLines = [], onAddWorkItem, stat
         <input value={search} onChange={(e) => setSearch(e.target.value)} placeholder="بحث بالاسم / الملاحظات" className="mr-auto w-72 border border-[color:var(--cl-line)] rounded-lg px-3 py-2 text-sm outline-none focus:border-[color:var(--cl-accent-bg)] bg-[color:var(--cl-card)]" />
       </div>
 
+      {(() => {
+        const selectable = filtered.filter((p) => !p.isCustody);
+        const picked = selectable.filter((p) => selected.has(p.id));
+        if (!picked.length) return null;
+        const pickedTotal = stRound(picked.reduce((a, p) => a + p.amount, 0));
+        return (
+          <div className="flex flex-wrap items-center justify-between gap-3 rounded-xl border border-[color:var(--cl-red)]/40 bg-[#C1453B]/5 px-4 py-2.5">
+            <div className="text-sm text-[color:var(--cl-text)]">محدد <b className="mono">{picked.length}</b> دفعة — إجمالي <b className="mono">{stMoney(pickedTotal)}</b> EGP</div>
+            <div className="flex gap-2">
+              <button onClick={() => setSelected(new Set())} className="px-3 py-1.5 rounded-lg border border-[color:var(--cl-line)] text-xs font-semibold text-[color:var(--cl-soft)] hover:bg-[color:var(--cl-sub)]">إلغاء التحديد</button>
+              <button onClick={async () => {
+                if (!window.confirm(`متأكد إنك عايز تمسح ${picked.length} دفعة بإجمالي ${stMoney(pickedTotal)} EGP؟ تكاليفها الفعلية على المشروع هتتشال كمان، ومينفعش ترجع.`)) return;
+                const ok = await onDeletePaymentsBulk(picked.map((p) => p.id));
+                if (ok) setSelected(new Set());
+              }} className="px-3 py-1.5 rounded-lg bg-[color:var(--cl-red)] text-white text-xs font-bold hover:opacity-90 flex items-center gap-1.5"><Trash2 size={13} /> حذف المحدد</button>
+            </div>
+          </div>
+        );
+      })()}
+
       <div className="bg-[color:var(--cl-card)] rounded-xl border border-[color:var(--cl-line)] overflow-hidden">
         <table className="w-full text-sm">
           <thead>
             <tr className="bg-[color:var(--cl-inset)] text-[color:var(--cl-soft)] text-[12px]">
+              <th className="w-10 px-3">
+                {(() => {
+                  const ids = filtered.filter((p) => !p.isCustody).map((p) => p.id);
+                  const all = ids.length > 0 && ids.every((id) => selected.has(id));
+                  return <input type="checkbox" title="تحديد الكل" disabled={!ids.length} checked={all} onChange={() => setSelected((prev) => { const n = new Set(prev); ids.forEach((id) => (all ? n.delete(id) : n.add(id))); return n; })} className="w-4 h-4 accent-[#C1453B] cursor-pointer" />;
+                })()}
+              </th>
               <th className="text-right py-3 px-4">التاريخ</th>
               <th className="text-right py-3 px-4">النوع</th>
               <th className="text-right py-3 px-4">المستفيد</th>
@@ -7794,7 +7838,8 @@ function DirectPaymentsModule({ payments, custodyLines = [], onAddWorkItem, stat
               const st = stById.get(p.statementId);
               const t = target(p);
               return (
-                <tr key={p.id} className="hover:bg-[color:var(--cl-sub)] group">
+                <tr key={p.id} className={`hover:bg-[color:var(--cl-sub)] group ${selected.has(p.id) && !p.isCustody ? "bg-[#C1453B]/5" : ""}`}>
+                  <td className="px-3">{!p.isCustody && <input type="checkbox" checked={selected.has(p.id)} onChange={() => setSelected((prev) => { const n = new Set(prev); n.has(p.id) ? n.delete(p.id) : n.add(p.id); return n; })} className="w-4 h-4 accent-[#C1453B] cursor-pointer" />}</td>
                   <td className="py-3 px-4 mono text-[color:var(--cl-soft)]">{p.date}</td>
                   <td className="py-3 px-4"><span className={`text-[11px] px-2 py-0.5 rounded-full ${p.kind === "custody" ? "bg-[#6B5CA5]/15 text-[#9B8CD5]" : p.kind === "other" ? "bg-[color:var(--cl-chip)] text-[color:var(--cl-soft)]" : "bg-[color:rgb(var(--cl-accent-rgb)/0.15)] text-[color:var(--cl-accent)]"}`}>{dpTypeLabel(p.kind)}</span></td>
                   <td className="py-3 px-4 font-semibold text-[color:var(--cl-text)]">{p.partyName}{p.note && <span className="block text-[11px] font-normal text-[color:var(--cl-muted)]">{p.note}</span>}</td>
@@ -7806,10 +7851,10 @@ function DirectPaymentsModule({ payments, custodyLines = [], onAddWorkItem, stat
                 </tr>
               );
             })}
-            {filtered.length === 0 && <tr><td colSpan={8} className="text-center py-8 text-[color:var(--cl-muted)]">لا توجد مدفوعات.</td></tr>}
+            {filtered.length === 0 && <tr><td colSpan={9} className="text-center py-8 text-[color:var(--cl-muted)]">لا توجد مدفوعات.</td></tr>}
           </tbody>
           {filtered.length > 0 && (
-            <tfoot><tr className="bg-[color:var(--cl-inset)]"><td colSpan={6} className="py-2.5 px-4 font-bold text-[color:var(--cl-soft)]">الإجمالي ({filtered.length})</td><td className="py-2.5 px-4 mono font-bold text-[color:var(--cl-text)]">{stMoney(total)}</td><td /></tr></tfoot>
+            <tfoot><tr className="bg-[color:var(--cl-inset)]"><td colSpan={7} className="py-2.5 px-4 font-bold text-[color:var(--cl-soft)]">الإجمالي ({filtered.length})</td><td className="py-2.5 px-4 mono font-bold text-[color:var(--cl-text)]">{stMoney(total)}</td><td /></tr></tfoot>
           )}
         </table>
       </div>
