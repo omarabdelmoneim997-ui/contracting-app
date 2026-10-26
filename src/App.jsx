@@ -5803,11 +5803,12 @@ function calcStatement(items, adjustments) {
 
 // الحساب مع الطرف لحد مستخلص معين:
 // prevNet  = صافي المستخلصات السابقة (المعتمدة فقط)
-// prevPaid = اللي اتصرف للطرف قبل المستخلص ده (دفعات على مستخلصات سابقة + دفعات عامة بتاريخ لحد تاريخه)
-// paidHere = دفعات اتسجلت على المستخلص ده نفسه
+// prevPaid = اللي اتصرف للطرف قبل المستخلص ده بس (دفعات على مستخلصات سابقة + دفعات عامة بتاريخ قبل تاريخه)
+// paidHere = دايمًا 0 — الدفعة اللي على المستخلص ده مش بتتخصم منه (عشان رقمه المطبوع ميتغيرش)، وبتظهر "سابق صرفه" في المستخلص اللي بعده
+// paidOnThis = مجموع الدفعات اللي على المستخلص ده (للعرض بس)
 const stAccount = ({ id, partyName, date, number }, statements, payments) => {
   const name = String(partyName || "").trim();
-  const none = { prevNet: 0, prevPaid: 0, paidHere: 0, paidCount: 0, lastPay: null };
+  const none = { prevNet: 0, prevPaid: 0, paidHere: 0, paidOnThis: 0, paidCount: 0, lastPay: null };
   if (!name) return none;
   const numOf = (n) => parseInt(n, 10) || 0;
   const curNum = parseInt(number, 10);
@@ -5816,15 +5817,21 @@ const stAccount = ({ id, partyName, date, number }, statements, payments) => {
   const laterIds = new Set(same.filter((s) => !before(s)).map((s) => s.id));
   const prevNet = stRound(same.filter((s) => before(s) && s.status === "معتمد").reduce((a, s) => a + s.netTotal, 0));
   const mine = payments.filter((p) => p.partyName === name);
-  // كل اللي اتصرف للطرف لحد دلوقتي (الدفعات العامة كلها + على مستخلصات سابقة) — ماعدا الدفعات اللي متسجّلة على مستخلص بعد ده
-  const prevList = mine.filter((p) => p.statementId !== id || !id).filter((p) => !laterIds.has(p.statementId));
+  // السابق صرفه = الدفعات على مستخلصات قبل ده + الدفعات العامة (من غير مستخلص) بتاريخ قبل تاريخه
+  // الدفعات على المستخلص ده أو على مستخلص بعده، والدفعات العامة بتاريخه أو بعده، مش بتدخل — فرقم المستخلص بعد طباعته مش بيتغير
+  const stIds = new Set(same.map((s) => s.id));
+  const prevList = mine.filter((p) => {
+    if (id && p.statementId === id) return false;
+    if (p.statementId && stIds.has(p.statementId)) return !laterIds.has(p.statementId);
+    return !!date && !!p.date && p.date < date; // دفعة عامة (أو على مستخلص اتمسح)
+  });
   const hereList = id ? mine.filter((p) => p.statementId === id) : [];
   const prevPaid = stRound(prevList.reduce((a, p) => a + p.amount, 0));
-  const paidHere = stRound(hereList.reduce((a, p) => a + p.amount, 0));
+  const paidOnThis = stRound(hereList.reduce((a, p) => a + p.amount, 0));
   // آخر دفعة من الدفعات المحسوبة في "السابق صرفه"
-  const counted = [...prevList, ...hereList].sort((a, b) => (a.date || "").localeCompare(b.date || ""));
+  const counted = [...prevList].sort((a, b) => (a.date || "").localeCompare(b.date || ""));
   const lastPay = counted.length ? { amount: counted[counted.length - 1].amount, date: counted[counted.length - 1].date } : null;
-  return { prevNet, prevPaid, paidHere, paidCount: counted.length, lastPay };
+  return { prevNet, prevPaid, paidHere: 0, paidOnThis, paidCount: counted.length, lastPay };
 };
 // السابق صرفه = كل الدفعات المحسوبة للطرف (على مستخلصات سابقة + دفعات عامة + على المستخلص ده)
 const stPaidTotal = (a) => stRound((a.prevPaid || 0) + (a.paidHere || 0));
@@ -6742,6 +6749,9 @@ function StatementForm({ cfg, initial, parties, projects, existing, payments, on
                 </td>
                 <td className="py-2.5 px-4 mono text-[color:var(--cl-red)]">{stMoney(stPaidTotal(acct))}</td>
               </tr>
+              {acct.paidOnThis > 0 && (
+                <tr><td colSpan={2} className="py-2 px-4 text-[11px] text-[color:var(--cl-muted)]">اتصرف على المستخلص ده {stMoney(acct.paidOnThis)} EGP — مش بيتخصم هنا، وهيظهر في "السابق صرفه" في المستخلص اللي بعده.</td></tr>
+              )}
               <tr className="bg-[color:var(--cl-inset)]"><td className="py-2.5 px-4 font-bold text-[color:var(--cl-text)]">المستحق صرفه الآن</td><td className="py-2.5 px-4 mono font-bold text-[color:var(--cl-text)]">{stMoney(dueNow)} EGP</td></tr>
             </tbody>
           </table>
