@@ -1553,6 +1553,7 @@ const REPORT_LIST = [
   { key: "costs_manage", title: "التكاليف الفعلية", desc: "شاشة التكاليف الفعلية للمشروع: إضافة وتعديل وحذف التكاليف ورفعها من إكسيل، مع العرض المجمّع حسب بند العمل.", icon: ReceiptText, manage: true },
   { key: "executive", title: "التقرير التنفيذي للمشروع", desc: "قيمة العقد، الأعمال، التكلفة الفعلية والمتوقعة، الربح والهامش، التحصيل وأهم التجاوزات.", icon: LayoutDashboard },
   { key: "paid", title: "تقرير التكاليف الفعلية", desc: "اللي اتصرف فعلًا على المشروع من المدفوعات وتصفية العُهد، مع فلاتر بالبند والبنود الفرعية ونوع الجهة، وتوزيع حسب البند والجهة وكشف تفصيلي.", icon: Wallet },
+  { key: "expenses", title: "تقرير المصروفات", desc: "المصروفات المباشرة (مرتبات، أجور، انتقالات، استشاري...) ومصروفات العُهد: حسب التصنيف والشهر والبند والمستفيد، مع كشف تفصيلي.", icon: Receipt },
   { key: "costs", title: "تقرير التكاليف التفصيلي", desc: "التكاليف حسب النوع وبند العمل ومستوى التكلفة الأول والثاني (الكمية × السعر).", icon: ReceiptText },
   { key: "bva", title: "تقرير Budget vs Actual", desc: "الميزانية مقابل الفعلي لكل بند مع الفرق ونسبة الانحراف وتحديد البنود المتجاوزة.", icon: Gauge },
   { key: "extracts", title: "تقرير المستخلصات والتحصيلات", desc: "إجمالي المستخلصات والمحصل والمتبقي ونسبة التحصيل لكل مستخلص.", icon: FileCheck2 },
@@ -2518,6 +2519,115 @@ function CustodyReport({ s }) {
   );
 }
 
+/* -------- تقرير المصروفات (مدفوعات مباشرة + مصروفات العُهد) -------- */
+const EXP_SRC = [{ k: "other", l: "مدفوعات مباشرة" }, { k: "custody", l: "مصروفات من عُهد" }];
+function ExpensesReport({ s }) {
+  const [src, setSrc] = useState("all");
+  const [cat, setCat] = useState("all");
+  const [item, setItem] = useState("all");
+  const [q, setQ] = useState("");
+  const catOf = (p) => (p.kind === "custody" ? "مصروفات من عُهد" : p.category || "بدون تصنيف");
+  const itemName = (id) => (id ? s.works.find((w) => w.id === id)?.name || "بند محذوف" : "غير مرتبط ببند");
+  const base = s.payments.filter((p) => p.kind === "other" || p.kind === "custody");
+  const cats = [...new Set(base.map(catOf))].sort((a, b) => a.localeCompare(b, "ar"));
+  const list = base
+    .filter((p) => src === "all" || p.kind === src)
+    .filter((p) => cat === "all" || catOf(p) === cat)
+    .filter((p) => item === "all" || (item === "_none" ? !p.workItemId : p.workItemId === item))
+    .filter((p) => !q.trim() || `${p.partyName} ${p.note || ""}`.includes(q.trim()));
+  const total = rSum(list, (p) => p.amount);
+  const share = (v) => rPct(total > 0 ? (v / total) * 100 : null);
+  const groupBy = (fn) => {
+    const m = new Map();
+    list.forEach((p) => { const k = fn(p); m.set(k, [...(m.get(k) || []), p]); });
+    return [...m.entries()].map(([k, ps]) => ({ k, ps, total: rSum(ps, (p) => p.amount) })).sort((a, b) => b.total - a.total);
+  };
+  const byCat = groupBy(catOf);
+  const byParty = groupBy((p) => p.partyName || "—").slice(0, 15);
+  const byMonth = groupBy((p) => rDay(p.date).slice(0, 7) || "—").sort((a, b) => a.k.localeCompare(b.k));
+  const months = byMonth.filter((m) => m.k !== "—").length;
+  const catMax = byCat[0]?.total || 0;
+
+  // حسب البند ← البند الفرعي
+  const itemRows = [];
+  groupBy((p) => p.workItemId || "_none").forEach((g) => {
+    itemRows.push({ className: "bg-[color:var(--cl-inset)] font-bold", cells: [itemName(g.k === "_none" ? null : g.k), g.ps.length, fmt(g.total), share(g.total)] });
+    const lv = new Map();
+    g.ps.forEach((p) => { if (p.level) lv.set(p.level, [...(lv.get(p.level) || []), p]); });
+    [...lv.entries()].sort((a, b) => rSum(b[1], (p) => p.amount) - rSum(a[1], (p) => p.amount)).forEach(([l, ps]) => {
+      itemRows.push({ cells: [<span className="text-[color:var(--cl-soft)]" style={{ paddingRight: 16 * (l.split(LV_SEP).length) }}>↳ {l}</span>, ps.length, fmt(rSum(ps, (p) => p.amount)), ""] });
+    });
+  });
+
+  const active = [src !== "all" && EXP_SRC.find((x) => x.k === src)?.l, cat !== "all" && `التصنيف: ${cat}`, item !== "all" && `البند: ${itemName(item === "_none" ? null : item)}`, q.trim() && `بحث: ${q.trim()}`].filter(Boolean);
+  const sel = "block mt-1 min-w-[170px] px-3 py-2 rounded-lg border border-[color:var(--cl-line)] bg-[color:var(--cl-card)] text-sm text-[color:var(--cl-text)]";
+
+  return (
+    <div className="space-y-4">
+      <div className="no-print bg-[color:var(--cl-card)] rounded-xl border border-[color:var(--cl-line)] p-4 flex flex-wrap items-end gap-4">
+        <label className="text-[11px] text-[color:var(--cl-muted)] font-semibold">المصدر
+          <select value={src} onChange={(e) => setSrc(e.target.value)} className={sel}><option value="all">الكل</option>{EXP_SRC.map((x) => <option key={x.k} value={x.k}>{x.l}</option>)}</select>
+        </label>
+        <label className="text-[11px] text-[color:var(--cl-muted)] font-semibold">التصنيف
+          <select value={cat} onChange={(e) => setCat(e.target.value)} className={sel}><option value="all">كل التصنيفات</option>{cats.map((c) => <option key={c} value={c}>{c}</option>)}</select>
+        </label>
+        <label className="text-[11px] text-[color:var(--cl-muted)] font-semibold">بند العمل
+          <select value={item} onChange={(e) => setItem(e.target.value)} className={sel}>
+            <option value="all">كل البنود</option>
+            {s.works.map((w) => <option key={w.id} value={w.id}>{w.name}{s.multi ? ` — ${s.projName(w.projectId)}` : ""}</option>)}
+            <option value="_none">غير مرتبط ببند</option>
+          </select>
+        </label>
+        <label className="text-[11px] text-[color:var(--cl-muted)] font-semibold">بحث بالمستفيد / الملاحظة
+          <input value={q} onChange={(e) => setQ(e.target.value)} placeholder="مثال: مرتبات" className="block mt-1 w-52 px-3 py-2 rounded-lg border border-[color:var(--cl-line)] bg-[color:var(--cl-card)] text-sm text-[color:var(--cl-text)] outline-none" />
+        </label>
+        {active.length > 0 && <button onClick={() => { setSrc("all"); setCat("all"); setItem("all"); setQ(""); }} className="px-3 py-2 rounded-lg text-xs font-semibold text-[color:var(--cl-soft)] hover:bg-[color:var(--cl-inset)] flex items-center gap-1"><X size={13} /> مسح الفلاتر</button>}
+      </div>
+
+      <ReportShell title="تقرير المصروفات" s={s} notice="المصروفات = دفعات «مصروفات» من شاشة المدفوعات (مرتبات، أجور، انتقالات، استشاري...) + بنود تصفية العُهد. مش شامل دفعات المقاولين والموردين.">
+        {active.length > 0 && <div className="flex flex-wrap gap-2 -mt-2">{active.map((f) => <span key={f} className="text-[11px] px-2.5 py-1 rounded-full bg-[color:rgb(var(--cl-accent-rgb)/0.1)] text-[color:var(--cl-accent)] font-semibold">{f}</span>)}</div>}
+        <div className="grid grid-cols-4 gap-3">
+          <RptKpi label="إجمالي المصروفات" value={money(total)} color="#D6A23C" />
+          <RptKpi label="عدد الحركات" value={fmt(list.length)} />
+          <RptKpi label="أكبر تصنيف" value={byCat[0]?.k || "—"} sub={byCat[0] ? money(byCat[0].total) : ""} />
+          <RptKpi label="متوسط الشهر" value={months ? money(total / months) : "—"} sub={months ? `على ${months} شهر` : ""} />
+        </div>
+
+        <RptSection title="حسب التصنيف">
+          <div className="space-y-3 avoid-break">{byCat.map((g) => <RptBar key={g.k} label={`${g.k} (${share(g.total)} · ${g.ps.length} حركة)`} value={g.total} max={catMax} color="#D6A23C" />)}</div>
+          {byCat.length === 0 && <div className="text-sm text-[color:var(--cl-muted)] py-4 text-center">لا توجد مصروفات في الفترة دي</div>}
+        </RptSection>
+
+        <RptSection title="حسب الشهر">
+          <RptTable heads={[{ label: "الشهر" }, { label: "عدد الحركات", num: true }, { label: "المصروف", num: true }, { label: "النسبة", num: true }]}
+            rows={byMonth.map((m) => ({ cells: [<span className="mono">{m.k}</span>, m.ps.length, fmt(m.total), share(m.total)] }))}
+            footer={["الإجمالي", list.length, fmt(total), total > 0 ? "100٪" : "—"]} />
+        </RptSection>
+
+        <RptSection title="حسب بند العمل والبنود الفرعية">
+          <RptTable heads={[{ label: "البند / البند الفرعي" }, { label: "عدد الحركات", num: true }, { label: "المصروف", num: true }, { label: "النسبة", num: true }]}
+            rows={itemRows} footer={["الإجمالي", list.length, fmt(total), total > 0 ? "100٪" : "—"]} />
+        </RptSection>
+
+        <RptSection title={byParty.length >= 15 ? "أعلى 15 مستفيد" : "حسب المستفيد"}>
+          <RptTable heads={[{ label: "المستفيد" }, { label: "عدد الحركات", num: true }, { label: "المصروف", num: true }, { label: "النسبة", num: true }]}
+            rows={byParty.map((g) => ({ cells: [<b>{g.k}</b>, g.ps.length, fmt(g.total), share(g.total)] }))} />
+        </RptSection>
+
+        <RptSection title="كشف المصروفات التفصيلي">
+          <RptTable heads={[{ label: "التاريخ" }, { label: "التصنيف" }, { label: "المستفيد / البيان" }, { label: "البند" }, { label: "الطريقة" }, { label: "المبلغ", num: true }]}
+            rows={[...list].sort((a, b) => rDay(a.date).localeCompare(rDay(b.date))).map((p) => ({
+              cells: [rDay(p.date) || "—", catOf(p), <span>{p.partyName}{p.note && <span className="block text-[10px] text-[color:var(--cl-muted)]">{p.note}</span>}</span>,
+                <span>{itemName(p.workItemId)}{p.level && <span className="block text-[10px] text-[color:var(--cl-muted)]">{p.level}</span>}{s.multi && <span className="block text-[10px] text-[color:var(--cl-muted)]">{s.projName(p.projectId)}</span>}</span>,
+                p.method || "—", <b>{fmt(p.amount)}</b>],
+            }))}
+            footer={["", "", "", "", "الإجمالي", fmt(total)]} empty="لا توجد مصروفات مطابقة للفلاتر" />
+        </RptSection>
+      </ReportShell>
+    </div>
+  );
+}
+
 /* -------- مركز التقارير (الواجهة الرئيسية) -------- */
 function ReportsCenter({ projects, workItems, costs, extracts, collections, treasuryEntries, financePersons, financeTransactions, expectedCosts, defaultProjectId, costsManager, statements = [], statementPayments = [], custodies = [] }) {
   const [reportKey, setReportKey] = useState(null);
@@ -2681,6 +2791,7 @@ function ReportsCenter({ projects, workItems, costs, extracts, collections, trea
       )}
       {reportKey === "executive" && <ExecutiveReport s={s} />}
       {reportKey === "paid" && <PaidCostsReport s={s} />}
+      {reportKey === "expenses" && <ExpensesReport s={s} />}
       {reportKey === "costs" && <CostDetailReport s={s} />}
       {reportKey === "bva" && <BudgetVsActualReport s={s} />}
       {reportKey === "extracts" && <ExtractsReport s={s} />}
