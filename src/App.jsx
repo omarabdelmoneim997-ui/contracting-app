@@ -6727,7 +6727,7 @@ function StatementForm({ cfg, initial, parties, projects, existing, payments, on
         <div className="bg-[color:var(--cl-card)] rounded-xl border border-[color:var(--cl-line)] overflow-hidden">
           <div className="px-4 py-3 border-b border-[color:var(--cl-sep)]">
             <div className="font-bold text-sm text-[color:var(--cl-text)]">الحساب مع {partyKey}</div>
-            <div className="text-[11px] text-[color:var(--cl-muted)]">"السابق صرفه" بيتحسب تلقائي من الدفعات المسجّلة — الدفعات بتتسجّل من تبويب "كشف حساب {cfg.partyPlural}"</div>
+            <div className="text-[11px] text-[color:var(--cl-muted)]">"السابق صرفه" بيتحسب تلقائي من الدفعات المسجّلة — الدفعات بتتسجّل من شاشة "المدفوعات"</div>
           </div>
           <table className="w-full text-sm">
             <tbody className="divide-y divide-[color:var(--cl-sep)]">
@@ -6789,7 +6789,6 @@ function StatementsModule({ kind, statements, payments, projects, dbError, onSav
   const [search, setSearch] = useState("");
   const [workFilter, setWorkFilter] = useState("");
   const [openParty, setOpenParty] = useState(null);
-  const [payForm, setPayForm] = useState({ date: stToday(), amount: "", method: "تحويل بنكي", note: "", statementId: "", projectId: "", workItemId: "" });
   const emptyParty = { id: "", name: "", phone: "", taxId: "", address: "", notes: "" };
   const [partyForm, setPartyForm] = useState(emptyParty);
   const [newWork, setNewWork] = useState("");
@@ -7148,29 +7147,15 @@ function StatementsModule({ kind, statements, payments, projects, dbError, onSav
                                 {p.ps.sort((a, b) => (a.date || "").localeCompare(b.date || "")).map((x) => (
                                   <div key={x.id} className="flex items-center justify-between text-sm bg-[color:var(--cl-card)] rounded-lg px-3 py-2 border border-[color:var(--cl-sep)]">
                                     <span className="mono text-xs text-[color:var(--cl-muted)]">{x.date} · <span className="font-sans">{x.method}{x.note ? " · " + x.note : ""}</span></span>
-                                    <span className="flex items-center gap-2"><span className="mono font-semibold text-[color:var(--cl-green)]">{stMoney(x.amount)}</span>
-                                      <button onClick={() => onDeletePayment(x.id)} className="p-1 rounded text-[color:var(--cl-red)] hover:bg-[#C1453B]/10"><Trash2 size={12} /></button></span>
+                                    <span className="mono font-semibold text-[color:var(--cl-green)]">{stMoney(x.amount)}{x.statementId && <span className="text-[10px] text-[color:var(--cl-muted)] font-normal"> · مستخلص #{p.sts.find((t) => t.id === x.statementId)?.number || "—"}</span>}</span>
                                   </div>
                                 ))}
                                 {p.ps.length === 0 && <div className="text-xs text-[color:var(--cl-muted)]">لا دفعات.</div>}
                               </div>
                             </div>
                           </div>
-                          <div className="grid grid-cols-5 gap-2 items-end">
-                            <Field small label="تاريخ الدفعة" type="date" value={payForm.date} onChange={(v) => setPayForm((f) => ({ ...f, date: v }))} />
-                            <Field small label="المبلغ" type="number" value={payForm.amount} onChange={(v) => setPayForm((f) => ({ ...f, amount: v }))} />
-                            <SelectField small label="الطريقة" value={payForm.method} onChange={(v) => setPayForm((f) => ({ ...f, method: v }))} options={["تحويل بنكي", "نقدي", "شيك"].map((m) => ({ value: m, label: m }))} />
-                            <SelectField small label="على مستخلص (اختياري)" value={payForm.statementId} onChange={(v) => setPayForm((f) => ({ ...f, statementId: v }))} options={[{ value: "", label: "— عام —" }, ...p.sts.map((s) => ({ value: s.id, label: "#" + s.number }))]} />
-                            {payCostReady && !payForm.statementId && <PayTargetFields form={payForm} setForm={setPayForm} projects={projects} workItems={workItems} />}
-                            <button
-                              onClick={async () => {
-                                if (!payForm.amount || Number(payForm.amount) <= 0) return;
-                                const perr = stPayTargetError(payForm, payCostReady);
-                                if (perr) { alert(perr); return; }
-                                await onAddPayment({ id: stUid("sp_"), kind, partyName: p.name, date: payForm.date || stToday(), amount: Number(payForm.amount), method: payForm.method, note: payForm.note, statementId: payForm.statementId || null, projectId: payForm.statementId ? null : payForm.projectId || null, workItemId: payForm.statementId ? null : payForm.workItemId || null });
-                                setPayForm((f) => ({ ...f, amount: "", statementId: "" }));
-                              }}
-                              className="px-3 py-1.5 rounded-lg bg-[color:var(--cl-accent-bg)] text-[color:var(--cl-on-accent)] text-xs font-bold hover:bg-[color:var(--cl-accent-hover)]">+ تسجيل دفعة</button>
+                          <div className="text-[12px] text-[color:var(--cl-muted)] bg-[color:var(--cl-card)] rounded-lg px-3 py-2 border border-dashed border-[color:var(--cl-line)]">
+                            الدفعات بتتسجّل وتتمسح من شاشة <b className="text-[color:var(--cl-text)]">المدفوعات</b> (من قسم التكاليف في القايمة الجانبية).
                           </div>
                         </td>
                       </tr>
@@ -7859,17 +7844,6 @@ function NewProjectModal({ onClose, onCreate }) {
 
 /* -------------------------------- form fields ------------------------------- */
 
-// الدفعة العامة (مش على مستخلص): تختار المشروع والبند اللي تتحسب عليه كتكلفة فعلية
-const stPayTargetError = (f, ready) => (ready && !f.statementId && f.projectId && !f.workItemId ? "اختار بند العمل اللي الدفعة هتتحسب عليه في المشروع." : "");
-function PayTargetFields({ form, setForm, projects = [], workItems = [] }) {
-  const wis = workItems.filter((w) => w.projectId === form.projectId);
-  return (
-    <>
-      <SelectField small label="على مشروع (اختياري)" value={form.projectId || ""} onChange={(v) => setForm((f) => ({ ...f, projectId: v, workItemId: v === f.projectId ? f.workItemId : "" }))} options={[{ value: "", label: "— بدون مشروع —" }, ...projects.map((p) => ({ value: p.id, label: p.name }))]} />
-      {form.projectId && <SelectField small label="بند العمل *" value={form.workItemId || ""} onChange={(v) => setForm((f) => ({ ...f, workItemId: v }))} options={[{ value: "", label: "— اختار —" }, ...wis.map((w) => ({ value: w.id, label: w.name }))]} />}
-    </>
-  );
-}
 
 // قايمة منسدلة عامة + "إضافة جديد" من نفس الخانة (onAdd بترجع الاسم المحفوظ أو null)
 // ===== البنود الفرعية كشجرة: بند العمل ← مستوى ← مستوى تحته ... =====
