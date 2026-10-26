@@ -1447,6 +1447,7 @@ function ContractingApp({ currentUsername, onLogout }) {
               pCosts={pCosts}
               pWorkItems={pWorkItems}
               activeProjectId={activeProjectId}
+              projectName={project?.name || ""}
               onAddCost={addCost}
               onAddCostsBulk={addCostsBulk}
               onUpdateCost={updateCost}
@@ -2669,6 +2670,7 @@ function ReportsCenter({ projects, workItems, costs, extracts, collections, trea
               pCosts={costs.filter((c) => c.projectId === projectId)}
               pWorkItems={workItems.filter((w) => w.projectId === projectId)}
               activeProjectId={projectId}
+              projectName={projects.find((p) => p.id === projectId)?.name || ""}
               onAddCost={costsManager.onAddCost}
               onAddCostsBulk={costsManager.onAddCostsBulk}
               onUpdateCost={costsManager.onUpdateCost}
@@ -3889,7 +3891,7 @@ const costCatOrder = (k) => { const i = COST_CAT_ORDER.indexOf(k); return i < 0 
 const COST_CAT_LABELS = { "مشتريات": "توريدات", "مصنعيات": "أعمال مقاولين", "عهد": "مصروفات من عهد" };
 const costCatLabel = (k) => COST_CAT_LABELS[k] || COST_TYPES.find((t) => t.key === k)?.label || k;
 
-function CostsTab({ pCosts, pWorkItems, activeProjectId, onAddCost, onAddCostsBulk, onUpdateCost, onDeleteCost, units = [], unitsReady = false, onAddUnit, wiLevels = [], levelsReady = false, onAddLevel }) {
+function CostsTab({ pCosts, pWorkItems, activeProjectId, projectName = "", onAddCost, onAddCostsBulk, onUpdateCost, onDeleteCost, units = [], unitsReady = false, onAddUnit, wiLevels = [], levelsReady = false, onAddLevel }) {
   const [filter, setFilter] = useState("الكل");
   const [open, setOpen] = useState(false);
   const [showImport, setShowImport] = useState(false);
@@ -4034,7 +4036,7 @@ function CostsTab({ pCosts, pWorkItems, activeProjectId, onAddCost, onAddCostsBu
 
   const toggleGroup = (key) => setCollapsedGroups((p) => ({ ...p, [key]: !p[key] }));
   // صفوف النوع جوه البند: البنود الفرعية كشجرة (كل مستوى بإجمالي اللي تحته) وتحت كل مستوى الأوصاف المسجلة عليه
-  const costLevelRows = (g, cg) => {
+  const costLevelRows = (g, cg, expandAll = false) => {
     const items = cg.items;
     const paths = new Set();
     items.forEach((it) => {
@@ -4052,7 +4054,7 @@ function CostsTab({ pCosts, pWorkItems, activeProjectId, onAddCost, onAddCostsBu
         .forEach(({ pth, list }) => {
           const key = g.key + "##" + cg.cat + "##" + pth;
           rows.push({ kind: "level", key, path: pth, name: pth.split(LV_SEP).pop(), depth, count: list.length, total: rSum(list, (x) => x.totalValue) });
-          if (!collapsedGroups[key]) walk(pth, depth + 1);
+          if (expandAll || !collapsedGroups[key]) walk(pth, depth + 1);
         });
       items.filter((it) => (it.level || "") === parent).forEach((it) => rows.push({ kind: "item", it, depth }));
     };
@@ -4061,11 +4063,52 @@ function CostsTab({ pCosts, pWorkItems, activeProjectId, onAddCost, onAddCostsBu
   };
   const toggleItem = (key) => setExpandedItems((p) => ({ ...p, [key]: !p[key] }));
 
+  // طباعة الشجرة كلها مفتوحة: البند ← النوع ← البنود الفرعية ← التفاصيل (بالفلتر الحالي)
+  const printCosts = () => {
+    const pad = (d) => `padding-right:${8 + d * 18}px`;
+    let body = "";
+    pivot.forEach((g) => {
+      body += `<tr class="wi"><td style="${pad(0)}">${stEsc(g.name)}</td><td></td><td>${stMoney(g.groupTotal)}</td></tr>`;
+      g.cats.forEach((cg) => {
+        body += `<tr class="cat"><td style="${pad(1)}">${stEsc(costCatLabel(cg.cat))}</td><td></td><td>${stMoney(cg.total)}</td></tr>`;
+        costLevelRows(g, cg, true).forEach((r) => {
+          if (r.kind === "level") body += `<tr class="lv"><td style="${pad(2 + r.depth)}">↳ ${stEsc(r.name)}</td><td></td><td>${stMoney(r.total)}</td></tr>`;
+          else body += `<tr><td style="${pad(2 + r.depth)}">${stEsc(r.it.desc)} <span class="mut">(${r.it.entries.length} حركة)</span></td><td>${r.it.unit ? `${stMoney(r.it.totalQty)} ${stEsc(r.it.unit)}` : ""}</td><td>${stMoney(r.it.totalValue)}</td></tr>`;
+        });
+      });
+    });
+    const filterLbl = filter === "الكل" ? "" : costCatLabel(filter);
+    const html = `<!doctype html><html dir="rtl" lang="ar"><head><meta charset="utf-8"><title>التكاليف الفعلية${projectName ? " — " + stEsc(projectName) : ""}</title>
+<style>
+body{font-family:'IBM Plex Sans Arabic','Cairo',Tahoma,sans-serif;color:#1E2530;padding:14mm;font-size:13px}
+h1{font-size:20px;margin:0 0 4px} .meta{display:flex;gap:28px;margin:10px 0 16px;color:#555} .meta b{color:#1E2530}
+table{width:100%;border-collapse:collapse} th,td{border:1px solid #cfc8b8;padding:5px 8px;text-align:right;font-size:11.5px}
+th{background:#f1ede1} td:nth-child(2),td:nth-child(3){white-space:nowrap;width:1%}
+tr.wi td{background:#ebe6d6;font-weight:800;font-size:12.5px} tr.cat td{background:#f6f3ea;font-weight:700} tr.lv td{font-weight:600}
+.mut{color:#888;font-size:10px} tr.tot td{background:#1E2530;color:#fff;font-weight:800;font-size:13px}
+@media print{@page{size:A4;margin:0}} tr{break-inside:avoid}
+</style></head><body>
+<h1>التكاليف الفعلية</h1>
+<div class="meta">${projectName ? `<div>المشروع: <b>${stEsc(projectName)}</b></div>` : ""}${filterLbl ? `<div>النوع: <b>${stEsc(filterLbl)}</b></div>` : ""}<div>تاريخ الطباعة: <b>${stEsc(stToday())}</b></div></div>
+<table><thead><tr><th>البند / النوع / البند الفرعي / التفاصيل</th><th>الكمية</th><th>الإجمالي</th></tr></thead><tbody>
+${body || `<tr><td colspan="3" style="text-align:center;color:#888">لا توجد تكاليف</td></tr>`}
+<tr class="tot"><td>الإجمالي</td><td></td><td>${stMoney(grandTotal)} EGP</td></tr>
+</tbody></table>
+</body></html>`;
+    const w = window.open("", "_blank", "width=900,height=1000");
+    if (!w) { alert("المتصفح منع فتح نافذة الطباعة. اسمح بالنوافذ المنبثقة لهذا الموقع وحاول تاني."); return; }
+    w.document.open(); w.document.write(html); w.document.close();
+    w.onload = () => { w.focus(); w.print(); };
+  };
+
   return (
     <div className="space-y-5">
       <div className="flex items-center justify-between">
         <h2 className="font-bold text-[color:var(--cl-text)] text-lg">التكاليف</h2>
         <div className="flex gap-2">
+          <button onClick={printCosts} className="px-3 py-2 rounded-lg bg-[color:var(--cl-card)] border border-[color:var(--cl-line)] text-[color:var(--cl-text)] text-sm font-semibold flex items-center gap-1.5 hover:bg-[color:var(--cl-inset)] transition">
+            <Printer size={15} /> طباعة / PDF
+          </button>
           <button onClick={openImportPanel} className="px-3 py-2 rounded-lg bg-[color:var(--cl-card)] border border-[color:var(--cl-line)] text-[color:var(--cl-text)] text-sm font-semibold flex items-center gap-1.5 hover:border-white/40 transition">
             <Upload size={15} /> استيراد من إكسيل
           </button>
